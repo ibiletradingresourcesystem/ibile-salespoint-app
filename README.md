@@ -1,1 +1,0 @@
-# ibile-salespoint-app
