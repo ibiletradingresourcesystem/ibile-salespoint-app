@@ -1,0 +1,80 @@
+{
+    "chat.tools.terminal.autoApprove": {
+        "/^Copy-Item \"c:\\\\Users\\\\hp\\\\Downloads\\\\icon\\.ico\" \"c:\\\\Users\\\\hp\\\\Desktop\\\\Projects\\\\Inventory-sales\\\\Inventory\\\\sales-point-app\\\\public\\\\images\\\\bot-icon\\.ico\"$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^Get-ChildItem -Recurse -Path \"c:\\\\Users\\\\hp\\\\Desktop\\\\Projects\\\\Inventory-sales\\\\Inventory\\\\sales-point-app\\\\src\" -Include \"StaffLogin\\.js\",\"index\\.js\",\"CartPanel\\.js\",\"OrdersScreen\\.js\",\"settings\\.js\",\"HelpChatBot\\.js\",\"Header\\.js\",\"TopBar\\.js\",\"StaffContext\\.js\",\"CustomersScreen\\.js\",\"MenuScreen\\.js\",\"TabNavigation\\.js\",\"EpoNowLayout\\.js\",\"Sidebar\\.js\" \\| ForEach-Object \\{ \\$lines = \\(Get-Content \\$_\\.FullName \\| Measure-Object -Line\\)\\.Lines; \"\\$\\(\\$_\\.FullName\\) => \\$lines lines\" \\}$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^npm install nodemailer$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^npx next dev 2>&1$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^Set-Location \"c:\\\\Users\\\\hp\\\\Desktop\\\\Projects\\\\Inventory-sales\\\\Inventory\\\\sales-point-app\"; npx next lint --file src/lib/receiptPrinting\\.js --file src/pages/api/printer/print-direct\\.js --file src/pages/api/receipt-settings\\.js --file src/models/Store\\.js$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^Set-Location \"c:\\\\Users\\\\hp\\\\Desktop\\\\Projects\\\\Inventory-sales\\\\Inventory\\\\inventory-admin-app\"; npx eslint pages/setup/receipts\\.js pages/api/setup/setup\\.js models/Store\\.js$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^npx eslint pages/setup/receipts\\.js pages/api/setup/setup\\.js models/Store\\.js$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^npx next lint --file src/components/layout/StaffLogin\\.js$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^npx next lint --file src/components/layout/StaffLogin\\.js --file src/pages/settings\\.js$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^Set-Location \"c:\\\\Users\\\\hp\\\\Desktop\\\\Projects\\\\Inventory-sales\\\\Inventory\\\\sales-point-app\"; npx next lint --file src/models/Product\\.js --file src/pages/api/products/index\\.js$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^npx next lint --file src/models/Product\\.js --file src/models/HotelBooking\\.js --file src/lib/roomProducts\\.js --file src/lib/roomReservations\\.js --file src/lib/syncPackQty\\.js --file src/context/CartContext\\.js --file src/components/pos/MenuScreen\\.js --file src/components/pos/RoomReservationModal\\.js --file src/components/pos/CartPanel\\.js --file src/components/pos/PaymentPanel\\.js --file src/pages/api/products/index\\.js --file src/pages/api/transactions/index\\.js --file src/pages/api/transactions/refund\\.js$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^Set-Location \"c:\\\\Users\\\\hp\\\\Desktop\\\\Projects\\\\Inventory-sales\\\\Inventory\\\\inventory-admin-app\"; npx eslint models/Product\\.js components/ProductForm\\.js pages/api/products/index\\.js pages/api/hotel/reservations/\\[id\\]\\.js$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^npx eslint models/Product\\.js components/ProductForm\\.js pages/api/products/index\\.js pages/api/hotel/reservations/\\[id\\]\\.js; if \\(\\$LASTEXITCODE -eq 0\\) \\{ Write-Output 'OK' \\}$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^Set-Location \"c:\\\\Users\\\\hp\\\\Desktop\\\\Projects\\\\Inventory-sales\\\\Inventory\\\\sales-point-app\"; npx next lint --file src/components/pos/PaymentPanel\\.js$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^Set-Location \"c:\\\\Users\\\\hp\\\\Desktop\\\\Projects\\\\Inventory-sales\\\\Inventory\\\\inventory-admin-app\"; npx eslint models/Product\\.js pages/api/products/index\\.js$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^npx eslint models/Product\\.js components/ProductForm\\.js pages/api/products/index\\.js$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^Set-Location \"c:\\\\Users\\\\hp\\\\Desktop\\\\Projects\\\\Inventory-sales\\\\Inventory\\\\sales-point-app\"; npx next lint --file src/lib/roomReservations\\.js --file src/context/CartContext\\.js --file src/components/pos/MenuScreen\\.js --file src/components/pos/RoomReservationModal\\.js --file src/components/pos/CartPanel\\.js --file src/components/pos/PaymentPanel\\.js$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^npx next lint --file src/lib/roomAvailability\\.js --file src/lib/roomReservations\\.js --file src/pages/api/transactions/index\\.js --file src/pages/api/transactions/save\\.js --file src/pages/api/transactions/sync\\.js --file src/pages/api/transactions/refund\\.js$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^npx next lint --file src/components/common/AlphaKeyboardModal\\.js --file src/components/pos/RoomReservationModal\\.js$/": {
+            "approve": true,
+            "matchCommandLine": true
+        }
+    }
+}
