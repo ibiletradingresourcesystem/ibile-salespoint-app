@@ -83,7 +83,7 @@ export default function App({ Component, pageProps }) {
         <meta name="msapplication-TileColor" content="#000000" />
         <meta name="msapplication-config" content="/browserconfig.xml" />
 
-        <title>St Michael’s Sales Point App</title>
+        <title>Ibile Mart SalesPoint App</title>
         <meta name="description" content="Best products at the best prices!" />
         <link rel="icon" href="/favicon.ico" />
       </Head>

@@ -1,7 +1,7 @@
 import nodemailer from 'nodemailer';
 import Store from '@/src/models/Store';
 
-const DEFAULT_BRAND_NAME = "St's Micheals";
+const DEFAULT_BRAND_NAME = "Ibile Mart";
 const MANUAL_PAYMENT_CHANNELS = new Set(['manual-entry', 'manual', 'pos']);
 
 const HTML_ESCAPE_MAP = {
