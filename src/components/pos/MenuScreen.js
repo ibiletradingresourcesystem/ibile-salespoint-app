@@ -1150,7 +1150,7 @@ export default function MenuScreen() {
                         <div className="w-14 h-14 sm:w-16 sm:h-16 bg-gradient-to-br from-green-50 to-green-100 flex items-center justify-center overflow-hidden flex-shrink-0 relative">
                           {!isOnline && (
                             <div className="absolute inset-0 flex items-center justify-center bg-gray-100 z-20">
-                              <FontAwesomeIcon icon={ProductCategoryIcon} className="text-sm text-gray-400" />
+                              <FontAwesomeIcon icon={ProductCategoryIcon} className="text-[10px] text-gray-400" />
                             </div>
                           )}
                           
@@ -1173,7 +1173,7 @@ export default function MenuScreen() {
                               onError={() => handleImageError(productKey)}
                             />
                           ) : (
-                            <FontAwesomeIcon icon={ProductCategoryIcon} className="text-sm text-gray-400" />
+                            <FontAwesomeIcon icon={ProductCategoryIcon} className="text-[10px] text-gray-400" />
                           )}
                           
                           {/* Search Badge */}
@@ -1266,7 +1266,7 @@ export default function MenuScreen() {
                       <div className="w-14 h-14 sm:w-16 sm:h-16 bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center overflow-hidden flex-shrink-0 relative">
                         {!isOnline && (
                           <div className="absolute inset-0 flex items-center justify-center bg-gray-100 z-20">
-                            <FontAwesomeIcon icon={ProductCategoryIcon} className="text-sm text-gray-400" />
+                            <FontAwesomeIcon icon={ProductCategoryIcon} className="text-[10px] text-gray-400" />
                           </div>
                         )}
                         
@@ -1289,7 +1289,7 @@ export default function MenuScreen() {
                             onError={() => handleImageError(productKey)}
                           />
                         ) : (
-                          <FontAwesomeIcon icon={ProductCategoryIcon} className="text-sm text-gray-400" />
+                          <FontAwesomeIcon icon={ProductCategoryIcon} className="text-[10px] text-gray-400" />
                         )}
                       </div>
 
