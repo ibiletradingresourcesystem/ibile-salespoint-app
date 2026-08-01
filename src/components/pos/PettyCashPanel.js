@@ -23,7 +23,7 @@ function PettyCashPanel({ isOpen, onClose, staffName, location }) {
     try {
       const [vendorRes, orderRes] = await Promise.all([
         fetch("/api/petty-cash/vendors"),
-        fetch(`/api/petty-cash/orders?location=${encodeURIComponent(location || "")}`),
+        fetch("/api/petty-cash/orders"),
       ]);
       const vendorData = await vendorRes.json();
       const orderData = await orderRes.json();
@@ -34,7 +34,7 @@ function PettyCashPanel({ isOpen, onClose, staffName, location }) {
     } finally {
       setLoading(false);
     }
-  }, [location]);
+  }, []);
 
   useEffect(() => {
     if (isOpen) {

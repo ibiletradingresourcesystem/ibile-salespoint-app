@@ -51,7 +51,6 @@ const baseMenuSections = [
     items: [
       { id: 'adjustFloat', label: 'Adjust Float', icon: faClock },
       { id: 'closeTill', label: 'Close Till', icon: faTimesCircle },
-      { id: 'pettyCash', label: 'Petty Cash', icon: faPiggyBank },
       // Hidden for now - showing only core till operations
       // { label: 'Back Office', icon: faFileAlt, hidden: true },
       // { label: 'No Sale', icon: faPiggyBank, hidden: true },
@@ -303,8 +302,7 @@ export default function Sidebar({ isOpen, onToggle, widthClass = 'w-56', mobileW
         ...section,
         items: section.items.filter((item) => {
           if (item.id === 'adjustFloat') return allowAdjustFloat;
-          if (item.id === 'closeTill') return true; // Always show close till
-          if (item.id === 'pettyCash') return true; // Always show petty cash
+          if (item.id === 'closeTill') return true;
           return true;
         }),
       };
@@ -383,6 +381,15 @@ export default function Sidebar({ isOpen, onToggle, widthClass = 'w-56', mobileW
             )}
           </div>
         ))}
+
+        {/* Petty Cash - Standalone Button */}
+        <button
+          onClick={() => setShowPettyCashPanel(true)}
+          className={`w-full flex items-center ${scaleClasses.gap} ${scaleClasses.padding} rounded-lg bg-amber-50 border border-amber-200 hover:bg-amber-100 hover:border-amber-300 text-left font-semibold text-amber-900 transition-colors duration-base shadow-sm`}
+        >
+          <FontAwesomeIcon icon={faPiggyBank} className={`${scaleClasses.iconLg} text-amber-600`} />
+          <span className={`${scaleClasses.heading} font-semibold`}>Petty Cash</span>
+        </button>
       </div>
 
       {/* Bottom Section */}
