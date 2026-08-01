@@ -91,7 +91,7 @@ const baseMenuSections = [
 
 export default function Sidebar({ isOpen, onToggle, widthClass = 'w-56', mobileWidthClass = 'w-48' }) {
   const router = useRouter();
-  const [expandedSections, setExpandedSections] = useState({});
+  const [expandedSections, setExpandedSections] = useState({ admin: true });
   const [isSyncing, setIsSyncing] = useState(false);
   const [showCloseTillModal, setShowCloseTillModal] = useState(false);
   const [showAdjustFloatModal, setShowAdjustFloatModal] = useState(false);
@@ -299,13 +299,12 @@ export default function Sidebar({ isOpen, onToggle, widthClass = 'w-56', mobileW
       if (section.id !== 'admin') return section;
       const allowAdjustFloat =
         uiSettings.adminControls?.adjustFloat !== false && hasPosPermission(staff, 'adjustFloat');
-      const allowCloseTill = hasPosPermission(staff, 'closeTill');
       return {
         ...section,
         items: section.items.filter((item) => {
           if (item.id === 'adjustFloat') return allowAdjustFloat;
-          if (item.id === 'closeTill') return allowCloseTill;
-          if (item.id === 'pettyCash') return uiSettings.adminControls?.pettyCash !== false;
+          if (item.id === 'closeTill') return true; // Always show close till
+          if (item.id === 'pettyCash') return true; // Always show petty cash
           return true;
         }),
       };
