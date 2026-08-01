@@ -1189,13 +1189,13 @@ export default function MenuScreen() {
                           </div>
                           <div className="flex items-center justify-between mt-1">
                             {/* Stock Badge */}
-                            {product.quantity !== undefined && (
+                            {product.quantity != null && (
                               <span className={`px-1.5 py-0.5 rounded text-[10px] sm:text-xs font-bold ${
                                 product.quantity <= 0 ? 'bg-red-100 text-red-700' :
                                 product.quantity <= 5 ? 'bg-yellow-100 text-yellow-700' :
                                 'bg-green-100 text-green-700'
                               }`}>
-                                {product.quantity <= 0 ? 'Out' : `${product.quantity} left`}
+                                {product.quantity <= 0 ? 'Out' : `${Number(product.quantity)} left`}
                               </span>
                             )}
                           </div>
@@ -1300,13 +1300,13 @@ export default function MenuScreen() {
                         </div>
                         <div className="flex items-center justify-end mt-0.5">
                           {/* Stock Badge - Right Aligned */}
-                          {product.quantity !== undefined && (
+                          {product.quantity != null && (
                             <span className={`px-1 py-0.5 rounded text-[10px] sm:text-xs font-bold ${
                               product.quantity <= 0 ? 'bg-red-100 text-red-700' :
                               product.quantity <= 5 ? 'bg-yellow-100 text-yellow-700' :
                               'bg-green-100 text-green-700'
                             }`}>
-                              {product.quantity <= 0 ? 'Out' : `${parseFloat(product.quantity.toFixed(2))}`}
+                              {product.quantity <= 0 ? 'Out' : `${parseFloat(Number(product.quantity).toFixed(2))}`}
                             </span>
                           )}
                         </div>
