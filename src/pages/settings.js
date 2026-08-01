@@ -26,6 +26,7 @@ import {
   faUserClock,
   faEye,
   faSync,
+  faPiggyBank,
 } from '@fortawesome/free-solid-svg-icons';
 import {
   getUiSettings,
@@ -324,6 +325,7 @@ export default function SettingsPage() {
     till: [
       settings.adminControls?.openTillCashEntry ? 'Open Till cash entry enabled' : 'Open Till cash entry disabled',
       settings.adminControls?.adjustFloat ? 'Adjust Float enabled' : 'Adjust Float disabled',
+      settings.adminControls?.pettyCash !== false ? 'Petty Cash enabled' : 'Petty Cash disabled',
     ],
     layout: [
       `Sidebar width: ${settings.layout?.sidebarWidth || defaultUiSettings.layout.sidebarWidth}`,
@@ -463,7 +465,7 @@ export default function SettingsPage() {
             {expanded.till && (
               <div className="p-5 space-y-4 bg-white">
                 <p className="text-sm text-gray-600">
-                  Control the Open Till cash entry and Adjust Float access.
+                  Control the Admin actions shown in the POS sidebar.
                 </p>
 
                 <label className="flex items-center gap-3">
@@ -484,6 +486,16 @@ export default function SettingsPage() {
                   />
                   <FontAwesomeIcon icon={faCoins} className="text-emerald-600 w-4 h-4" />
                   <span className="font-semibold text-gray-700">Adjust Float (Add/Remove Cash)</span>
+                </label>
+
+                <label className="flex items-center gap-3">
+                  <input
+                    type="checkbox"
+                    checked={settings.adminControls?.pettyCash !== false}
+                    onChange={(e) => updateAdminControl('pettyCash', e.target.checked)}
+                  />
+                  <FontAwesomeIcon icon={faPiggyBank} className="text-amber-600 w-4 h-4" />
+                  <span className="font-semibold text-gray-700">Petty Cash</span>
                 </label>
               </div>
             )}

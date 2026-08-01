@@ -51,6 +51,7 @@ import {
   faGift,
   faScrewdriverWrench,
   faTags,
+  faStore,
 } from '@fortawesome/free-solid-svg-icons';
 import { useCart } from '../../context/CartContext';
 import PaymentPanel from './PaymentPanel';
@@ -103,6 +104,7 @@ const CATEGORY_ICON_BY_KEY = {
   bed: faBed,
   lounge: faCouch,
   furniture: faChair,
+  ibilemarttradingoperations: faStore,
   tag: faTags,
   tools: faScrewdriverWrench,
   gift: faGift,

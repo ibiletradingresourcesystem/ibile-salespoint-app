@@ -305,6 +305,7 @@ export default function Sidebar({ isOpen, onToggle, widthClass = 'w-56', mobileW
         items: section.items.filter((item) => {
           if (item.id === 'adjustFloat') return allowAdjustFloat;
           if (item.id === 'closeTill') return allowCloseTill;
+          if (item.id === 'pettyCash') return uiSettings.adminControls?.pettyCash !== false;
           return true;
         }),
       };

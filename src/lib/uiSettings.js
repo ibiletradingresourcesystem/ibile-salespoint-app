@@ -20,6 +20,7 @@ export const defaultUiSettings = {
   adminControls: {
     openTillCashEntry: false,
     adjustFloat: false,
+    pettyCash: true,
   },
   cartPanelButtons: {
     print: true,
