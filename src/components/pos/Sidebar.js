@@ -41,6 +41,7 @@ import { getUiSettings } from '@/src/lib/uiSettings';
 import { hasPosPermission } from '@/src/lib/posPermissions';
 import CloseTillModal from './CloseTillModal';
 import AdjustFloatModal from './AdjustFloatModal';
+import PettyCashPanel from './PettyCashPanel';
 
 const baseMenuSections = [
   {
@@ -50,10 +51,10 @@ const baseMenuSections = [
     items: [
       { id: 'adjustFloat', label: 'Adjust Float', icon: faClock },
       { id: 'closeTill', label: 'Close Till', icon: faTimesCircle },
+      { id: 'pettyCash', label: 'Petty Cash', icon: faPiggyBank },
       // Hidden for now - showing only core till operations
       // { label: 'Back Office', icon: faFileAlt, hidden: true },
       // { label: 'No Sale', icon: faPiggyBank, hidden: true },
-      // { label: 'Petty Cash', icon: faPiggyBank, hidden: true },
       // { label: 'Change Till Location', icon: faExchangeAlt, hidden: true },
     ],
   },
@@ -94,11 +95,12 @@ export default function Sidebar({ isOpen, onToggle, widthClass = 'w-56', mobileW
   const [isSyncing, setIsSyncing] = useState(false);
   const [showCloseTillModal, setShowCloseTillModal] = useState(false);
   const [showAdjustFloatModal, setShowAdjustFloatModal] = useState(false);
+  const [showPettyCashPanel, setShowPettyCashPanel] = useState(false);
   const [printerAvailable, setPrinterAvailable] = useState(null);
   const [checkingPrinter, setCheckingPrinter] = useState(false);
   const [uiSettings, setUiSettings] = useState(getUiSettings());
   const { lastSyncTime, isOnline, pendingSyncCount, manualSync } = useCart();
-  const { staff, till, setCurrentTill } = useStaff();
+  const { staff, location, till, setCurrentTill } = useStaff();
   const canAccessSettings = hasPosPermission(staff, 'settingsAccess');
   const canAccessPrinterSettings = hasPosPermission(staff, 'printerSettingsAccess');
 
@@ -366,6 +368,8 @@ export default function Sidebar({ isOpen, onToggle, widthClass = 'w-56', mobileW
                         setShowCloseTillModal(true);
                       } else if (item.label === 'Adjust Float') {
                         setShowAdjustFloatModal(true);
+                      } else if (item.label === 'Petty Cash') {
+                        setShowPettyCashPanel(true);
                       }
                     }}
                     disabled={(item.label === 'Close Till' || item.label === 'Adjust Float') && !effectiveTill}
@@ -545,6 +549,13 @@ export default function Sidebar({ isOpen, onToggle, widthClass = 'w-56', mobileW
       <AdjustFloatModal
         isOpen={showAdjustFloatModal}
         onClose={() => setShowAdjustFloatModal(false)}
+      />
+
+      <PettyCashPanel
+        isOpen={showPettyCashPanel}
+        onClose={() => setShowPettyCashPanel(false)}
+        staffName={staff?.name || staff?.fullName || staff?.email || "POS staff"}
+        location={location?.name || location?.locationName || ""}
       />
     </>
   );
