@@ -14,6 +14,7 @@ import Product from '@/src/models/Product';
 import { reverseInventoryForRefund } from '@/src/lib/syncPackQty';
 import EndOfDayReport from '@/src/models/EndOfDayReport';
 import { sanitizeBody } from '@/src/lib/apiValidation';
+import { releaseRoomsFromTransaction } from '@/src/lib/roomAvailability';
 
 const getTenderEntries = (transaction) => {
   if (Array.isArray(transaction?.tenderPayments) && transaction.tenderPayments.length > 0) {
@@ -189,6 +190,12 @@ export default async function handler(req, res) {
           } catch (tillErr) {
             console.warn('⚠️ Failed to adjust till on refund:', tillErr.message);
           }
+        }
+
+        try {
+          await releaseRoomsFromTransaction(transaction.items || [], transaction);
+        } catch (roomReleaseErr) {
+          console.warn('⚠️ Failed to release room availability on refund:', roomReleaseErr.message);
         }
       }
 

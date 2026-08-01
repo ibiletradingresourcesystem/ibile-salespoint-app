@@ -23,6 +23,7 @@ import {
   saveTransactionOffline,
 } from '../lib/offlineSync';
 import { getSyncMeta } from '../lib/indexedDB';
+import { getRoomReservationDetails, isRoomProduct } from '../lib/roomReservations';
 
 // ============================================================================
 // CONTEXT DEFINITION
@@ -269,9 +270,27 @@ export function CartProvider({ children }) {
       }
 
       const existing = prev.activeCart.items.find(item => item.id === product.id);
+      const isRoom = isRoomProduct(product);
+      const roomReservationDetails = isRoom ? getRoomReservationDetails(product) : null;
       let newItems;
 
-      if (existing) {
+      if (existing && isRoom) {
+        newItems = prev.activeCart.items.map(item =>
+          item.id === product.id
+            ? {
+                ...item,
+                name: product.name,
+                category: product.category,
+                price: product.price,
+                quantity: 1,
+                notes: roomReservationDetails?.notes || item.notes || '',
+                productType: product.productType,
+                roomStatus: product.roomStatus || item.roomStatus || 'available',
+                reservationDetails: roomReservationDetails,
+              }
+            : item
+        );
+      } else if (existing) {
         newItems = prev.activeCart.items.map(item =>
           item.id === product.id
             ? { ...item, quantity: item.quantity + 1 }
@@ -287,7 +306,10 @@ export function CartProvider({ children }) {
             price: product.price,
             quantity: 1,
             discount: 0,
-            notes: '',
+            notes: roomReservationDetails?.notes || '',
+            productType: product.productType || 'standard',
+            roomStatus: product.roomStatus || 'available',
+            reservationDetails: roomReservationDetails,
           },
         ];
       }
@@ -304,6 +326,19 @@ export function CartProvider({ children }) {
 
   const updateQuantity = useCallback((itemId, quantity) => {
     setState(prev => {
+      const targetItem = prev.activeCart.items.find(item => item.id === itemId);
+      if (isRoomProduct(targetItem)) {
+        return {
+          ...prev,
+          activeCart: {
+            ...prev.activeCart,
+            items: prev.activeCart.items.map(item =>
+              item.id === itemId ? { ...item, quantity: 1 } : item
+            ),
+          },
+        };
+      }
+
       if (quantity <= 0) {
         return {
           ...prev,
@@ -358,6 +393,9 @@ export function CartProvider({ children }) {
             ? {
                 ...item,
                 notes,
+                reservationDetails: isRoomProduct(item)
+                  ? { ...getRoomReservationDetails(item), notes }
+                  : item.reservationDetails,
               }
             : item
         ),
@@ -491,10 +529,11 @@ export function CartProvider({ children }) {
       productId: item.id,
       name: item.name,
       price: item.price,
-      quantity: item.quantity,
+      quantity: isRoomProduct(item) ? 1 : item.quantity,
       discount: item.discount || 0,
       salePriceIncTax: item.price,
-      qty: item.quantity,
+      qty: isRoomProduct(item) ? 1 : item.quantity,
+      reservationDetails: isRoomProduct(item) ? getRoomReservationDetails(item) : undefined,
     }));
 
     // Create transaction object with "held" status
@@ -605,6 +644,9 @@ export function CartProvider({ children }) {
       quantity: item.qty || item.quantity || 1,
       discount: item.discount || 0,
       notes: item.note || item.notes || '',
+      productType: item.productType || 'standard',
+      roomStatus: item.roomStatus || 'available',
+      reservationDetails: isRoomProduct(item) ? getRoomReservationDetails(item) : null,
     }));
 
     setState(prev => ({
@@ -644,6 +686,9 @@ export function CartProvider({ children }) {
       quantity: item.qty || item.quantity || 1,
       discount: item.discount || 0,
       notes: item.note || item.notes || '',
+      productType: item.productType || 'standard',
+      roomStatus: item.roomStatus || 'available',
+      reservationDetails: isRoomProduct(item) ? getRoomReservationDetails(item) : null,
     }));
 
     setState(prev => ({

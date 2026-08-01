@@ -38,7 +38,7 @@ const verifyPin = async (staffMember, pin) => {
     try {
       isPinCorrect = await bcrypt.compare(pin, staffMember.password);
     } catch (err) {
-      // Legacy/plain values can throw in compare. Ignore and continue.
+      // Legacy/plain values can throw in compare. Ignore and fallback.
     }
   }
 
@@ -46,8 +46,12 @@ const verifyPin = async (staffMember, pin) => {
     try {
       isPinCorrect = await bcrypt.compare(pin, staffMember.pin);
     } catch (err) {
-      // Legacy/plain values can throw in compare. Ignore and continue.
+      // Legacy/plain values can throw in compare. Ignore and fallback.
     }
+  }
+
+  if (!isPinCorrect) {
+    isPinCorrect = pin === staffMember.pin || pin === staffMember.password;
   }
 
   return isPinCorrect;

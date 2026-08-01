@@ -55,9 +55,21 @@ import {
 } from "../../lib/receiptPrinting";
 import { getUiSettings } from "../../lib/uiSettings";
 import AdjustFloatModal from "./AdjustFloatModal";
-import PettyCashPanel from "./PettyCashPanel";
 import NumKeypad from "../common/NumKeypad";
 import { showToast } from "../common/Toast";
+import {
+  getRoomReservationDateRange,
+  getRoomReservationDetails,
+  isRoomProduct,
+} from "../../lib/roomReservations";
+
+const formatRoomPhone = (value) => {
+  const digits = String(value || "").replace(/[^0-9]/g, "");
+  if (!digits) return "";
+  return [digits.slice(0, 4), digits.slice(4, 7), digits.slice(7, 11)]
+    .filter(Boolean)
+    .join(" ");
+};
 
 export default function CartPanel() {
   const [selectedItemId, setSelectedItemId] = useState(null);
@@ -65,7 +77,6 @@ export default function CartPanel() {
   const [prevItemsLength, setPrevItemsLength] = useState(0);
   const selectedItemRef = useRef(null);
   const [showAdjustFloatModal, setShowAdjustFloatModal] = useState(false);
-  const [showPettyCashPanel, setShowPettyCashPanel] = useState(false);
   const [receiptSettings, setReceiptSettings] = useState(null);
   const [cartBtnSettings, setCartBtnSettings] = useState(getUiSettings().cartPanelButtons || {});
   const [totalsCollapsed, setTotalsCollapsed] = useState(false);
@@ -377,12 +388,13 @@ export default function CartPanel() {
         items: activeCart.items.map((item) => ({
           productId: item.id,
           name: item.name,
-          quantity: item.quantity,
+          quantity: isRoomProduct(item) ? 1 : item.quantity,
           price: item.price,
-          qty: item.quantity,
+          qty: isRoomProduct(item) ? 1 : item.quantity,
           salePriceIncTax: item.price,
           discount: item.discount || 0,
           notes: item.notes || "",
+          reservationDetails: isRoomProduct(item) ? getRoomReservationDetails(item) : undefined,
         })),
         externalId: clientId,
         clientId,
@@ -895,6 +907,15 @@ export default function CartPanel() {
               const itemTotal =
                 adjustedPrice * item.quantity - (item.discount || 0);
               const hasPromoAdjustment = adjustedPrice !== item.price;
+              const isRoomItem = isRoomProduct(item);
+              const roomReservation = isRoomItem ? getRoomReservationDetails(item) : null;
+              const roomDateRange = isRoomItem ? getRoomReservationDateRange(item) : "";
+              const hasRoomReservation = Boolean(
+                roomReservation?.guestName ||
+                  roomReservation?.guestPhone ||
+                  roomDateRange ||
+                  roomReservation?.notes
+              );
 
               return (
                 <div key={item.id}>
@@ -924,6 +945,11 @@ export default function CartPanel() {
                                 -₦{item.discount.toLocaleString()}
                               </span>
                             )}
+                          </div>
+                        )}
+                        {hasRoomReservation && (
+                          <div className="mt-0.5 text-[10px] font-semibold text-cyan-700 line-clamp-1">
+                            {roomReservation?.guestName || "Room booking"}{roomDateRange ? ` · ${roomDateRange}` : ""}
                           </div>
                         )}
                       </div>
@@ -1005,6 +1031,20 @@ export default function CartPanel() {
                               ? "%"
                               : "₦"}
                             )
+                          </div>
+                        )}
+                        {hasRoomReservation && (
+                          <div className="mt-2 rounded-lg border border-white/20 bg-white/10 p-2 text-[11px] leading-relaxed text-white">
+                            <div className="font-bold">Guest: {roomReservation?.guestName || "Not set"}</div>
+                            <div className="mt-1 grid grid-cols-1 gap-1 sm:grid-cols-2">
+                              {roomReservation?.guestPhone && (
+                                <div>Phone: {formatRoomPhone(roomReservation.guestPhone)}</div>
+                              )}
+                              {roomDateRange && <div>Stay: {roomDateRange}</div>}
+                            </div>
+                            {roomReservation?.notes && (
+                              <div className="mt-1 border-t border-white/20 pt-1">Notes: {roomReservation.notes}</div>
+                            )}
                           </div>
                         )}
                       </div>
@@ -1225,9 +1265,7 @@ export default function CartPanel() {
               </button>
               )}
               {cartBtnSettings.pettyCash !== false && (
-              <button
-                onClick={() => setShowPettyCashPanel(true)}
-                className="flex-1 px-2 py-2 sm:py-3 text-xs sm:text-sm font-bold bg-neutral-300 hover:bg-neutral-400 text-neutral-900 rounded-lg transition-colors duration-base flex flex-col items-center gap-1 min-h-12 sm:min-h-16">
+              <button className="flex-1 px-2 py-2 sm:py-3 text-xs sm:text-sm font-bold bg-neutral-300 hover:bg-neutral-400 text-neutral-900 rounded-lg transition-colors duration-base flex flex-col items-center gap-1 min-h-12 sm:min-h-16">
                 <FontAwesomeIcon icon={faMoneyBill} className="w-4 h-4" />
                 <span>PETTY CASH</span>
               </button>
@@ -1291,14 +1329,6 @@ export default function CartPanel() {
       <AdjustFloatModal
         isOpen={showAdjustFloatModal}
         onClose={() => setShowAdjustFloatModal(false)}
-      />
-
-      {/* Petty Cash Panel */}
-      <PettyCashPanel
-        isOpen={showPettyCashPanel}
-        onClose={() => setShowPettyCashPanel(false)}
-        staffName={staff?.name || "POS Staff"}
-        location={location?.name || location || ""}
       />
 
       {qtyEditItem && (

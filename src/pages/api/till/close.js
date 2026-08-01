@@ -184,11 +184,11 @@ export default async function handler(req, res) {
     const tenderVariances = {}; // Variance per tender
 
     tenderAggregation.forEach((group) => {
-      const tenderType = (group._id || "CASH").trim().toUpperCase();
+      const tenderType = group._id || "CASH";
       const amount = group.totalAmount || 0;
       const count = group.transactionCount || 0;
       
-      tenderBreakdown[tenderType] = (tenderBreakdown[tenderType] || 0) + amount;
+      tenderBreakdown[tenderType] = amount;
       totalSales += amount;
       
       console.log(`   💳 ${tenderType}: ₦${amount.toLocaleString('en-NG')} (${count} payment${count !== 1 ? 's' : ''})`);
@@ -214,12 +214,11 @@ export default async function handler(req, res) {
 
     // Get tender mapping (ID to name)
     const tenderDocs = await Tender.find();
-    const tenderMap = {}; // Map tender ID to normalized name
-    const tenderNameMap = {}; // Map normalized tender name to ID (for reverse lookup)
+    const tenderMap = {}; // Map tender ID to name
+    const tenderNameMap = {}; // Map tender name to ID (for reverse lookup)
     tenderDocs.forEach(t => {
-      const normalizedName = (t.name || "").trim().toUpperCase();
-      tenderMap[t._id.toString()] = normalizedName;
-      tenderNameMap[normalizedName] = t._id.toString();
+      tenderMap[t._id.toString()] = t.name;
+      tenderNameMap[t.name] = t._id.toString();
     });
 
     console.log("📋 Tender mapping:", tenderMap);

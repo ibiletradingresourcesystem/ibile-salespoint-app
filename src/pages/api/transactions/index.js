@@ -13,6 +13,8 @@ import mongoose from 'mongoose';
 import { updateInventoryForSale, reverseInventoryForRefund } from '@/src/lib/syncPackQty';
 import crypto from 'crypto';
 import { sanitizeBody } from '@/src/lib/apiValidation';
+import { ROOM_STATUSES } from '@/src/lib/roomReservations';
+import { markRoomsFromTransaction, releaseRoomsFromTransaction } from '@/src/lib/roomAvailability';
 
 const normalizeLocationName = (location) => {
   if (typeof location === 'string' && location.trim()) return location.trim();
@@ -216,6 +218,7 @@ export default async function handler(req, res) {
       const oldAffectedStock = existingTransaction.status === 'completed' || existingTransaction.status === 'credit';
       const newIsCompleted = normalizedStatus === 'completed';
       const newAffectsStock = normalizedStatus === 'completed' || normalizedStatus === 'credit';
+      const previousRoomItems = existingTransaction.items || [];
 
       if (existingTransaction.inventoryUpdated && oldAffectedStock) {
         await reverseInventoryForRefund(existingTransaction.items || []);
@@ -325,10 +328,26 @@ export default async function handler(req, res) {
 
       await existingTransaction.save();
 
+      if (oldWasCompleted) {
+        try {
+          await releaseRoomsFromTransaction(previousRoomItems, existingTransaction);
+        } catch (roomReleaseErr) {
+          console.warn('⚠️ Failed to release existing room booking state:', roomReleaseErr.message);
+        }
+      }
+
       if (newAffectsStock) {
         await updateInventoryForSale(mappedItems);
         existingTransaction.inventoryUpdated = true;
         await existingTransaction.save();
+
+        if (newIsCompleted) {
+          try {
+            await markRoomsFromTransaction(mappedItems, existingTransaction, ROOM_STATUSES.RESERVED);
+          } catch (roomOccupancyErr) {
+            console.warn('⚠️ Failed to update room occupancy for edited transaction:', roomOccupancyErr.message);
+          }
+        }
       }
 
       return res.status(200).json({
@@ -583,6 +602,14 @@ export default async function handler(req, res) {
         console.log('✅ Inventory updated successfully');
       } catch (updateErr) {
         console.error('❌ Failed to update product quantities:', updateErr.message, updateErr.stack);
+      }
+
+      if (isCompletedTransaction) {
+        try {
+          await markRoomsFromTransaction(mappedItems, savedTransaction, ROOM_STATUSES.RESERVED);
+        } catch (roomOccupancyErr) {
+          console.warn('⚠️ Failed to update room occupancy:', roomOccupancyErr.message);
+        }
       }
     }
 

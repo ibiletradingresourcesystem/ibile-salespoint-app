@@ -8,6 +8,8 @@ import Till from '@/src/models/Till';
 import Product from '@/src/models/Product';
 import { sanitizeBody } from '@/src/lib/apiValidation';
 import { updateInventoryForSale } from '@/src/lib/syncPackQty';
+import { markRoomsFromTransaction } from '@/src/lib/roomAvailability';
+import { ROOM_STATUSES } from '@/src/lib/roomReservations';
 import { sendOrderDeliveredEmail, sendOrderProcessingEmail } from '@/src/lib/orderStatusEmail';
 
 const ONLINE_TENDER_NAME = 'ONLINE';
@@ -407,6 +409,12 @@ export default async function handler(req, res) {
       await clearReservedInventory(orderItems);
       transaction.inventoryUpdated = true;
       await transaction.save();
+    }
+
+    try {
+      await markRoomsFromTransaction(mappedItems, transaction, ROOM_STATUSES.RESERVED);
+    } catch (error) {
+      console.warn('Failed to update room occupancy for online POS order:', error.message);
     }
 
     const updatePayload = {

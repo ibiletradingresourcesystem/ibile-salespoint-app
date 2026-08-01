@@ -18,6 +18,7 @@
  */
 
 import Product from "@/src/models/Product";
+import { isRoomProduct } from "@/src/lib/roomReservations";
 
 /**
  * Smart inventory update for a sale. Replaces the old for-loop + syncParentChildQty pattern.
@@ -26,13 +27,13 @@ import Product from "@/src/models/Product";
 export async function updateInventoryForSale(items) {
   if (!items || items.length === 0) return;
 
-  const validItems = items.filter(i => i.productId && i.qty);
+  const validItems = items.filter(i => i.productId && i.qty && !isRoomProduct(i));
   if (validItems.length === 0) return;
 
   // Pre-fetch all sold products to know which are children/parents
   const productIds = validItems.map(i => i.productId);
   const soldProducts = await Product.find({ _id: { $in: productIds } })
-    .select("_id isChildProduct parentProduct packType qtyPerPack")
+    .select("_id isChildProduct parentProduct packType qtyPerPack productType")
     .lean();
   const productMap = new Map(soldProducts.map(p => [String(p._id), p]));
 
@@ -42,6 +43,10 @@ export async function updateInventoryForSale(items) {
 
   for (const item of validItems) {
     const product = productMap.get(String(item.productId));
+
+    if (isRoomProduct(product)) {
+      continue;
+    }
 
     if (product && product.isChildProduct && product.parentProduct && product.packType !== "pack") {
       // CHILD sold -> DO NOT touch child qty. Redirect to parent.
@@ -117,12 +122,12 @@ export async function updateInventoryForSale(items) {
 export async function reverseInventoryForRefund(items) {
   if (!items || items.length === 0) return;
 
-  const validItems = items.filter(i => i.productId && i.qty);
+  const validItems = items.filter(i => i.productId && i.qty && !isRoomProduct(i));
   if (validItems.length === 0) return;
 
   const productIds = validItems.map(i => i.productId);
   const products = await Product.find({ _id: { $in: productIds } })
-    .select("_id isChildProduct parentProduct packType qtyPerPack")
+    .select("_id isChildProduct parentProduct packType qtyPerPack productType")
     .lean();
   const productMap = new Map(products.map(p => [String(p._id), p]));
 
@@ -131,6 +136,7 @@ export async function reverseInventoryForRefund(items) {
 
   for (const item of validItems) {
     const product = productMap.get(String(item.productId));
+    if (isRoomProduct(product)) continue;
     if (product && product.isChildProduct && product.parentProduct && product.packType !== "pack") {
       const parentId = String(product.parentProduct);
       const current = childToParent.get(parentId) || 0;

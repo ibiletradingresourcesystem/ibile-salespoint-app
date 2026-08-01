@@ -1,4 +1,6 @@
 import Till from '@/src/models/Till';
+import { ROOM_STATUSES } from '@/src/lib/roomReservations';
+import { markRoomsFromTransaction } from '@/src/lib/roomAvailability';
 import { updateInventoryForSale } from '@/src/lib/syncPackQty';
 
 export async function applyCompletedTransactionEffects(transaction, items, isCompletedTransaction) {
@@ -6,8 +8,10 @@ export async function applyCompletedTransactionEffects(transaction, items, isCom
     return { applied: false };
   }
 
+  await markRoomsFromTransaction(items, transaction, ROOM_STATUSES.RESERVED);
+
   if (transaction.inventoryUpdated) {
-    return { applied: false };
+    return { applied: false, roomsApplied: true };
   }
 
   await updateInventoryForSale(items);
@@ -51,12 +55,12 @@ export async function linkCompletedTransactionToTill({
 
   if (hasMultiplePayments) {
     tenderPayments.forEach((payment) => {
-      const tenderName = (payment.tenderName || 'Unknown').trim().toUpperCase();
+      const tenderName = payment.tenderName || 'Unknown';
       const currentAmount = till.tenderBreakdown.get(tenderName) || 0;
       till.tenderBreakdown.set(tenderName, currentAmount + Number(payment.amount || 0));
     });
   } else {
-    const tenderKey = (tenderType || 'CASH').trim().toUpperCase();
+    const tenderKey = tenderType || 'CASH';
     const currentAmount = till.tenderBreakdown.get(tenderKey) || 0;
     till.tenderBreakdown.set(tenderKey, currentAmount + Number(total || 0));
   }
