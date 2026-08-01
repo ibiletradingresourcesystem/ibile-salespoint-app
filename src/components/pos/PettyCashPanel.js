@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faTimes, faCoins, faPlus, faCheck } from "@fortawesome/free-solid-svg-icons";
+import { faTimes, faCoins, faPlus, faCheck, faPen } from "@fortawesome/free-solid-svg-icons";
 
 function PettyCashPanel({ isOpen, onClose, staffName, location }) {
   const [tab, setTab] = useState("orders"); // "orders" | "new"
@@ -10,8 +10,9 @@ function PettyCashPanel({ isOpen, onClose, staffName, location }) {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState(null);
+  const [editingOrder, setEditingOrder] = useState(null);
 
-  // New entry form
+  // New/edit entry form
   const [selectedVendor, setSelectedVendor] = useState("");
   const [vendorName, setVendorName] = useState("");
   const [purpose, setPurpose] = useState("");
@@ -21,9 +22,10 @@ function PettyCashPanel({ isOpen, onClose, staffName, location }) {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
+      const locationParam = location ? `?location=${encodeURIComponent(location)}` : "";
       const [vendorRes, orderRes] = await Promise.all([
         fetch("/api/petty-cash/vendors"),
-        fetch("/api/petty-cash/orders"),
+        fetch(`/api/petty-cash/orders${locationParam}`),
       ]);
       const vendorData = await vendorRes.json();
       const orderData = await orderRes.json();
@@ -34,21 +36,39 @@ function PettyCashPanel({ isOpen, onClose, staffName, location }) {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [location]);
 
   useEffect(() => {
     if (isOpen) {
       fetchData();
       setMessage(null);
+      setEditingOrder(null);
     }
   }, [isOpen, fetchData]);
 
   const handleVendorSelect = (vendorId) => {
     setSelectedVendor(vendorId);
     const vendor = vendors.find((v) => String(v._id) === vendorId);
-    if (vendor) {
-      setVendorName(vendor.companyName || "");
-    }
+    if (vendor) setVendorName(vendor.companyName || "");
+  };
+
+  const resetForm = () => {
+    setSelectedVendor("");
+    setVendorName("");
+    setPurpose("");
+    setAmount("");
+    setPaymentMethod("cash");
+    setEditingOrder(null);
+  };
+
+  const startEdit = (order) => {
+    setEditingOrder(order);
+    setVendorName(order.vendorName || "");
+    setPurpose(order.purpose || "");
+    setAmount(String(order.amount || ""));
+    setPaymentMethod(order.paymentMethod || "cash");
+    setSelectedVendor(order.vendor ? String(order.vendor) : "");
+    setTab("new");
   };
 
   const handleSubmitNew = async (e) => {
@@ -77,12 +97,8 @@ function PettyCashPanel({ isOpen, onClose, staffName, location }) {
         throw new Error(data.error || "Failed to create entry");
       }
 
-      setMessage({ type: "success", text: `₦${Number(amount).toLocaleString()} petty cash recorded` });
-      setSelectedVendor("");
-      setVendorName("");
-      setPurpose("");
-      setAmount("");
-      setPaymentMethod("cash");
+      setMessage({ type: "success", text: `₦${Number(amount).toLocaleString()} petty cash vendor order recorded` });
+      resetForm();
       setTab("orders");
       fetchData();
     } catch (err) {
@@ -135,17 +151,17 @@ function PettyCashPanel({ isOpen, onClose, staffName, location }) {
         {/* Tabs */}
         <div className="flex border-b border-gray-200">
           <button
-            onClick={() => setTab("orders")}
+            onClick={() => { setTab("orders"); resetForm(); }}
             className={`flex-1 py-2.5 text-sm font-semibold transition-colors ${
               tab === "orders"
                 ? "border-b-2 border-blue-600 text-blue-600"
                 : "text-gray-500 hover:text-gray-700"
             }`}
           >
-            Pending Orders ({orders.length})
+            Vendor Orders ({orders.length})
           </button>
           <button
-            onClick={() => setTab("new")}
+            onClick={() => { setTab("new"); resetForm(); }}
             className={`flex-1 py-2.5 text-sm font-semibold transition-colors ${
               tab === "new"
                 ? "border-b-2 border-blue-600 text-blue-600"
@@ -153,7 +169,7 @@ function PettyCashPanel({ isOpen, onClose, staffName, location }) {
             }`}
           >
             <FontAwesomeIcon icon={faPlus} className="mr-1" />
-            New Entry
+            New Vendor Order
           </button>
         </div>
 
@@ -177,7 +193,7 @@ function PettyCashPanel({ isOpen, onClose, staffName, location }) {
           ) : tab === "orders" ? (
             orders.length === 0 ? (
               <div className="text-center py-8 text-gray-400">
-                No pending petty cash orders for this location.
+                No pending petty cash vendor orders.
               </div>
             ) : (
               <div className="space-y-3">
@@ -189,57 +205,81 @@ function PettyCashPanel({ isOpen, onClose, staffName, location }) {
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex-1 min-w-0">
                         <p className="font-semibold text-gray-900 truncate">
-                          {order.purpose || order.vendorName || "Petty Cash"}
+                          {order.vendorName || "Petty Cash"}
                         </p>
-                        {order.vendorName && (
-                          <p className="text-xs text-gray-500">{order.vendorName}</p>
+                        {order.purpose && (
+                          <p className="text-xs text-gray-500 mt-0.5">{order.purpose}</p>
                         )}
                         <p className="text-sm font-bold text-gray-800 mt-1">
                           ₦{Number(order.amount || 0).toLocaleString()}
                         </p>
-                        <p className="text-xs text-gray-400 mt-0.5">
-                          Status: {order.status}
-                        </p>
+                        <div className="flex items-center gap-2 mt-1">
+                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                            order.status === "Approved" ? "bg-green-100 text-green-700" :
+                            order.status === "Ordered" ? "bg-blue-100 text-blue-700" :
+                            "bg-gray-100 text-gray-600"
+                          }`}>{order.status}</span>
+                          {order.location && (
+                            <span className="text-[10px] text-gray-400">{order.location}</span>
+                          )}
+                        </div>
                       </div>
-                      {(order.status === "Ordered" || order.status === "Approved") && (
-                        <button
-                          onClick={() => handleReceive(order._id)}
-                          disabled={saving}
-                          className="shrink-0 px-3 py-1.5 bg-green-600 hover:bg-green-700 disabled:bg-gray-300 text-white text-xs font-semibold rounded-lg flex items-center gap-1"
-                        >
-                          <FontAwesomeIcon icon={faCheck} className="w-3 h-3" />
-                          Receive
-                        </button>
-                      )}
+                      <div className="flex flex-col gap-1.5 shrink-0">
+                        {(order.status === "Ordered" || order.status === "Approved") && (
+                          <button
+                            onClick={() => handleReceive(order._id)}
+                            disabled={saving}
+                            className="px-3 py-1.5 bg-green-600 hover:bg-green-700 disabled:bg-gray-300 text-white text-xs font-semibold rounded-lg flex items-center gap-1"
+                          >
+                            <FontAwesomeIcon icon={faCheck} className="w-3 h-3" />
+                            Receive
+                          </button>
+                        )}
+                        {order.status === "Ordered" && (
+                          <button
+                            onClick={() => startEdit(order)}
+                            className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-semibold rounded-lg flex items-center gap-1"
+                          >
+                            <FontAwesomeIcon icon={faPen} className="w-3 h-3" />
+                            Edit
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </div>
                 ))}
               </div>
             )
           ) : (
-            /* New Entry Form */
+            /* New/Edit Vendor Order Form */
             <form onSubmit={handleSubmitNew} className="space-y-4">
+              {editingOrder && (
+                <div className="px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-800 font-medium">
+                  Editing order for {editingOrder.vendorName}
+                </div>
+              )}
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Vendor
+                  Vendor *
                 </label>
-                {vendors.length > 0 ? (
+                {vendors.length > 0 && (
                   <select
                     value={selectedVendor}
                     onChange={(e) => handleVendorSelect(e.target.value)}
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
                   >
-                    <option value="">Select or type custom vendor</option>
+                    <option value="">Select a petty cash vendor</option>
                     {vendors.map((v) => (
                       <option key={v._id} value={v._id}>
                         {v.companyName}
                       </option>
                     ))}
                   </select>
-                ) : null}
+                )}
                 <input
                   type="text"
-                  placeholder="Vendor name"
+                  placeholder="Or enter vendor name"
                   value={vendorName}
                   onChange={(e) => {
                     setVendorName(e.target.value);
@@ -252,11 +292,11 @@ function PettyCashPanel({ isOpen, onClose, staffName, location }) {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Purpose / Description
+                  Purpose / Description *
                 </label>
                 <input
                   type="text"
-                  placeholder="e.g. Office supplies"
+                  placeholder="e.g. Office supplies, Cleaning materials"
                   value={purpose}
                   onChange={(e) => setPurpose(e.target.value)}
                   required
@@ -267,7 +307,7 @@ function PettyCashPanel({ isOpen, onClose, staffName, location }) {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Amount (₦)
+                    Amount (₦) *
                   </label>
                   <input
                     type="number"
@@ -300,7 +340,7 @@ function PettyCashPanel({ isOpen, onClose, staffName, location }) {
                 disabled={saving || !vendorName.trim() || !purpose.trim() || !amount}
                 className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 text-white font-semibold rounded-lg text-sm transition-colors"
               >
-                {saving ? "Saving..." : "Record Petty Cash Payment"}
+                {saving ? "Saving..." : editingOrder ? "Update Vendor Order" : "Create Vendor Order"}
               </button>
             </form>
           )}

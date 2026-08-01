@@ -24,16 +24,10 @@ export default async function handler(req, res) {
     try {
       const { location, status } = req.query;
       const filter = {};
-      
-      // Location filter: case-insensitive partial match (optional)
-      if (location) {
-        filter.location = { $regex: new RegExp(`^${location.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') };
-      }
-      
+      if (location) filter.location = location;
       if (status) {
         filter.status = status;
       } else {
-        // Show all actionable statuses for POS staff
         filter.status = { $in: ["Ordered", "Pending Approval", "Approved"] };
       }
 
