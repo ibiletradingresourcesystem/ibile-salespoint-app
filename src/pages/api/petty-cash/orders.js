@@ -44,59 +44,37 @@ export default async function handler(req, res) {
 
   if (req.method === "POST") {
     try {
-      const { vendorId, vendorName, purpose, items, amount, location, staffName, paymentMethod } = req.body;
+      const { vendorId, vendorName, purpose, description, amount, location, staffName } = req.body;
 
-      if (!vendorName || !purpose || !amount || !location) {
-        return res.status(400).json({ error: "Vendor name, purpose, amount, and location are required" });
+      if (!vendorId || !amount || !location) {
+        return res.status(400).json({ error: "Vendor, amount, and location are required" });
       }
 
-      // Create a petty cash transaction marked as received and paid
+      // Create a petty cash vendor order (status: Ordered) — same as inventory
       const transaction = await PettyCashTransaction.create({
-        vendor: vendorId || null,
-        vendorName: vendorName,
-        purpose: purpose,
-        description: items ? items.map(i => `${i.name} x${i.qty}`).join(", ") : "",
+        vendor: vendorId,
+        vendorName: vendorName || "",
+        purpose: purpose || vendorName || "Petty Cash Order",
+        description: description || "",
         quantity: 1,
         unitPrice: Number(amount),
         amount: Number(amount),
         location: location,
         requestDate: new Date(),
-        status: "Paid",
-        paidAt: new Date(),
-        paidBy: { name: staffName || "POS Staff" },
-        paymentMethod: paymentMethod || "cash",
-        receivedAt: new Date(),
-        receivedBy: { name: staffName || "POS Staff" },
+        status: "Ordered",
+        requestedBy: { name: staffName || "POS Staff" },
         approvalHistory: [{
-          action: "direct-entry",
+          action: "ordered",
           fromStatus: "",
-          toStatus: "Paid",
-          note: "Direct entry from POS",
+          toStatus: "Ordered",
+          note: "Vendor order created from POS",
           actedAt: new Date(),
           actedBy: { name: staffName || "POS Staff" },
           amount: Number(amount),
-          paymentMethod: paymentMethod || "cash",
         }],
       });
 
-      // Also create an expense entry for accounting
-      try {
-        await Expense.create({
-          title: purpose,
-          amount: Number(amount),
-          categoryName: "Petty Cash",
-          locationName: location,
-          staffName: staffName || "POS Staff",
-          description: `POS direct entry: ${purpose}`,
-          sourceType: "petty-cash-transaction",
-          sourceId: String(transaction._id),
-          vendor: vendorId ? { _id: vendorId, companyName: vendorName } : undefined,
-        });
-      } catch (expErr) {
-        console.error("Failed to create expense for petty cash:", expErr.message);
-      }
-
-      return res.status(201).json({ success: true, transaction: { _id: transaction._id, purpose, amount: Number(amount), status: "Paid" } });
+      return res.status(201).json({ success: true, transaction: { _id: transaction._id, vendorName, amount: Number(amount), status: "Ordered" } });
     } catch (err) {
       return res.status(500).json({ error: err.message });
     }
