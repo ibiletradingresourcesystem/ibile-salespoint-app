@@ -55,12 +55,12 @@ export async function linkCompletedTransactionToTill({
 
   if (hasMultiplePayments) {
     tenderPayments.forEach((payment) => {
-      const tenderName = payment.tenderName || 'Unknown';
+      const tenderName = (payment.tenderName || 'Unknown').trim().toUpperCase();
       const currentAmount = till.tenderBreakdown.get(tenderName) || 0;
       till.tenderBreakdown.set(tenderName, currentAmount + Number(payment.amount || 0));
     });
   } else {
-    const tenderKey = tenderType || 'CASH';
+    const tenderKey = (tenderType || 'CASH').trim().toUpperCase();
     const currentAmount = till.tenderBreakdown.get(tenderKey) || 0;
     till.tenderBreakdown.set(tenderKey, currentAmount + Number(total || 0));
   }
