@@ -19,7 +19,7 @@ const itemSchema = new mongoose.Schema(
 
 const TransactionSchema = new mongoose.Schema({
   // Client-generated id for de-duplication across offline/online sync
-  externalId: { type: String, index: true },
+  externalId: { type: String },
   // Server-computed idempotency key for de-duplication when externalId is missing
   dedupeKey: { type: String },
 

@@ -19,6 +19,21 @@ const STORES = {
 let db = null;
 
 /**
+ * Get a valid DB connection, re-opening if needed.
+ */
+async function getDB() {
+  if (db) {
+    try {
+      db.transaction([STORES.PRODUCTS], "readonly");
+      return db;
+    } catch {
+      db = null;
+    }
+  }
+  return initIndexedDB();
+}
+
+/**
  * Initialize IndexedDB
  */
 export async function initIndexedDB() {
@@ -115,10 +130,10 @@ export async function initIndexedDB() {
  * Add/Update products in local DB
  */
 export async function syncProducts(products, options = {}) {
-  if (!db) await initIndexedDB();
+  const database = await getDB();
 
   return new Promise((resolve, reject) => {
-    const transaction = db.transaction([STORES.PRODUCTS, STORES.SYNC_META], "readwrite");
+    const transaction = database.transaction([STORES.PRODUCTS, STORES.SYNC_META], "readwrite");
     const productStore = transaction.objectStore(STORES.PRODUCTS);
     const metaStore = transaction.objectStore(STORES.SYNC_META);
     const replace = options?.replace === true;
@@ -156,10 +171,10 @@ export async function syncProducts(products, options = {}) {
  * Add/Update categories in local DB
  */
 export async function syncCategories(categories) {
-  if (!db) await initIndexedDB();
+  const database = await getDB();
 
   return new Promise((resolve, reject) => {
-    const transaction = db.transaction([STORES.CATEGORIES, STORES.SYNC_META], "readwrite");
+    const transaction = database.transaction([STORES.CATEGORIES, STORES.SYNC_META], "readwrite");
     const categoryStore = transaction.objectStore(STORES.CATEGORIES);
     const metaStore = transaction.objectStore(STORES.SYNC_META);
 
@@ -194,10 +209,10 @@ export async function syncCategories(categories) {
  * Get all categories from local DB
  */
 export async function getLocalCategories() {
-  if (!db) await initIndexedDB();
+  const database = await getDB();
 
   return new Promise((resolve, reject) => {
-    const transaction = db.transaction([STORES.CATEGORIES], "readonly");
+    const transaction = database.transaction([STORES.CATEGORIES], "readonly");
     const store = transaction.objectStore(STORES.CATEGORIES);
     const request = store.getAll();
 
@@ -216,10 +231,10 @@ export async function getLocalCategories() {
  * Get products by category from local DB
  */
 export async function getLocalProductsByCategory(category) {
-  if (!db) await initIndexedDB();
+  const database = await getDB();
 
   return new Promise((resolve, reject) => {
-    const transaction = db.transaction([STORES.PRODUCTS], "readonly");
+    const transaction = database.transaction([STORES.PRODUCTS], "readonly");
     const store = transaction.objectStore(STORES.PRODUCTS);
     const index = store.index("category");
     const request = index.getAll(category);
@@ -239,10 +254,10 @@ export async function getLocalProductsByCategory(category) {
  * Get all products from local DB (any category)
  */
 export async function getAllLocalProducts() {
-  if (!db) await initIndexedDB();
+  const database = await getDB();
 
   return new Promise((resolve, reject) => {
-    const transaction = db.transaction([STORES.PRODUCTS], "readonly");
+    const transaction = database.transaction([STORES.PRODUCTS], "readonly");
     const store = transaction.objectStore(STORES.PRODUCTS);
     const request = store.getAll();
 
@@ -261,10 +276,10 @@ export async function getAllLocalProducts() {
  * Add transaction (sale) to local DB
  */
 export async function addLocalTransaction(transaction) {
-  if (!db) await initIndexedDB();
+  const database = await getDB();
 
   return new Promise((resolve, reject) => {
-    const txStore = db.transaction([STORES.TRANSACTIONS], "readwrite");
+    const txStore = database.transaction([STORES.TRANSACTIONS], "readwrite");
     const store = txStore.objectStore(STORES.TRANSACTIONS);
 
     const baseId = transaction.externalId || transaction.clientId || transaction.id;
@@ -299,10 +314,10 @@ export async function addLocalTransaction(transaction) {
  * Get all unsynced transactions
  */
 export async function getUnsyncedTransactions() {
-  if (!db) await initIndexedDB();
+  const database = await getDB();
 
   return new Promise((resolve, reject) => {
-    const transaction = db.transaction([STORES.TRANSACTIONS], "readonly");
+    const transaction = database.transaction([STORES.TRANSACTIONS], "readonly");
     const store = transaction.objectStore(STORES.TRANSACTIONS);
     const index = store.index("synced");
     // Query for all records where synced === false
@@ -327,10 +342,10 @@ export async function getUnsyncedTransactions() {
  * Mark transaction as synced
  */
 export async function markTransactionSynced(id) {
-  if (!db) await initIndexedDB();
+  const database = await getDB();
 
   return new Promise((resolve, reject) => {
-    const transaction = db.transaction([STORES.TRANSACTIONS], "readwrite");
+    const transaction = database.transaction([STORES.TRANSACTIONS], "readwrite");
     const store = transaction.objectStore(STORES.TRANSACTIONS);
     const request = store.get(id);
 
@@ -357,10 +372,10 @@ export async function markTransactionSynced(id) {
  * Get sync metadata
  */
 export async function getSyncMeta(key) {
-  if (!db) await initIndexedDB();
+  const database = await getDB();
 
   return new Promise((resolve, reject) => {
-    const transaction = db.transaction([STORES.SYNC_META], "readonly");
+    const transaction = database.transaction([STORES.SYNC_META], "readonly");
     const store = transaction.objectStore(STORES.SYNC_META);
     const request = store.get(key);
 
@@ -378,11 +393,11 @@ export async function getSyncMeta(key) {
  * Clear all local data (for testing)
  */
 export async function clearAllData() {
-  if (!db) await initIndexedDB();
+  const database = await getDB();
 
   return new Promise((resolve, reject) => {
     const allStoreNames = Object.values(STORES);
-    const transaction = db.transaction(allStoreNames, "readwrite");
+    const transaction = database.transaction(allStoreNames, "readwrite");
 
     allStoreNames.forEach((storeName) => {
       transaction.objectStore(storeName).clear();
