@@ -3,6 +3,7 @@ import mongoose, { model, Schema, models } from 'mongoose';
 const CategorySchema = new Schema({
     name: {type: String, require: true},
     parent: {type: mongoose.Types.ObjectId, ref:'Category'},
+    icon: {type: String, default: ''},
     properties: [{type: Object}],
     images: [{
         full: {type: String},

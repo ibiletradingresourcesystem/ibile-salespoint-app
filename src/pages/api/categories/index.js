@@ -57,7 +57,7 @@ export default async function handler(req, res) {
           console.warn(`⚠️ Location not found: ${location}, returning all categories`);
           // Fallback to all categories if location not found
           const allCategories = await Category.find({})
-            .select("_id name location isActive images properties")
+            .select("_id name icon location isActive images properties")
             .sort({ name: 1 })
             .lean();
           return res.status(200).json({
@@ -81,7 +81,7 @@ export default async function handler(req, res) {
 
         // Fetch the full category details
         const categories = await Category.find({ _id: { $in: categoryIds } })
-          .select("_id name location isActive images properties")
+          .select("_id name icon location isActive images properties")
           .sort({ name: 1 })
           .lean();
 
@@ -97,7 +97,7 @@ export default async function handler(req, res) {
         // Fallback to all categories on error
         try {
           const allCategories = await Category.find({})
-            .select("_id name location isActive images properties")
+            .select("_id name icon location isActive images properties")
             .sort({ name: 1 })
             .lean();
           console.log(`✅ Fallback: Returning ${allCategories.length} all categories`);
@@ -120,7 +120,7 @@ export default async function handler(req, res) {
       console.log("📦 Fetching all categories (no location filter)");
       
       const categories = await Category.find({})
-        .select("_id name location isActive images properties")
+        .select("_id name icon location isActive images properties")
         .sort({ name: 1 })
         .lean();
 

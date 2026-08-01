@@ -27,6 +27,23 @@ import {
   faWifi,
   faX,
   faSearch,
+  faBabyCarriage,
+  faBowlFood,
+  faCalendarDays,
+  faCookieBite,
+  faDog,
+  faFireFlameCurved,
+  faGamepad,
+  faGlassWater,
+  faHeartPulse,
+  faHouse,
+  faPalette,
+  faPenRuler,
+  faPlug,
+  faSmoking,
+  faSprayCanSparkles,
+  faWheatAwn,
+  faWineBottle,
 } from '@fortawesome/free-solid-svg-icons';
 import { useCart } from '../../context/CartContext';
 import PaymentPanel from './PaymentPanel';
@@ -75,13 +92,36 @@ const CATEGORY_ICON_BY_KEY = {
   fashion: faShirt,
   natural: faLeaf,
   books: faBook,
+  frozenfood: faSnowflake,
+  grillchill: faFireFlameCurved,
+  grillandchill: faFireFlameCurved,
+  smokes: faSmoking,
+  gamestoys: faGamepad,
+  seasonalevents: faCalendarDays,
+  electronicelectrical: faPlug,
+  winespirits: faWineBottle,
+  waterbeverages: faGlassWater,
+  stationeries: faPenRuler,
+  personalcare: faHeartPulse,
+  pantrydryingredient: faWheatAwn,
+  homekitchen: faHouse,
+  healthbeauty: faHeartPulse,
+  formulafeeding: faBabyCarriage,
+  cosmeticsbeauty: faPalette,
+  cleaninglaundry: faSprayCanSparkles,
+  caninecarefood: faDog,
+  breakfastcereals: faBowlFood,
+  biscuitsconfectioneries: faCookieBite,
+  biscuitsconfectionaries: faCookieBite,
+  babywipesdiaper: faBaby,
+  babyhealthcare: faHeartPulse,
 };
 
 const normalizeIconToken = (value) =>
   String(value || '')
     .toLowerCase()
     .replace(/^fa[srlbd]?[-_]/, '')
-    .replace(/[\s_-]+/g, '')
+    .replace(/[^a-z0-9]+/g, '')
     .trim();
 
 const normalizeLocationToken = (value) =>
@@ -166,6 +206,20 @@ const getCategoryIcon = (category) => {
 
   const nameKey = normalizeIconToken(category?.name);
   return CATEGORY_ICON_BY_KEY[nameKey] || CATEGORY_ICONS[category?.name] || faBook;
+};
+
+const getProductCategoryIcon = (product, categories, selectedCategory) => {
+  const categoryValue = product?.category;
+  const categoryId = typeof categoryValue === 'object'
+    ? categoryValue?._id || categoryValue?.id
+    : categoryValue;
+  const categoryName = typeof categoryValue === 'object' ? categoryValue?.name : categoryValue;
+  const category = categories.find((candidate) =>
+    String(candidate?._id || candidate?.id) === String(categoryId)
+    || String(candidate?.name || '').toLowerCase() === String(categoryName || '').toLowerCase()
+  ) || selectedCategory || (typeof categoryValue === 'object' ? categoryValue : { name: categoryName });
+
+  return getCategoryIcon(category);
 };
 
 // Default categories to show if API fails and no cache exists
@@ -1066,6 +1120,7 @@ export default function MenuScreen() {
                     const productKey = product._id || product.id;
                     const productImage = getProductImageUrl(product);
                     const showProductImage = isOnline && productImage && !failedImages.has(productKey);
+                    const ProductCategoryIcon = getProductCategoryIcon(product, categories, selectedCategory);
 
                     return (
                     <button
@@ -1079,7 +1134,7 @@ export default function MenuScreen() {
                         <div className="w-14 h-14 sm:w-16 sm:h-16 bg-gradient-to-br from-green-50 to-green-100 flex items-center justify-center overflow-hidden flex-shrink-0 relative">
                           {!isOnline && (
                             <div className="absolute inset-0 flex items-center justify-center bg-gray-100 z-20">
-                              <div className="text-xl">📦</div>
+                              <FontAwesomeIcon icon={ProductCategoryIcon} className="text-xl text-gray-500" />
                             </div>
                           )}
                           
@@ -1102,7 +1157,7 @@ export default function MenuScreen() {
                               onError={() => handleImageError(productKey)}
                             />
                           ) : (
-                            <div className="text-xl">📦</div>
+                            <FontAwesomeIcon icon={ProductCategoryIcon} className="text-xl text-gray-500" />
                           )}
                           
                           {/* Search Badge */}
@@ -1181,6 +1236,7 @@ export default function MenuScreen() {
                   const productKey = product._id || product.id;
                   const productImage = getProductImageUrl(product);
                   const showProductImage = isOnline && productImage && !failedImages.has(productKey);
+                  const ProductCategoryIcon = getProductCategoryIcon(product, categories, selectedCategory);
 
                   return (
                   <button
@@ -1194,7 +1250,7 @@ export default function MenuScreen() {
                       <div className="w-14 h-14 sm:w-16 sm:h-16 bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center overflow-hidden flex-shrink-0 relative">
                         {!isOnline && (
                           <div className="absolute inset-0 flex items-center justify-center bg-gray-100 z-20">
-                            <div className="text-xl">📦</div>
+                            <FontAwesomeIcon icon={ProductCategoryIcon} className="text-xl text-gray-500" />
                           </div>
                         )}
                         
@@ -1217,7 +1273,7 @@ export default function MenuScreen() {
                             onError={() => handleImageError(productKey)}
                           />
                         ) : (
-                          <div className="text-xl">📦</div>
+                          <FontAwesomeIcon icon={ProductCategoryIcon} className="text-xl text-gray-500" />
                         )}
                       </div>
 
