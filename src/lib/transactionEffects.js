@@ -1,6 +1,4 @@
 import Till from '@/src/models/Till';
-import { ROOM_STATUSES } from '@/src/lib/roomReservations';
-import { markRoomsFromTransaction } from '@/src/lib/roomAvailability';
 import { updateInventoryForSale } from '@/src/lib/syncPackQty';
 
 export async function applyCompletedTransactionEffects(transaction, items, isCompletedTransaction) {
@@ -8,10 +6,8 @@ export async function applyCompletedTransactionEffects(transaction, items, isCom
     return { applied: false };
   }
 
-  await markRoomsFromTransaction(items, transaction, ROOM_STATUSES.RESERVED);
-
   if (transaction.inventoryUpdated) {
-    return { applied: false, roomsApplied: true };
+    return { applied: false };
   }
 
   await updateInventoryForSale(items);

@@ -35,14 +35,6 @@ import { getLocalCategories, getLocalProductsByCategory, syncCategories, syncPro
 import { initOfflineSync, getOnlineStatus, getImageUrl, shouldShowPlaceholder, syncPendingTransactions, syncPendingTillCloses } from '../../lib/offlineSync';
 import { cleanupOldTransactions } from '../../lib/indexedDBCleanup';
 import AlphaKeyboardModal from '../common/AlphaKeyboardModal';
-import RoomReservationModal from './RoomReservationModal';
-import {
-  ROOM_STATUSES,
-  getRoomReservationDetails,
-  getRoomStatusLabel,
-  isRoomProduct,
-  isRoomUnavailable,
-} from '../../lib/roomReservations';
 
 // Color mapping for categories
 const CATEGORY_COLORS = {
@@ -203,7 +195,6 @@ export default function MenuScreen() {
   const [isOnline, setIsOnline] = useState(true); // Track online status
   const [pendingTransactions, setPendingTransactions] = useState(0); // Track unsync'd transactions
   const [showSearchKeyboard, setShowSearchKeyboard] = useState(false);
-  const [roomToBook, setRoomToBook] = useState(null);
   const imageObserver = useRef(null);
   const handleManualSyncRef = useRef(null);
   const { addItem, activeCart, showPaymentPanel } = useCart();
@@ -215,37 +206,12 @@ export default function MenuScreen() {
     price: product.salePriceIncTax,
     category: product.category,
     quantity: 1,
-    productType: product.productType || 'standard',
-    roomStatus: product.roomStatus || ROOM_STATUSES.AVAILABLE,
-    currentBooking: product.currentBooking || null,
     ...overrides,
   }), []);
 
   const handleProductSelect = useCallback((product) => {
-    if (isRoomProduct(product)) {
-      if (isRoomUnavailable(product)) {
-        setError(`${product.name || 'Room'} is ${getRoomStatusLabel(product.roomStatus).toLowerCase()} and cannot be booked.`);
-        return;
-      }
-      setError(null);
-      setRoomToBook(product);
-      return;
-    }
-
     addItem(buildCartPayload(product));
   }, [addItem, buildCartPayload]);
-
-  const handleRoomBookingConfirm = useCallback((reservationDetails) => {
-    if (!roomToBook) return;
-
-    addItem(buildCartPayload(roomToBook, {
-      productType: 'room',
-      roomStatus: ROOM_STATUSES.RESERVED,
-      reservationDetails,
-    }));
-    setError(null);
-    setRoomToBook(null);
-  }, [addItem, buildCartPayload, roomToBook]);
 
   const filterProductsForLocation = useCallback((productList = []) => {
     if (!Array.isArray(productList)) return [];
@@ -1100,16 +1066,12 @@ export default function MenuScreen() {
                     const productKey = product._id || product.id;
                     const productImage = getProductImageUrl(product);
                     const showProductImage = isOnline && productImage && !failedImages.has(productKey);
-                    const roomProduct = isRoomProduct(product);
-                    const roomUnavailable = isRoomUnavailable(product);
-                    const roomStatusLabel = getRoomStatusLabel(product.roomStatus);
 
                     return (
                     <button
                       key={productKey}
                       onClick={() => handleProductSelect(product)}
-                      disabled={roomUnavailable}
-                      className={`relative bg-white rounded-lg border-2 border-green-200 hover:border-green-400 hover:shadow-lg transition-all shadow-sm touch-manipulation overflow-hidden active:scale-[0.98] ${roomUnavailable ? 'opacity-70 cursor-not-allowed' : ''}`}
+                      className="relative bg-white rounded-lg border-2 border-green-200 hover:border-green-400 hover:shadow-lg transition-all shadow-sm touch-manipulation overflow-hidden active:scale-[0.98]"
                     >
                       {/* Top Row: Image + Details Side by Side */}
                       <div className="flex h-14 sm:h-16">
@@ -1156,11 +1118,7 @@ export default function MenuScreen() {
                           </div>
                           <div className="flex items-center justify-between mt-1">
                             {/* Stock Badge */}
-                            {roomProduct ? (
-                              <span className={`px-1.5 py-0.5 rounded text-[10px] sm:text-xs font-bold ${roomUnavailable ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>
-                                {roomStatusLabel}
-                              </span>
-                            ) : product.quantity !== undefined && (
+                            {product.quantity !== undefined && (
                               <span className={`px-1.5 py-0.5 rounded text-[10px] sm:text-xs font-bold ${
                                 product.quantity <= 0 ? 'bg-red-100 text-red-700' :
                                 product.quantity <= 5 ? 'bg-yellow-100 text-yellow-700' :
@@ -1223,16 +1181,12 @@ export default function MenuScreen() {
                   const productKey = product._id || product.id;
                   const productImage = getProductImageUrl(product);
                   const showProductImage = isOnline && productImage && !failedImages.has(productKey);
-                  const roomProduct = isRoomProduct(product);
-                  const roomUnavailable = isRoomUnavailable(product);
-                  const roomStatusLabel = getRoomStatusLabel(product.roomStatus);
 
                   return (
                   <button
                     key={productKey}
                     onClick={() => handleProductSelect(product)}
-                    disabled={roomUnavailable}
-                    className={`relative bg-white rounded border border-gray-200 hover:border-cyan-400 hover:shadow-md transition-all shadow-sm touch-manipulation overflow-hidden active:scale-[0.98] w-full ${roomUnavailable ? 'opacity-70 cursor-not-allowed' : ''}`}
+                    className="relative bg-white rounded border border-gray-200 hover:border-cyan-400 hover:shadow-md transition-all shadow-sm touch-manipulation overflow-hidden active:scale-[0.98] w-full"
                   >
                     {/* Top Row: Image + Details Side by Side */}
                     <div className="flex h-14 sm:h-16">
@@ -1274,11 +1228,7 @@ export default function MenuScreen() {
                         </div>
                         <div className="flex items-center justify-end mt-0.5">
                           {/* Stock Badge - Right Aligned */}
-                          {roomProduct ? (
-                            <span className={`px-1 py-0.5 rounded text-[10px] sm:text-xs font-bold ${roomUnavailable ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>
-                              {roomStatusLabel}
-                            </span>
-                          ) : product.quantity !== undefined && (
+                          {product.quantity !== undefined && (
                             <span className={`px-1 py-0.5 rounded text-[10px] sm:text-xs font-bold ${
                               product.quantity <= 0 ? 'bg-red-100 text-red-700' :
                               product.quantity <= 5 ? 'bg-yellow-100 text-yellow-700' :
@@ -1335,12 +1285,6 @@ export default function MenuScreen() {
         }}
         onClose={() => setShowSearchKeyboard(false)}
         onSubmit={handleSearchClick}
-      />
-      <RoomReservationModal
-        product={roomToBook}
-        initialReservation={roomToBook ? getRoomReservationDetails(roomToBook) : null}
-        onClose={() => setRoomToBook(null)}
-        onConfirm={handleRoomBookingConfirm}
       />
     </div>
   );
