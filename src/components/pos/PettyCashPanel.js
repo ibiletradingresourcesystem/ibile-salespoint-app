@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faTimes, faCoins, faPlus, faCheck } from "@fortawesome/free-solid-svg-icons";
 
@@ -117,8 +118,8 @@ function PettyCashPanel({ isOpen, onClose, staffName, location }) {
 
   if (!isOpen) return null;
 
-  return (
-    <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+  const modalContent = (
+    <div className="fixed inset-0 z-[9999] bg-black/50 flex items-center justify-center p-4">
       <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[85vh] flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
@@ -307,6 +308,9 @@ function PettyCashPanel({ isOpen, onClose, staffName, location }) {
       </div>
     </div>
   );
+
+  if (typeof document === "undefined") return modalContent;
+  return createPortal(modalContent, document.body);
 }
 
 export default PettyCashPanel;
