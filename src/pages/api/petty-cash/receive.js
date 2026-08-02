@@ -2,7 +2,8 @@
  * API Endpoint: PUT /api/petty-cash/receive
  * 
  * Mark a petty cash order as received from POS
- * Updates the transaction status and creates expense entry
+ * Updates product stock quantities (like a Restock stock movement)
+ * Creates expense entry
  */
 import { mongooseConnect } from "@/src/lib/mongoose";
 import mongoose from "mongoose";
@@ -12,6 +13,9 @@ const PettyCashTransaction = mongoose.models.PettyCashTransaction || mongoose.mo
 
 const ExpenseSchema = new mongoose.Schema({}, { strict: false, collection: "expenses" });
 const Expense = mongoose.models.Expense || mongoose.model("Expense", ExpenseSchema);
+
+const ProductSchema = new mongoose.Schema({}, { strict: false, collection: "products" });
+const Product = mongoose.models.Product || mongoose.model("Product", ProductSchema);
 
 export default async function handler(req, res) {
   if (req.method !== "PUT") {
@@ -36,6 +40,23 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "Order already marked as paid" });
     }
 
+    // Update product stock quantities (like a Restock movement)
+    const productEntries = Array.isArray(transaction.products) ? transaction.products : [];
+    if (productEntries.length > 0) {
+      const bulkOps = productEntries
+        .filter((p) => p.productId && p.quantity > 0)
+        .map((p) => ({
+          updateOne: {
+            filter: { _id: new mongoose.Types.ObjectId(p.productId) },
+            update: { $inc: { quantity: p.quantity } },
+          },
+        }));
+
+      if (bulkOps.length > 0) {
+        await Product.bulkWrite(bulkOps);
+      }
+    }
+
     // Mark as received and paid
     transaction.status = "Paid";
     transaction.paidAt = new Date();
@@ -50,7 +71,7 @@ export default async function handler(req, res) {
       action: "received-from-pos",
       fromStatus: transaction.status,
       toStatus: "Paid",
-      note: "Received and paid via POS",
+      note: `Received and paid via POS. ${productEntries.length} product(s) restocked.`,
       actedAt: new Date(),
       actedBy: { name: staffName || "POS Staff" },
       amount: transaction.amount,

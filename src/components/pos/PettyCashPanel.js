@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faTimes, faCoins, faPlus, faCheck } from "@fortawesome/free-solid-svg-icons";
+import { faTimes, faCoins, faPlus, faCheck, faPen, faTrash } from "@fortawesome/free-solid-svg-icons";
 
 function PettyCashPanel({ isOpen, onClose, staffName, location }) {
   const [tab, setTab] = useState("orders");
@@ -11,10 +11,11 @@ function PettyCashPanel({ isOpen, onClose, staffName, location }) {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState(null);
 
-  // New vendor order form
+  // New/Edit vendor order form
   const [selectedVendor, setSelectedVendor] = useState("");
   const [description, setDescription] = useState("");
-  const [amount, setAmount] = useState("");
+  const [productEntries, setProductEntries] = useState([]);
+  const [editingOrderId, setEditingOrderId] = useState(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -45,12 +46,57 @@ function PettyCashPanel({ isOpen, onClose, staffName, location }) {
   const resetForm = () => {
     setSelectedVendor("");
     setDescription("");
-    setAmount("");
+    setProductEntries([]);
+    setEditingOrderId(null);
   };
+
+  // When vendor changes, load their products into entries
+  const handleVendorChange = (vendorId) => {
+    setSelectedVendor(vendorId);
+    if (!vendorId) {
+      setProductEntries([]);
+      return;
+    }
+    const vendor = vendors.find((v) => String(v._id) === vendorId);
+    if (vendor && Array.isArray(vendor.products) && vendor.products.length > 0) {
+      setProductEntries(
+        vendor.products.map((p) => ({
+          productId: p.productId || String(p.product),
+          productName: p.productName || "",
+          costPrice: p.costPrice || p.price || 0,
+          quantity: 0,
+        }))
+      );
+    } else {
+      setProductEntries([]);
+    }
+  };
+
+  const updateEntryQty = (index, qty) => {
+    setProductEntries((prev) =>
+      prev.map((e, i) => (i === index ? { ...e, quantity: Math.max(0, Number(qty) || 0) } : e))
+    );
+  };
+
+  const removeEntry = (index) => {
+    setProductEntries((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const addCustomEntry = () => {
+    setProductEntries((prev) => [...prev, { productId: "", productName: "", costPrice: 0, quantity: 1 }]);
+  };
+
+  const totalAmount = productEntries.reduce((sum, e) => sum + (e.costPrice || 0) * (e.quantity || 0), 0);
 
   const handleSubmitOrder = async (e) => {
     e.preventDefault();
-    if (!selectedVendor || !amount) return;
+    if (!selectedVendor) return;
+
+    const validEntries = productEntries.filter((p) => p.productId && p.quantity > 0);
+    if (validEntries.length === 0) {
+      setMessage({ type: "error", text: "Add at least one product with quantity" });
+      return;
+    }
 
     const vendor = vendors.find((v) => String(v._id) === selectedVendor);
     if (!vendor) return;
@@ -66,7 +112,7 @@ function PettyCashPanel({ isOpen, onClose, staffName, location }) {
           vendorName: vendor.companyName || "",
           purpose: vendor.companyName || "Petty Cash Order",
           description: description.trim(),
-          amount: Number(amount),
+          products: validEntries,
           location,
           staffName,
         }),
@@ -77,7 +123,76 @@ function PettyCashPanel({ isOpen, onClose, staffName, location }) {
         throw new Error(data.error || "Failed to create vendor order");
       }
 
-      setMessage({ type: "success", text: `Vendor order created — ₦${Number(amount).toLocaleString()}` });
+      setMessage({ type: "success", text: `Vendor order created — ₦${totalAmount.toLocaleString()}` });
+      resetForm();
+      setTab("orders");
+      fetchData();
+    } catch (err) {
+      setMessage({ type: "error", text: err.message });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleEditOrder = (order) => {
+    setEditingOrderId(order._id);
+    setSelectedVendor(String(order.vendor || ""));
+    setDescription(order.description || "");
+    // Load existing product entries
+    if (Array.isArray(order.products) && order.products.length > 0) {
+      setProductEntries(order.products.map((p) => ({
+        productId: p.productId || "",
+        productName: p.productName || "",
+        costPrice: p.costPrice || 0,
+        quantity: p.quantity || 0,
+      })));
+    } else {
+      // Fall back to vendor products
+      const vendor = vendors.find((v) => String(v._id) === String(order.vendor));
+      if (vendor && Array.isArray(vendor.products)) {
+        setProductEntries(vendor.products.map((p) => ({
+          productId: p.productId || String(p.product),
+          productName: p.productName || "",
+          costPrice: p.costPrice || p.price || 0,
+          quantity: 0,
+        })));
+      } else {
+        setProductEntries([]);
+      }
+    }
+    setTab("new");
+  };
+
+  const handleSaveEdit = async (e) => {
+    e.preventDefault();
+    if (!editingOrderId) return;
+
+    const validEntries = productEntries.filter((p) => p.productId && p.quantity > 0);
+    if (validEntries.length === 0) {
+      setMessage({ type: "error", text: "Add at least one product with quantity" });
+      return;
+    }
+
+    setSaving(true);
+    setMessage(null);
+    try {
+      const res = await fetch("/api/petty-cash/orders", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          orderId: editingOrderId,
+          products: validEntries,
+          description: description.trim(),
+          staffName,
+        }),
+      });
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || "Failed to update order");
+      }
+
+      setMessage({ type: "success", text: "Order updated successfully" });
       resetForm();
       setTab("orders");
       fetchData();
@@ -103,7 +218,7 @@ function PettyCashPanel({ isOpen, onClose, staffName, location }) {
         throw new Error(data.error || "Failed to mark as received");
       }
 
-      setMessage({ type: "success", text: "Order marked as paid" });
+      setMessage({ type: "success", text: "Order received — stock updated" });
       fetchData();
     } catch (err) {
       setMessage({ type: "error", text: err.message });
@@ -133,7 +248,7 @@ function PettyCashPanel({ isOpen, onClose, staffName, location }) {
         {/* Tabs */}
         <div className="flex border-b border-gray-200">
           <button
-            onClick={() => setTab("orders")}
+            onClick={() => { setTab("orders"); resetForm(); }}
             className={`flex-1 py-2.5 text-sm font-semibold transition-colors ${
               tab === "orders" ? "border-b-2 border-blue-600 text-blue-600" : "text-gray-500 hover:text-gray-700"
             }`}
@@ -147,7 +262,7 @@ function PettyCashPanel({ isOpen, onClose, staffName, location }) {
             }`}
           >
             <FontAwesomeIcon icon={faPlus} className="mr-1" />
-            New Vendor Order
+            {editingOrderId ? "Edit Order" : "New Vendor Order"}
           </button>
         </div>
 
@@ -178,6 +293,15 @@ function PettyCashPanel({ isOpen, onClose, staffName, location }) {
                         <p className="font-semibold text-gray-900 truncate">
                           {order.vendorName || "Vendor"}
                         </p>
+                        {Array.isArray(order.products) && order.products.length > 0 && (
+                          <div className="mt-1 space-y-0.5">
+                            {order.products.map((p, i) => (
+                              <p key={i} className="text-[11px] text-gray-600">
+                                {p.productName} × {p.quantity}
+                              </p>
+                            ))}
+                          </div>
+                        )}
                         {order.description && (
                           <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">{order.description}</p>
                         )}
@@ -193,31 +317,44 @@ function PettyCashPanel({ isOpen, onClose, staffName, location }) {
                           {order.location && <span className="text-[10px] text-gray-400">{order.location}</span>}
                         </div>
                       </div>
-                      {(order.status === "Ordered" || order.status === "Approved") && (
-                        <button
-                          onClick={() => handleReceive(order._id)}
-                          disabled={saving}
-                          className="shrink-0 px-3 py-1.5 bg-green-600 hover:bg-green-700 disabled:bg-gray-300 text-white text-xs font-semibold rounded-lg flex items-center gap-1"
-                        >
-                          <FontAwesomeIcon icon={faCheck} className="w-3 h-3" />
-                          Receive
-                        </button>
-                      )}
+                      <div className="flex flex-col gap-1.5 shrink-0">
+                        {(order.status === "Ordered" || order.status === "Approved") && (
+                          <>
+                            <button
+                              onClick={() => handleEditOrder(order)}
+                              disabled={saving}
+                              className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 text-white text-xs font-semibold rounded-lg flex items-center gap-1"
+                            >
+                              <FontAwesomeIcon icon={faPen} className="w-3 h-3" />
+                              Edit
+                            </button>
+                            <button
+                              onClick={() => handleReceive(order._id)}
+                              disabled={saving}
+                              className="px-3 py-1.5 bg-green-600 hover:bg-green-700 disabled:bg-gray-300 text-white text-xs font-semibold rounded-lg flex items-center gap-1"
+                            >
+                              <FontAwesomeIcon icon={faCheck} className="w-3 h-3" />
+                              Receive
+                            </button>
+                          </>
+                        )}
+                      </div>
                     </div>
                   </div>
                 ))}
               </div>
             )
           ) : (
-            /* New Vendor Order Form */
-            <form onSubmit={handleSubmitOrder} className="space-y-4">
+            /* New/Edit Vendor Order Form */
+            <form onSubmit={editingOrderId ? handleSaveEdit : handleSubmitOrder} className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Vendor *</label>
                 <select
                   value={selectedVendor}
-                  onChange={(e) => setSelectedVendor(e.target.value)}
+                  onChange={(e) => handleVendorChange(e.target.value)}
                   required
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                  disabled={!!editingOrderId}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm disabled:bg-gray-100"
                 >
                   <option value="">Select a petty cash vendor</option>
                   {vendors.map((v) => (
@@ -226,19 +363,52 @@ function PettyCashPanel({ isOpen, onClose, staffName, location }) {
                 </select>
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Amount (₦) *</label>
-                <input
-                  type="number"
-                  placeholder="0"
-                  value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
-                  min="1"
-                  step="1"
-                  required
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                />
-              </div>
+              {/* Product Entries */}
+              {productEntries.length > 0 && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Products *</label>
+                  <div className="space-y-2 max-h-48 overflow-y-auto">
+                    {productEntries.map((entry, idx) => (
+                      <div key={idx} className="flex items-center gap-2 bg-gray-50 rounded-lg px-3 py-2">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-medium text-gray-800 truncate">{entry.productName || "Product"}</p>
+                          <p className="text-[10px] text-gray-500">₦{(entry.costPrice || 0).toLocaleString()} each</p>
+                        </div>
+                        <input
+                          type="number"
+                          min="0"
+                          value={entry.quantity}
+                          onChange={(e) => updateEntryQty(idx, e.target.value)}
+                          className="w-16 border border-gray-300 rounded px-2 py-1 text-sm text-center"
+                          placeholder="Qty"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => removeEntry(idx)}
+                          className="p-1 text-red-400 hover:text-red-600"
+                        >
+                          <FontAwesomeIcon icon={faTrash} className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {selectedVendor && productEntries.length === 0 && (
+                <div className="text-center py-4 text-gray-400 text-sm">
+                  This vendor has no products configured.
+                  <br />
+                  <span className="text-xs">Add products to this vendor from the Inventory system.</span>
+                </div>
+              )}
+
+              {/* Total */}
+              {totalAmount > 0 && (
+                <div className="bg-blue-50 rounded-lg px-3 py-2 text-sm font-bold text-blue-800">
+                  Total: ₦{totalAmount.toLocaleString()}
+                </div>
+              )}
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Notes / Description</label>
@@ -246,7 +416,7 @@ function PettyCashPanel({ isOpen, onClose, staffName, location }) {
                   placeholder="Any additional notes..."
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
-                  rows={3}
+                  rows={2}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm resize-none"
                 />
               </div>
@@ -274,11 +444,21 @@ function PettyCashPanel({ isOpen, onClose, staffName, location }) {
 
               <button
                 type="submit"
-                disabled={saving || !selectedVendor || !amount}
+                disabled={saving || !selectedVendor || totalAmount <= 0}
                 className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 text-white font-semibold rounded-lg text-sm transition-colors"
               >
-                {saving ? "Submitting..." : `Submit Order${amount ? ` (₦${Number(amount).toLocaleString()})` : ""}`}
+                {saving ? "Saving..." : editingOrderId ? `Update Order (₦${totalAmount.toLocaleString()})` : `Submit Order (₦${totalAmount.toLocaleString()})`}
               </button>
+
+              {editingOrderId && (
+                <button
+                  type="button"
+                  onClick={() => { resetForm(); setTab("orders"); }}
+                  className="w-full py-2 text-gray-600 hover:text-gray-800 text-sm font-medium"
+                >
+                  Cancel Edit
+                </button>
+              )}
             </form>
           )}
         </div>
