@@ -218,8 +218,9 @@ function PettyCashPanel({ isOpen, onClose, staffName, location }) {
         throw new Error(data.error || "Failed to mark as received");
       }
 
-      setMessage({ type: "success", text: "Order received — stock updated" });
-      fetchData();
+      // Immediately remove from local list and show success
+      setOrders((prev) => prev.filter((o) => o._id !== orderId));
+      setMessage({ type: "success", text: "✓ Order received — stock updated & marked as paid" });
     } catch (err) {
       setMessage({ type: "error", text: err.message });
     } finally {
