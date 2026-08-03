@@ -123,6 +123,7 @@ export default async function handler(req, res) {
         });
         transaction.approvalHistory = history;
 
+        // CRITICAL: Actually save the transaction to database
         await transaction.save();
 
         return res.status(200).json({
@@ -141,6 +142,7 @@ export default async function handler(req, res) {
         ? productEntries.reduce((sum, p) => sum + (p.costPrice || 0) * p.quantity, 0)
         : transaction.amount;
 
+      // Update transaction fields
       transaction.products = productEntries;
       transaction.amount = totalAmount;
       transaction.unitPrice = totalAmount;
@@ -159,9 +161,10 @@ export default async function handler(req, res) {
       });
       transaction.approvalHistory = history;
 
+      // CRITICAL: Actually save the transaction to database
       await transaction.save();
 
-      return res.status(200).json({ success: true, transaction: { _id: transaction._id, amount: totalAmount, products: productEntries } });
+      return res.status(200).json({ success: true, transaction: { _id: transaction._id, amount: totalAmount, products: productEntries, status: transaction.status } });
     } catch (err) {
       return res.status(500).json({ error: err.message });
     }

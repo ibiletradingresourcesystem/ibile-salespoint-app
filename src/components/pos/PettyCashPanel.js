@@ -315,8 +315,7 @@ function PettyCashPanel({ isOpen, onClose, staffName, location }) {
               tab === "new" ? "border-b-2 border-blue-600 text-blue-600" : "text-gray-500 hover:text-gray-700"
             }`}
           >
-            <FontAwesomeIcon icon={faPlus} className="mr-1" />
-            {editingOrderId ? "Edit Order" : "New Vendor Order"}
+            New Vendor Order
           </button>
         </div>
 
@@ -443,7 +442,7 @@ function PettyCashPanel({ isOpen, onClose, staffName, location }) {
                         <input
                           type="number"
                           min="0"
-                          step="0.01"
+                          step="1"
                           value={entry.quantity}
                           onChange={(e) => updateEntryQty(idx, e.target.value)}
                           className="w-20 border border-gray-300 rounded px-2 py-1 text-sm text-center font-semibold"
