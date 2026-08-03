@@ -35,14 +35,6 @@ import { getLocalCategories, getLocalProductsByCategory, syncCategories, syncPro
 import { initOfflineSync, getOnlineStatus, getImageUrl, shouldShowPlaceholder, syncPendingTransactions, syncPendingTillCloses } from '../../lib/offlineSync';
 import { cleanupOldTransactions } from '../../lib/indexedDBCleanup';
 import AlphaKeyboardModal from '../common/AlphaKeyboardModal';
-import RoomReservationModal from './RoomReservationModal';
-import {
-  ROOM_STATUSES,
-  getRoomReservationDetails,
-  getRoomStatusLabel,
-  isRoomProduct,
-  isRoomUnavailable,
-} from '../../lib/roomReservations';
 
 // Color mapping for categories
 const CATEGORY_COLORS = {
@@ -1336,12 +1328,6 @@ export default function MenuScreen() {
         }}
         onClose={() => setShowSearchKeyboard(false)}
         onSubmit={handleSearchClick}
-      />
-      <RoomReservationModal
-        product={roomToBook}
-        initialReservation={roomToBook ? getRoomReservationDetails(roomToBook) : null}
-        onClose={() => setRoomToBook(null)}
-        onConfirm={handleRoomBookingConfirm}
       />
     </div>
   );
