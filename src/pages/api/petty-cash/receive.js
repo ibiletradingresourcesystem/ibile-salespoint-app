@@ -40,45 +40,57 @@ export default async function handler(req, res) {
 
     const previousStatus = transaction.status;
 
-    // Use incoming products from request if provided, otherwise use transaction products
+    // Update product stock quantities
     const productEntries = incomingProducts && Array.isArray(incomingProducts) ? incomingProducts : (Array.isArray(transaction.products) ? transaction.products : []);
     const receivedProducts = [];
 
     for (const entry of productEntries) {
       if (!entry.productId || !entry.quantity || entry.quantity <= 0) continue;
 
-      // Check if product exists
-      let product = await Product.findById(entry.productId);
+      try {
+        // Check if product exists
+        let product = await Product.findById(entry.productId);
 
-      if (!product) {
-        // Create the product if it doesn't exist (petty-cash vendor product)
-        product = await Product.create({
-          name: entry.productName || "Unnamed Product",
-          description: `Auto-created from petty cash vendor order`,
-          costPrice: entry.costPrice || 0,
-          taxRate: 0,
-          salePriceIncTax: entry.costPrice || 0,
+        if (!product) {
+          // Create the product if it doesn't exist (petty-cash vendor product)
+          product = await Product.create({
+            name: entry.productName || "Unnamed Product",
+            description: `Auto-created from petty cash vendor order`,
+            costPrice: entry.costPrice || 0,
+            taxRate: 0,
+            salePriceIncTax: entry.costPrice || 0,
+            quantity: entry.quantity,
+            isStockManaged: true,
+            category: "Top Level",
+            locations: transaction.location ? [transaction.location] : [],
+          });
+          // Update entry with new product ID
+          entry.productId = String(product._id);
+        } else {
+          // Increment existing product quantity
+          await Product.updateOne(
+            { _id: product._id },
+            { $inc: { quantity: entry.quantity } }
+          );
+        }
+
+        receivedProducts.push({
+          productId: String(product._id),
+          productName: product.name || entry.productName,
           quantity: entry.quantity,
-          isStockManaged: true,
-          category: "Top Level",
-          locations: transaction.location ? [transaction.location] : [],
+          costPrice: entry.costPrice || product.costPrice || 0,
         });
-        // Update entry with new product ID
-        entry.productId = String(product._id);
-      } else {
-        // Increment existing product quantity
-        await Product.updateOne(
-          { _id: product._id },
-          { $inc: { quantity: entry.quantity } }
-        );
+      } catch (productErr) {
+        // Log product error but continue processing other products
+        console.error(`Failed to update product ${entry.productId}:`, productErr.message);
+        // Still add to received products so we don't lose the record
+        receivedProducts.push({
+          productId: entry.productId || "",
+          productName: entry.productName,
+          quantity: entry.quantity,
+          costPrice: entry.costPrice || 0,
+        });
       }
-
-      receivedProducts.push({
-        productId: String(product._id),
-        productName: product.name || entry.productName,
-        quantity: entry.quantity,
-        costPrice: entry.costPrice || product.costPrice || 0,
-      });
     }
 
     // Mark as received (not yet paid)

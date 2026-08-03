@@ -603,7 +603,7 @@ export async function getPendingTransactionsCount() {
         .objectStore('transactions');
 
       const index = txStore.index('synced');
-      const countRequest = index.count(false);
+      const countRequest = index.count(new IDBKeyRange.only(false));
 
       countRequest.onsuccess = () => {
         resolve(countRequest.result);

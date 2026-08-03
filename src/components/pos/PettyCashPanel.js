@@ -189,6 +189,7 @@ function PettyCashPanel({ isOpen, onClose, staffName, location }) {
             quantity: Number(e.quantity) || 0,
           })),
           description: description.trim(),
+          action: "update-details",
           staffName,
           location,
         }),
