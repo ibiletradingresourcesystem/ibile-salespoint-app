@@ -7,15 +7,13 @@
  */
 import { mongooseConnect } from "@/src/lib/mongoose";
 import mongoose from "mongoose";
+import Product from "@/src/models/Product";
 
 const PettyCashTransactionSchema = new mongoose.Schema({}, { strict: false, collection: "pettycashtransactions" });
 const PettyCashTransaction = mongoose.models.PettyCashTransaction || mongoose.model("PettyCashTransaction", PettyCashTransactionSchema);
 
 const ExpenseSchema = new mongoose.Schema({}, { strict: false, collection: "expenses" });
 const Expense = mongoose.models.Expense || mongoose.model("Expense", ExpenseSchema);
-
-const ProductSchema = new mongoose.Schema({}, { strict: false, collection: "products" });
-const Product = mongoose.models.Product || mongoose.model("Product", ProductSchema);
 
 export default async function handler(req, res) {
   if (req.method !== "PUT") {

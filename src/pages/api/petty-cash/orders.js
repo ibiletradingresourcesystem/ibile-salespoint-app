@@ -25,7 +25,7 @@ export default async function handler(req, res) {
       if (status) {
         filter.status = status;
       } else {
-        filter.status = { $in: ["Ordered", "Approved"] };
+        filter.status = { $in: ["Ordered", "Pending Approval", "Approved"] };
       }
 
       const orders = await PettyCashTransaction.find(filter)

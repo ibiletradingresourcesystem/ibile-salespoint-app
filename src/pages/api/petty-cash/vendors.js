@@ -9,8 +9,7 @@ import mongoose from "mongoose";
 const VendorSchema = new mongoose.Schema({}, { strict: false, collection: "vendors" });
 const Vendor = mongoose.models.Vendor || mongoose.model("Vendor", VendorSchema);
 
-const ProductSchema = new mongoose.Schema({}, { strict: false, collection: "products" });
-const Product = mongoose.models.Product || mongoose.model("Product", ProductSchema);
+import Product from "@/src/models/Product";
 
 export default async function handler(req, res) {
   if (req.method !== "GET") {
