@@ -107,12 +107,7 @@ export default async function handler(req, res) {
           return res.status(400).json({ error: "Only received orders can be marked as paid" });
         }
 
-        transaction.status = "Paid";
-        transaction.paidAt = new Date();
-        transaction.paidBy = { name: staffName || "POS Staff" };
-
-        const history = transaction.approvalHistory || [];
-        history.push({
+        const paidHistoryEntry = {
           action: "marked-paid",
           fromStatus: "Received",
           toStatus: "Paid",
@@ -120,11 +115,16 @@ export default async function handler(req, res) {
           actedAt: new Date(),
           actedBy: { name: staffName || "POS Staff" },
           amount: transaction.amount,
-        });
-        transaction.approvalHistory = history;
+        };
 
-        // CRITICAL: Actually save the transaction to database
-        await transaction.save();
+        await PettyCashTransaction.findByIdAndUpdate(orderId, {
+          $set: {
+            status: "Paid",
+            paidAt: new Date(),
+            paidBy: { name: staffName || "POS Staff" },
+          },
+          $push: { approvalHistory: paidHistoryEntry },
+        });
 
         return res.status(200).json({
           success: true,
@@ -142,15 +142,7 @@ export default async function handler(req, res) {
         ? productEntries.reduce((sum, p) => sum + (p.costPrice || 0) * p.quantity, 0)
         : transaction.amount;
 
-      // Update transaction fields
-      transaction.products = productEntries;
-      transaction.amount = totalAmount;
-      transaction.unitPrice = totalAmount;
-      transaction.quantity = productEntries.length || 1;
-      if (description !== undefined) transaction.description = description;
-
-      const history = transaction.approvalHistory || [];
-      history.push({
+      const editHistoryEntry = {
         action: "edited",
         fromStatus: transaction.status,
         toStatus: transaction.status,
@@ -158,11 +150,20 @@ export default async function handler(req, res) {
         actedAt: new Date(),
         actedBy: { name: staffName || "POS Staff" },
         amount: totalAmount,
-      });
-      transaction.approvalHistory = history;
+      };
 
-      // CRITICAL: Actually save the transaction to database
-      await transaction.save();
+      const updateFields = {
+        products: productEntries,
+        amount: totalAmount,
+        unitPrice: totalAmount,
+        quantity: productEntries.length || 1,
+      };
+      if (description !== undefined) updateFields.description = description;
+
+      await PettyCashTransaction.findByIdAndUpdate(orderId, {
+        $set: updateFields,
+        $push: { approvalHistory: editHistoryEntry },
+      });
 
       return res.status(200).json({ success: true, transaction: { _id: transaction._id, amount: totalAmount, products: productEntries, status: transaction.status } });
     } catch (err) {

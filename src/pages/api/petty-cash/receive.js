@@ -93,17 +93,17 @@ export default async function handler(req, res) {
       }
     }
 
-    // Mark as received (not yet paid)
-    transaction.status = "Received";
-    transaction.receivedAt = new Date();
-    transaction.receivedBy = { name: staffName || "POS Staff" };
+    // Build the update using findByIdAndUpdate (strict:false schema doesn't track changes for save())
+    const receiveUpdate = {
+      status: "Received",
+      receivedAt: new Date(),
+      receivedBy: { name: staffName || "POS Staff" },
+    };
     if (receivedProducts.length > 0) {
-      transaction.products = receivedProducts;
+      receiveUpdate.products = receivedProducts;
     }
 
-    // Add to approval history
-    const history = transaction.approvalHistory || [];
-    history.push({
+    const receiveHistoryEntry = {
       action: "received-from-pos",
       fromStatus: previousStatus,
       toStatus: "Received",
@@ -112,10 +112,12 @@ export default async function handler(req, res) {
       actedBy: { name: staffName || "POS Staff" },
       amount: transaction.amount,
       paymentMethod: paymentMethod || "cash",
-    });
-    transaction.approvalHistory = history;
+    };
 
-    await transaction.save();
+    await PettyCashTransaction.findByIdAndUpdate(orderId, {
+      $set: receiveUpdate,
+      $push: { approvalHistory: receiveHistoryEntry },
+    });
 
     // Do NOT create expense here - only create when marked as Paid
     // Expense will be created when user clicks "Mark Paid"
