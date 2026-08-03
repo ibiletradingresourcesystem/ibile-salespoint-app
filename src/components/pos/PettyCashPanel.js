@@ -218,9 +218,37 @@ function PettyCashPanel({ isOpen, onClose, staffName, location }) {
         throw new Error(data.error || "Failed to mark as received");
       }
 
-      // Immediately remove from local list and show success
-      setOrders((prev) => prev.filter((o) => o._id !== orderId));
-      setMessage({ type: "success", text: "✓ Order received — stock updated & marked as paid" });
+      // Keep order in list with Received status
+      setMessage({ type: "success", text: "✓ Items received — stock updated. Now mark as paid when payment is made." });
+      fetchData();
+    } catch (err) {
+      setMessage({ type: "error", text: err.message });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleMarkPaid = async (orderId) => {
+    setSaving(true);
+    setMessage(null);
+    try {
+      const res = await fetch("/api/petty-cash/orders", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          orderId,
+          action: "mark-paid",
+          staffName,
+        }),
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to mark as paid");
+      }
+
+      setMessage({ type: "success", text: "✓ Order marked as paid" });
+      fetchData();
     } catch (err) {
       setMessage({ type: "error", text: err.message });
     } finally {
@@ -312,6 +340,8 @@ function PettyCashPanel({ isOpen, onClose, staffName, location }) {
                         <div className="flex items-center gap-2 mt-1">
                           <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
                             order.status === "Approved" ? "bg-green-100 text-green-700" :
+                            order.status === "Received" ? "bg-cyan-100 text-cyan-700" :
+                            order.status === "Paid" ? "bg-emerald-100 text-emerald-700" :
                             order.status === "Ordered" ? "bg-blue-100 text-blue-700" :
                             "bg-gray-100 text-gray-600"
                           }`}>{order.status}</span>
@@ -338,6 +368,16 @@ function PettyCashPanel({ isOpen, onClose, staffName, location }) {
                               Receive
                             </button>
                           </>
+                        )}
+                        {order.status === "Received" && (
+                          <button
+                            onClick={() => handleMarkPaid(order._id)}
+                            disabled={saving}
+                            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-300 text-white text-xs font-semibold rounded-lg flex items-center gap-1"
+                          >
+                            <FontAwesomeIcon icon={faCheck} className="w-3 h-3" />
+                            Mark Paid
+                          </button>
                         )}
                       </div>
                     </div>

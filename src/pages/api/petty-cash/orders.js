@@ -25,7 +25,8 @@ export default async function handler(req, res) {
       if (status) {
         filter.status = status;
       } else {
-        filter.status = { $in: ["Ordered", "Pending Approval", "Approved"] };
+        // Include Received status so users can mark payment after items are received
+        filter.status = { $in: ["Ordered", "Pending Approval", "Approved", "Received"] };
       }
 
       const orders = await PettyCashTransaction.find(filter)
@@ -89,7 +90,7 @@ export default async function handler(req, res) {
 
   if (req.method === "PUT") {
     try {
-      const { orderId, products, description, staffName } = req.body;
+      const { orderId, products, description, action, staffName } = req.body;
 
       if (!orderId) {
         return res.status(400).json({ error: "Order ID is required" });
@@ -100,6 +101,37 @@ export default async function handler(req, res) {
         return res.status(404).json({ error: "Order not found" });
       }
 
+      // Handle mark-paid action
+      if (action === "mark-paid") {
+        if (transaction.status !== "Received") {
+          return res.status(400).json({ error: "Only received orders can be marked as paid" });
+        }
+
+        transaction.status = "Paid";
+        transaction.paidAt = new Date();
+        transaction.paidBy = { name: staffName || "POS Staff" };
+
+        const history = transaction.approvalHistory || [];
+        history.push({
+          action: "marked-paid",
+          fromStatus: "Received",
+          toStatus: "Paid",
+          note: "Payment completed for received items",
+          actedAt: new Date(),
+          actedBy: { name: staffName || "POS Staff" },
+          amount: transaction.amount,
+        });
+        transaction.approvalHistory = history;
+
+        await transaction.save();
+
+        return res.status(200).json({
+          success: true,
+          transaction: { _id: transaction._id, status: "Paid" },
+        });
+      }
+
+      // Handle update-details (edit order)
       if (transaction.status !== "Ordered" && transaction.status !== "Approved") {
         return res.status(400).json({ error: "Only active orders can be edited" });
       }

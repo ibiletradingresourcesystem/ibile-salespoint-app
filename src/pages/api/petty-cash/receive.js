@@ -34,8 +34,8 @@ export default async function handler(req, res) {
       return res.status(404).json({ error: "Order not found" });
     }
 
-    if (transaction.status === "Paid") {
-      return res.status(400).json({ error: "Order already marked as paid" });
+    if (transaction.status === "Paid" || transaction.status === "Received") {
+      return res.status(400).json({ error: "Order already received" });
     }
 
     const previousStatus = transaction.status;
@@ -81,11 +81,8 @@ export default async function handler(req, res) {
       });
     }
 
-    // Mark as received and paid
-    transaction.status = "Paid";
-    transaction.paidAt = new Date();
-    transaction.paidBy = { name: staffName || "POS Staff" };
-    transaction.paymentMethod = paymentMethod || "cash";
+    // Mark as received (not yet paid)
+    transaction.status = "Received";
     transaction.receivedAt = new Date();
     transaction.receivedBy = { name: staffName || "POS Staff" };
     if (receivedProducts.length > 0) {
@@ -97,7 +94,7 @@ export default async function handler(req, res) {
     history.push({
       action: "received-from-pos",
       fromStatus: previousStatus,
-      toStatus: "Paid",
+      toStatus: "Received",
       note: `Received and paid via POS. ${receivedProducts.length} product(s) restocked.`,
       actedAt: new Date(),
       actedBy: { name: staffName || "POS Staff" },
@@ -108,29 +105,12 @@ export default async function handler(req, res) {
 
     await transaction.save();
 
-    // Create expense entry for accounting
-    try {
-      const existingExpense = await Expense.findOne({ sourceType: "petty-cash-transaction", sourceId: String(transaction._id) });
-      if (!existingExpense) {
-        await Expense.create({
-          title: transaction.purpose || "Petty Cash",
-          amount: transaction.amount,
-          categoryName: "Petty Cash",
-          locationName: location || transaction.location,
-          staffName: staffName || "POS Staff",
-          description: `Received via POS: ${transaction.purpose}`,
-          sourceType: "petty-cash-transaction",
-          sourceId: String(transaction._id),
-          vendor: transaction.vendor ? { _id: transaction.vendor, companyName: transaction.vendorName } : undefined,
-        });
-      }
-    } catch (expErr) {
-      console.error("Failed to create expense:", expErr.message);
-    }
+    // Do NOT create expense here - only create when marked as Paid
+    // Expense will be created when user clicks "Mark Paid"
 
     return res.status(200).json({
       success: true,
-      transaction: { _id: transaction._id, purpose: transaction.purpose, amount: transaction.amount, status: "Paid" },
+      transaction: { _id: transaction._id, purpose: transaction.purpose, amount: transaction.amount, status: "Received" },
     });
   } catch (err) {
     return res.status(500).json({ error: err.message });
