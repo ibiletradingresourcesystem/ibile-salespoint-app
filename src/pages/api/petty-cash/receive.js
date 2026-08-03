@@ -23,7 +23,7 @@ export default async function handler(req, res) {
   await mongooseConnect();
 
   try {
-    const { orderId, staffName, paymentMethod, location } = req.body;
+    const { orderId, products: incomingProducts, staffName, paymentMethod, location } = req.body;
 
     if (!orderId) {
       return res.status(400).json({ error: "Order ID is required" });
@@ -40,8 +40,8 @@ export default async function handler(req, res) {
 
     const previousStatus = transaction.status;
 
-    // Update product stock quantities
-    const productEntries = Array.isArray(transaction.products) ? transaction.products : [];
+    // Use incoming products from request if provided, otherwise use transaction products
+    const productEntries = incomingProducts && Array.isArray(incomingProducts) ? incomingProducts : (Array.isArray(transaction.products) ? transaction.products : []);
     const receivedProducts = [];
 
     for (const entry of productEntries) {

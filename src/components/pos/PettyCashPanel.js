@@ -181,9 +181,15 @@ function PettyCashPanel({ isOpen, onClose, staffName, location }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           orderId: editingOrderId,
-          products: validEntries,
+          products: validEntries.map(e => ({
+            productId: e.productId || "",
+            productName: e.productName || "",
+            costPrice: Number(e.costPrice) || 0,
+            quantity: Number(e.quantity) || 0,
+          })),
           description: description.trim(),
           staffName,
+          location,
         }),
       });
       const data = await res.json();
@@ -192,7 +198,7 @@ function PettyCashPanel({ isOpen, onClose, staffName, location }) {
         throw new Error(data.error || "Failed to update order");
       }
 
-      setMessage({ type: "success", text: "Order updated successfully" });
+      setMessage({ type: "success", text: `Order updated successfully — ₦${validEntries.reduce((sum, e) => sum + (e.costPrice || 0) * (e.quantity || 0), 0).toLocaleString()}` });
       resetForm();
       setTab("orders");
       fetchData();
@@ -207,10 +213,19 @@ function PettyCashPanel({ isOpen, onClose, staffName, location }) {
     setSaving(true);
     setMessage(null);
     try {
+      // Find the order to get its products
+      const order = orders.find(o => o._id === orderId);
+      if (!order) throw new Error("Order not found");
+
       const res = await fetch("/api/petty-cash/receive", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ orderId, staffName, location }),
+        body: JSON.stringify({
+          orderId,
+          products: order.products || [],
+          staffName,
+          location,
+        }),
       });
       const data = await res.json();
 
@@ -261,8 +276,8 @@ function PettyCashPanel({ isOpen, onClose, staffName, location }) {
   const today = new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric" });
 
   const modalContent = (
-    <div className="fixed inset-0 z-[9999] bg-black/50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[85vh] flex flex-col">
+    <div className="fixed inset-0 z-[9999] bg-black/50 flex items-center justify-center p-4 overflow-hidden">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md h-[90vh] max-h-[90vh] flex flex-col flex-1">
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
           <div className="flex items-center gap-2">
@@ -305,7 +320,7 @@ function PettyCashPanel({ isOpen, onClose, staffName, location }) {
         )}
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-4">
+        <div className="flex-1 overflow-y-auto p-4 min-h-0">
           {loading ? (
             <div className="text-center py-8 text-gray-400">Loading...</div>
           ) : tab === "orders" ? (
@@ -407,10 +422,10 @@ function PettyCashPanel({ isOpen, onClose, staffName, location }) {
               {/* Product Entries */}
               {productEntries.length > 0 && (
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Products *</label>
-                  <div className="space-y-2 max-h-48 overflow-y-auto">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Products * ({productEntries.length})</label>
+                  <div className="space-y-2 max-h-64 overflow-y-auto border border-gray-200 rounded-lg p-2 bg-gray-50">
                     {productEntries.map((entry, idx) => (
-                      <div key={idx} className="flex items-center gap-2 bg-gray-50 rounded-lg px-3 py-2">
+                      <div key={idx} className="flex items-center gap-2 bg-white rounded-lg px-3 py-2 border border-gray-200">
                         <div className="flex-1 min-w-0">
                           <p className="text-xs font-medium text-gray-800 truncate">{entry.productName || "Product"}</p>
                           <p className="text-[10px] text-gray-500">₦{(entry.costPrice || 0).toLocaleString()} each</p>
@@ -418,10 +433,12 @@ function PettyCashPanel({ isOpen, onClose, staffName, location }) {
                         <input
                           type="number"
                           min="0"
+                          step="0.01"
                           value={entry.quantity}
                           onChange={(e) => updateEntryQty(idx, e.target.value)}
-                          className="w-16 border border-gray-300 rounded px-2 py-1 text-sm text-center"
+                          className="w-20 border border-gray-300 rounded px-2 py-1 text-sm text-center font-semibold"
                           placeholder="Qty"
+                          autoFocus
                         />
                         <button
                           type="button"
