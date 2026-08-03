@@ -176,6 +176,7 @@ function PettyCashPanel({ isOpen, onClose, staffName, location }) {
     setSaving(true);
     setMessage(null);
     try {
+      const newTotal = validEntries.reduce((sum, e) => sum + (e.costPrice || 0) * (e.quantity || 0), 0);
       const res = await fetch("/api/petty-cash/orders", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -194,16 +195,19 @@ function PettyCashPanel({ isOpen, onClose, staffName, location }) {
       });
       const data = await res.json();
 
-      if (!res.ok || !data.success) {
-        throw new Error(data.error || "Failed to update order");
+      if (!res.ok) {
+        throw new Error(data.error || `HTTP ${res.status}`);
       }
 
-      setMessage({ type: "success", text: `Order updated successfully — ₦${validEntries.reduce((sum, e) => sum + (e.costPrice || 0) * (e.quantity || 0), 0).toLocaleString()}` });
+      setMessage({ type: "success", text: `✓ Order updated successfully (₦${newTotal.toLocaleString()})` });
+      // Small delay to show message then refresh data
+      await new Promise(r => setTimeout(r, 800));
       resetForm();
       setTab("orders");
-      fetchData();
+      await fetchData();
     } catch (err) {
-      setMessage({ type: "error", text: err.message });
+      console.error("Edit error:", err);
+      setMessage({ type: "error", text: `Edit failed: ${err.message}` });
     } finally {
       setSaving(false);
     }
@@ -215,7 +219,7 @@ function PettyCashPanel({ isOpen, onClose, staffName, location }) {
     try {
       // Find the order to get its products
       const order = orders.find(o => o._id === orderId);
-      if (!order) throw new Error("Order not found");
+      if (!order) throw new Error("Order not found locally");
 
       const res = await fetch("/api/petty-cash/receive", {
         method: "PUT",
@@ -230,14 +234,17 @@ function PettyCashPanel({ isOpen, onClose, staffName, location }) {
       const data = await res.json();
 
       if (!res.ok) {
-        throw new Error(data.error || "Failed to mark as received");
+        throw new Error(data.error || `HTTP ${res.status}`);
       }
 
       // Keep order in list with Received status
-      setMessage({ type: "success", text: "✓ Items received — stock updated. Now mark as paid when payment is made." });
-      fetchData();
+      setMessage({ type: "success", text: "✓ Items received! Stock updated. Ready to mark as paid." });
+      // Small delay to show message then refresh data
+      await new Promise(r => setTimeout(r, 800));
+      await fetchData();
     } catch (err) {
-      setMessage({ type: "error", text: err.message });
+      console.error("Receive error:", err);
+      setMessage({ type: "error", text: `Receive failed: ${err.message}` });
     } finally {
       setSaving(false);
     }
@@ -259,13 +266,16 @@ function PettyCashPanel({ isOpen, onClose, staffName, location }) {
       const data = await res.json();
 
       if (!res.ok) {
-        throw new Error(data.error || "Failed to mark as paid");
+        throw new Error(data.error || `HTTP ${res.status}`);
       }
 
-      setMessage({ type: "success", text: "✓ Order marked as paid" });
-      fetchData();
+      setMessage({ type: "success", text: "✓ Payment recorded! Order marked as paid." });
+      // Small delay to show message then refresh data
+      await new Promise(r => setTimeout(r, 800));
+      await fetchData();
     } catch (err) {
-      setMessage({ type: "error", text: err.message });
+      console.error("Mark paid error:", err);
+      setMessage({ type: "error", text: `Payment failed: ${err.message}` });
     } finally {
       setSaving(false);
     }
