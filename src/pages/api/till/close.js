@@ -115,12 +115,10 @@ export default async function handler(req, res) {
       });
     }
 
-    // Get all transactions for this till since it was opened
-    const transactions = await Transaction.find({
-      _id: { $in: till.transactions },
-    }).exec();
+    // Use stored transaction IDs count instead of fetching all documents
+    const transactionCount = till.transactions?.length || 0;
 
-    console.log(`📊 Till ${tillId} has ${transactions.length} transactions linked`);
+    console.log(`📊 Till ${tillId} has ${transactionCount} transactions linked`);
     console.log(`📊 Till opening balance: ${till.openingBalance}`);
 
     // **BEST METHOD: Use MongoDB aggregation to calculate tender breakdown**
@@ -268,7 +266,7 @@ export default async function handler(req, res) {
       expectedClosingBalance: expectedClosingBalance,
       variance: totalVariance,
       totalSales: totalSales,
-      transactionCount: transactions.length,
+      transactionCount: transactionCount,
       tenderBreakdown: tenderBreakdown,
       tenderVariances: tenderVariances,
       closingNotes: closingNotes || "",
@@ -339,7 +337,7 @@ export default async function handler(req, res) {
         variance: totalVariance,
         variancePercentage: variancePercentage,
         totalSales: totalSales,
-        transactionCount: transactions.length,
+        transactionCount: transactionCount,
         tenderBreakdown: new Map(Object.entries(tenderBreakdown)),
         tenderActual: new Map(Object.entries(tenderActualMap)),
         tenderVariances: new Map(Object.entries(tenderVariances)),
@@ -385,7 +383,7 @@ export default async function handler(req, res) {
         expectedClosingBalance: expectedClosingBalance,
         totalCountedAmount: totalCountedAmount,
         totalVariance: totalVariance,
-        transactionCount: transactions.length,
+        transactionCount: transactionCount,
         tenderBreakdown: tenderBreakdownObj,
         tenderVariances: tenderVariancesObj, // Detailed variance per tender
       },

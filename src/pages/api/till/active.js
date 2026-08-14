@@ -28,30 +28,31 @@ export default async function handler(req, res) {
 
     console.log(`✅ Found ${activeTills.length} active till${activeTills.length !== 1 ? 's' : ''}`);
 
-    // Enrich till data with location name
-    const enrichedTills = await Promise.all(
-      activeTills.map(async (till) => {
-        // Find the location in its store
-        const store = await Store.findById(till.storeId).lean();
-        const location = store?.locations?.find(
-          (loc) => loc._id.toString() === till.locationId.toString()
-        );
+    // Batch load stores to avoid N+1 queries
+    const storeIds = [...new Set(activeTills.map((t) => String(t.storeId)))];
+    const stores = await Store.find({ _id: { $in: storeIds } }).select("_id locations").lean();
+    const storeMap = new Map(stores.map((s) => [String(s._id), s]));
 
-        return {
-          _id: till._id,
-          staffId: till.staffId,
-          staffName: till.staffName,
-          locationName: location?.name || "Unknown Location",
-          locationId: till.locationId,
-          openedAt: till.openedAt,
-          totalSales: till.totalSales || 0,
-          transactionCount: till.transactionCount || 0,
-          openingBalance: till.openingBalance || 0,
-          storeId: till.storeId,
-          status: till.status,
-        };
-      })
-    );
+    const enrichedTills = activeTills.map((till) => {
+      const store = storeMap.get(String(till.storeId));
+      const location = store?.locations?.find(
+        (loc) => loc._id.toString() === till.locationId.toString()
+      );
+
+      return {
+        _id: till._id,
+        staffId: till.staffId,
+        staffName: till.staffName,
+        locationName: location?.name || "Unknown Location",
+        locationId: till.locationId,
+        openedAt: till.openedAt,
+        totalSales: till.totalSales || 0,
+        transactionCount: till.transactionCount || 0,
+        openingBalance: till.openingBalance || 0,
+        storeId: till.storeId,
+        status: till.status,
+      };
+    });
 
     // Log details for debugging
     enrichedTills.forEach((till) => {

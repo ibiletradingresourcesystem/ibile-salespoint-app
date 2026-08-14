@@ -23,39 +23,37 @@ export default async function handler(req, res) {
       .sort({ companyName: 1 })
       .lean();
 
-    // Resolve product details for each vendor
-    const vendorsWithProducts = await Promise.all(
-      (vendors || []).map(async (vendor) => {
-        if (!Array.isArray(vendor.products) || vendor.products.length === 0) {
-          return vendor;
-        }
-        const productIds = vendor.products
-          .map((p) => p.product)
-          .filter(Boolean);
+    // Batch load all referenced products in one query
+    const allProductIds = [];
+    (vendors || []).forEach((v) => {
+      if (Array.isArray(v.products)) {
+        v.products.forEach((p) => { if (p.product) allProductIds.push(p.product); });
+      }
+    });
 
-        const dbProducts = productIds.length > 0
-          ? await Product.find({ _id: { $in: productIds } })
-              .select("_id name costPrice salePriceIncTax barcode quantity")
-              .lean()
-          : [];
+    const dbProducts = allProductIds.length > 0
+      ? await Product.find({ _id: { $in: [...new Set(allProductIds.map(String))] } })
+          .select("_id name costPrice salePriceIncTax barcode quantity")
+          .lean()
+      : [];
+    const productMap = new Map(dbProducts.map((p) => [String(p._id), p]));
 
-        const productMap = {};
-        dbProducts.forEach((p) => { productMap[String(p._id)] = p; });
+    const vendorsWithProducts = (vendors || []).map((vendor) => {
+      if (!Array.isArray(vendor.products) || vendor.products.length === 0) return vendor;
 
-        vendor.products = vendor.products.map((vp) => {
-          const dbProd = productMap[String(vp.product)] || {};
-          return {
-            ...vp,
-            productId: String(vp.product),
-            productName: vp.productName || dbProd.name || "",
-            costPrice: dbProd.costPrice || vp.price || 0,
-            currentStock: dbProd.quantity || 0,
-          };
-        });
+      vendor.products = vendor.products.map((vp) => {
+        const dbProd = productMap.get(String(vp.product)) || {};
+        return {
+          ...vp,
+          productId: String(vp.product),
+          productName: vp.productName || dbProd.name || "",
+          costPrice: dbProd.costPrice || vp.price || 0,
+          currentStock: dbProd.quantity || 0,
+        };
+      });
 
-        return vendor;
-      })
-    );
+      return vendor;
+    });
 
     return res.status(200).json({ success: true, vendors: vendorsWithProducts });
   } catch (err) {

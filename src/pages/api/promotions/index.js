@@ -14,27 +14,22 @@ export default async function handler(req, res) {
 
   if (req.method === 'GET') {
     try {
-      // Fetch all active promotions
-      const promotions = await Promotion.find({ active: true })
+      const now = new Date();
+      const promotions = await Promotion.find({
+        active: true,
+        $or: [
+          { indefinite: true },
+          { startDate: { $lte: now }, endDate: { $gte: now } },
+        ],
+      })
         .sort({ priority: -1, createdAt: -1 })
         .lean();
 
-      // Filter promotions that are within date range or indefinite
-      const now = new Date();
-      const validPromotions = promotions.filter(promo => {
-        if (promo.indefinite) return true;
-        
-        const startDate = new Date(promo.startDate);
-        const endDate = new Date(promo.endDate);
-        
-        return now >= startDate && now <= endDate;
-      });
-
-      console.log(`📢 Found ${validPromotions.length} active promotions`);
+      console.log(`📢 Found ${promotions.length} active promotions`);
       
       return res.status(200).json({
         success: true,
-        data: validPromotions,
+        data: promotions,
       });
     } catch (error) {
       console.error('❌ Error fetching promotions:', error);

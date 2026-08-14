@@ -24,8 +24,10 @@ export default async function handler(req, res) {
       .sort({ openedAt: -1 })
       .populate({
         path: "transactions",
-        select: "tenderType total amountPaid createdAt items transactionType"
-      });
+        select: "tenderType total amountPaid createdAt items transactionType",
+        options: { sort: { createdAt: -1 }, limit: 200 },
+      })
+      .lean();
 
     if (!currentTill) {
       return res.status(404).json({ message: "No open till found for this location" });

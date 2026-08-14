@@ -59,6 +59,7 @@ export default async function handler(req, res) {
           const allCategories = await Category.find({})
             .select("_id name icon location isActive images properties")
             .sort({ name: 1 })
+            .limit(500)
             .lean();
           return res.status(200).json({
             success: true,
@@ -99,6 +100,7 @@ export default async function handler(req, res) {
           const allCategories = await Category.find({})
             .select("_id name icon location isActive images properties")
             .sort({ name: 1 })
+            .limit(500)
             .lean();
           console.log(`✅ Fallback: Returning ${allCategories.length} all categories`);
           return res.status(200).json({
@@ -122,6 +124,7 @@ export default async function handler(req, res) {
       const categories = await Category.find({})
         .select("_id name icon location isActive images properties")
         .sort({ name: 1 })
+        .limit(500)
         .lean();
 
       console.log(`✅ Categories API: Found ${categories.length} categories`);

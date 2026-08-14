@@ -14,7 +14,10 @@ export default async function handler(req, res) {
     try {
       await mongooseConnect();
       
-      const customers = await Customer.find({}).sort({ createdAt: -1 }).lean();
+      const customers = await Customer.find({})
+        .select("_id name email phone type address creditBalance isCreditCustomer creditLimit creditNotes createdAt")
+        .sort({ createdAt: -1 })
+        .lean();
       
       return res.status(200).json(customers || []);
     } catch (error) {

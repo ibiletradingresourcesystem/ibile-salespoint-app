@@ -20,13 +20,16 @@ export default async function handler(req, res) {
     console.log(`🔍 Verifying till: ${tillId}`);
 
     // Try to find the till
-    const till = await Till.findById(tillId).exec();
+    const till = await Till.findById(tillId).lean();
 
     if (!till) {
       console.error(`❌ Till not found: ${tillId}`);
       
-      // Debug: Check what tills exist
-      const allTills = await Till.find().select('_id status staffName').exec();
+      // Debug: Check what tills exist (limited)
+      const allTills = await Till.find()
+        .select('_id status staffName')
+        .limit(50)
+        .lean();
       console.error(`   Total tills in DB: ${allTills.length}`);
       
       return res.status(404).json({
