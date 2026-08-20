@@ -331,6 +331,7 @@ export default function CloseTillModal({ isOpen, onClose, onTillClosed }) {
   const [activeTenderKeypad, setActiveTenderKeypad] = useState(null);
   const [showConfirmation, setShowConfirmation] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
+  const [activeTab, setActiveTab] = useState('summary');
 
   // Track online/offline status
   useEffect(() => {
@@ -834,241 +835,301 @@ export default function CloseTillModal({ isOpen, onClose, onTillClosed }) {
     );
   }
 
+  const TABS = [
+    { id: 'summary', label: 'SUMMARY' },
+    { id: 'sales', label: 'SALES' },
+    { id: 'refunds', label: 'REFUNDS' },
+    { id: 'void', label: 'VOID' },
+    { id: 'credit', label: 'CREDIT' },
+  ];
+
+  const totalCounted = Object.values(tenderCounts).reduce((s, v) => s + (parseFloat(v) || 0), 0);
+  const totalExpected = tenders ? tenders.reduce((s, t) => s + getTenderAmount(summary?.tenderBreakdown, t.name), 0) : 0;
+  const totalVariance = totalCounted - totalExpected;
+
   return (
     <>
       <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-2">
-        <div className="bg-white rounded-xl shadow-2xl w-full max-w-5xl h-[calc(100vh-1rem)] flex flex-col overflow-hidden">
-        {/* Header */}
-        <div className="bg-gradient-to-r from-cyan-600 to-cyan-700 text-white px-3 py-2 flex items-center justify-between flex-shrink-0">
-          <div>
-            <h2 className="text-base font-bold">Close Till & Reconciliation</h2>
-            <p className="text-cyan-100 text-xs">
-              Session: {till?.openedAt ? new Date(till.openedAt).toLocaleTimeString() : 'Unknown'}
-            </p>
+        <div className="bg-white rounded-xl shadow-2xl w-full max-w-6xl h-[calc(100vh-1rem)] flex flex-col overflow-hidden">
+
+        {/* Tab Bar */}
+        <div className="bg-gradient-to-r from-cyan-600 to-cyan-700 flex items-center flex-shrink-0">
+          <div className="flex-1 flex">
+            {TABS.map(tab => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`px-4 py-2.5 text-xs font-bold uppercase tracking-wide transition-all ${
+                  activeTab === tab.id
+                    ? 'bg-white text-cyan-700 border-b-2 border-white'
+                    : 'text-cyan-100 hover:text-white hover:bg-white/10'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 px-3">
             {!isOnline && (
-              <div className="bg-yellow-500 text-yellow-900 px-3 py-1 rounded-lg text-sm font-bold flex items-center gap-2">
-                <span className="w-2 h-2 bg-yellow-900 rounded-full animate-pulse"></span>
-                OFFLINE
-              </div>
+              <span className="bg-yellow-500 text-yellow-900 px-2 py-0.5 rounded text-xs font-bold">OFFLINE</span>
             )}
-            <button
-              onClick={onClose}
-              disabled={loading}
-              className="p-2 hover:bg-white/20 rounded-lg transition-colors active:scale-95"
-            >
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
+            <button onClick={onClose} disabled={loading} className="p-1.5 hover:bg-white/20 rounded-lg text-white transition active:scale-95">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
             </button>
           </div>
         </div>
 
-        {/* Main Content - Grid Layout */}
-        <div className="flex-1 p-2 grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,320px)] sm:grid-rows-[auto_auto] gap-2 overflow-y-auto">
-          {/* Content 1 - Summary Cards (col 1, row 1) */}
-          <div className="space-y-3 order-1 sm:col-start-1 sm:row-start-1">
-            <div className="bg-gradient-to-br from-cyan-50 to-cyan-100 border border-cyan-300 rounded p-2">
-              <p className="text-xs text-cyan-700 font-semibold uppercase">Opening Balance</p>
-              <p className="text-base font-bold text-cyan-800">₦{Number(summary.openingBalance).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
-            </div>
-            
-            <div className="bg-gradient-to-br from-green-50 to-green-100 border border-green-300 rounded p-2">
-              <p className="text-xs text-green-700 font-semibold uppercase">Total Sales</p>
-              <p className="text-base font-bold text-green-800">₦{Number(summary.totalSales).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
-            </div>
-            
-            <div className="bg-gradient-to-br from-purple-50 to-purple-100 border border-purple-300 rounded p-2">
-              <p className="text-xs text-purple-700 font-semibold uppercase">Expected Closing</p>
-              <p className="text-base font-bold text-purple-800">₦{Number(summary.expectedClosingBalance).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
-            </div>
-            
-            <div className="bg-gradient-to-br from-orange-50 to-orange-100 border border-orange-300 rounded p-2">
-              <p className="text-xs text-orange-700 font-semibold uppercase">Transactions</p>
-              <p className="text-base font-bold text-orange-800">{till?.transactionCount || 0}</p>
+        {/* Main Content — 3 columns */}
+        <div className="flex-1 grid grid-cols-[220px_1fr_280px] gap-0 overflow-hidden">
+
+          {/* LEFT: Till Info + Actions */}
+          <div className="bg-gray-50 border-r border-gray-200 p-3 flex flex-col gap-3 overflow-y-auto">
+            {/* Till Card */}
+            <div className="bg-white border border-gray-200 rounded-lg p-3">
+              <h3 className="font-bold text-sm text-gray-800 mb-2">{till?.tillNumber || till?.tillName || 'Till'}</h3>
+              <div className="grid grid-cols-3 gap-1 text-[10px] text-gray-500">
+                <div>
+                  <span className="uppercase font-semibold block">Opened By</span>
+                  <span className="text-gray-800 font-medium text-xs">{till?.staffName || '—'}</span>
+                </div>
+                <div>
+                  <span className="uppercase font-semibold block">Date</span>
+                  <span className="text-gray-800 font-medium text-xs">{till?.openedAt ? new Date(till.openedAt).toLocaleDateString() : '—'}</span>
+                </div>
+                <div>
+                  <span className="uppercase font-semibold block">Time</span>
+                  <span className="text-gray-800 font-medium text-xs">{till?.openedAt ? new Date(till.openedAt).toLocaleTimeString() : '—'}</span>
+                </div>
+              </div>
             </div>
 
+            {/* Summary Stats */}
+            <div className="space-y-1.5">
+              <div className="bg-cyan-50 border border-cyan-200 rounded p-2 flex justify-between items-center">
+                <span className="text-[10px] text-cyan-700 font-semibold uppercase">Opening Balance</span>
+                <span className="text-xs font-bold text-cyan-800">₦{Number(summary.openingBalance).toLocaleString('en-NG', { minimumFractionDigits: 2 })}</span>
+              </div>
+              <div className="bg-green-50 border border-green-200 rounded p-2 flex justify-between items-center">
+                <span className="text-[10px] text-green-700 font-semibold uppercase">Total Sales</span>
+                <span className="text-xs font-bold text-green-800">₦{Number(summary.totalSales).toLocaleString('en-NG', { minimumFractionDigits: 2 })}</span>
+              </div>
+              <div className="bg-purple-50 border border-purple-200 rounded p-2 flex justify-between items-center">
+                <span className="text-[10px] text-purple-700 font-semibold uppercase">Expected Closing</span>
+                <span className="text-xs font-bold text-purple-800">₦{Number(summary.expectedClosingBalance).toLocaleString('en-NG', { minimumFractionDigits: 2 })}</span>
+              </div>
+              <div className="bg-orange-50 border border-orange-200 rounded p-2 flex justify-between items-center">
+                <span className="text-[10px] text-orange-700 font-semibold uppercase">Transactions</span>
+                <span className="text-xs font-bold text-orange-800">{till?.transactionCount || 0}</span>
+              </div>
+            </div>
+
+            {/* Pending Sync */}
             {pendingLocalTransactions > 0 && (
-              <div className="bg-yellow-50 border-2 border-yellow-300 rounded p-2">
-                <p className="text-xs text-yellow-800 font-semibold uppercase">Pending Sync</p>
-                <p className="text-base font-bold text-yellow-900">{pendingLocalTransactions}</p>
-                <p className="text-xs text-yellow-800 mt-1">Sync before closing till.</p>
+              <div className="bg-yellow-50 border border-yellow-300 rounded p-2">
+                <p className="text-[10px] text-yellow-800 font-semibold">{pendingLocalTransactions} pending sync</p>
                 {isOnline && (
-                  <button
-                    onClick={handleSyncNow}
-                    disabled={syncing}
-                    className="mt-2 w-full px-3 py-2 rounded-lg bg-yellow-600 hover:bg-yellow-700 text-white text-sm font-bold transition disabled:opacity-60"
-                  >
+                  <button onClick={handleSyncNow} disabled={syncing} className="mt-1 w-full py-1.5 bg-yellow-600 hover:bg-yellow-700 text-white text-xs font-bold rounded transition">
                     {syncing ? "Syncing..." : "Sync Now"}
                   </button>
                 )}
               </div>
             )}
 
-            {/* Offline Notice */}
-            {!isOnline && (
-              <div className="bg-yellow-50 border-2 border-yellow-300 rounded-xl p-3">
-                <p className="text-xs text-yellow-800 font-semibold">
-                  ⚠️ Data from local storage. Will sync when online.
-                </p>
-              </div>
-            )}
-          </div>
-
-          {/* Content 1 - Reconcile Payment Methods (col 2, row 1) */}
-          <div className="flex flex-col overflow-hidden order-2 sm:col-start-2 sm:row-start-1">
-            <h3 className="text-sm font-bold text-gray-700 uppercase mb-2">Reconcile Payment Methods</h3>
-            <div className="flex-1 overflow-y-auto space-y-2 pr-1">
-              {tenders && tenders.map((tender) => {
-                const processedAmount = getTenderAmount(summary?.tenderBreakdown, tender.name);
-                const physicalCount = parseFloat(tenderCounts[tender.id]) || 0;
-                const variance = physicalCount - processedAmount;
-                const hasValue = tenderCounts[tender.id] !== undefined && tenderCounts[tender.id] !== "";
-                
-                return (
-                  <div key={tender.id}>
-                    <div
-                      className={`rounded-lg border-2 p-3 cursor-pointer transition-all ${
-                        activeTenderKeypad === tender.id
-                          ? "border-cyan-500 bg-cyan-50 shadow-lg"
-                          : "border-gray-200 bg-white hover:border-cyan-400"
-                      }`}
-                      style={{ borderLeftColor: tender.buttonColor || "#06b6d4", borderLeftWidth: "4px" }}
-                      onClick={() => setActiveTenderKeypad(tender.id)}
-                    >
-                      <div className="flex items-center justify-between mb-2">
-                        <span className={`font-bold ${activeTenderKeypad === tender.id ? "text-cyan-700" : "text-gray-800"}`}>
-                          {tender.name}
-                          {activeTenderKeypad === tender.id && <span className="ml-2 text-cyan-600 font-bold text-sm">→ ACTIVE</span>}
-                        </span>
-                        <span className="text-sm text-gray-500">Expected: ₦{Number(processedAmount).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                      </div>
-                      <div className="flex gap-2">
-                        <div className="flex-1">
-                          <input
-                            type={isMobile ? "number" : "text"}
-                            inputMode={isMobile ? "decimal" : undefined}
-                            value={formatDisplayValue(tenderCounts[tender.id])}
-                            readOnly={!isMobile}
-                            onChange={(e) => {
-                              if (!isMobile) return;
-                              setTenderCounts(prev => ({ ...prev, [tender.id]: e.target.value }));
-                            }}
-                            placeholder="Tap to enter"
-                            className={`w-full border-2 rounded-lg px-3 py-2 text-lg font-bold focus:outline-none text-gray-700 ${
-                              activeTenderKeypad === tender.id
-                                ? "border-cyan-400 bg-white shadow-md"
-                                : "border-gray-300 bg-gray-50"
-                            }`}
-                          />
-                        </div>
-                        <div className={`w-24 flex flex-col items-center justify-center rounded-lg text-sm font-bold ${
-                          !hasValue ? "bg-gray-100 text-gray-400" :
-                          variance === 0 ? "bg-green-100 text-green-700" :
-                          variance > 0 ? "bg-yellow-100 text-yellow-700" :
-                          "bg-red-100 text-red-700"
-                        }`}>
-                          {!hasValue ? "—" : (
-                            <>
-                              <span>₦{Number(variance).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                              <span className="text-xs">{variance === 0 ? "✓ OK" : variance > 0 ? "Over" : "Short"}</span>
-                            </>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Content 2 - Keypad (col 3, rows 1-2) */}
-          <div className="hidden sm:flex flex-col overflow-hidden order-3 sm:col-start-3 sm:row-start-1 sm:row-span-2">
-            <h3 className="text-sm font-bold text-gray-700 uppercase mb-2">
-              {activeTenderKeypad ? `📝 ${tenders.find(t => t.id === activeTenderKeypad)?.name}` : "Keypad"}
-            </h3>
-            <div className={`flex-1 border-2 rounded-lg p-3 h-full transition-all ${
-              activeTenderKeypad
-                ? "bg-cyan-50 border-cyan-300 shadow-lg"
-                : "bg-gray-50 border-gray-200"
-            }`}>
-              {tenders && tenders.length > 0 ? (
-                <>
-                  <div className={`text-xs font-semibold mb-3 p-2 rounded ${
-                    activeTenderKeypad
-                      ? "text-cyan-700 bg-cyan-100"
-                      : "text-gray-600 bg-gray-100"
-                  }`}>
-                    {activeTenderKeypad
-                      ? `✓ Entering amount for ${tenders.find(t => t.id === activeTenderKeypad)?.name || "payment method"}`
-                      : "← Select a payment method to enter amount"}
-                  </div>
-                  
-                  {/* Custom display showing formatted value */}
-                  {activeTenderKeypad && (
-                    <div className="bg-white border-2 border-gray-300 rounded-lg p-3 text-right mb-3 shadow-sm">
-                      <div className="text-xs text-gray-500 mb-1">Amount in ₦</div>
-                      <div className="text-3xl font-bold text-cyan-700 truncate">
-                        {formatDisplayValue(tenderCounts[activeTenderKeypad]) || '0'}
-                      </div>
-                    </div>
-                  )}
-                  
-                  <NumKeypad
-                    value={activeTenderKeypad ? (tenderCounts[activeTenderKeypad] || "") : ""}
-                    onChange={(newValue) => {
-                      if (!activeTenderKeypad) return;
-                      setTenderCounts(prev => ({ ...prev, [activeTenderKeypad]: newValue }));
-                    }}
-                    placeholder="Amount in ₦"
-                    disabled={loading || !activeTenderKeypad}
-                  />
-                </>
-              ) : (
-                <div className="text-sm text-gray-500">No payment methods available.</div>
-              )}
-            </div>
-          </div>
-
-          {/* Content 1 - Closing Notes (col 1-2, row 2) */}
-          <div className="flex flex-col order-4 sm:col-span-2 sm:col-start-1 sm:row-start-2">
-            <h3 className="text-sm font-bold text-gray-700 uppercase mb-2">Closing Notes</h3>
+            {/* Closing Notes */}
             <textarea
               value={closingNotes}
               onChange={(e) => setClosingNotes(e.target.value)}
-              placeholder="Note any discrepancies or issues..."
-              className="flex-1 border-2 border-gray-300 rounded-xl px-4 py-3 focus:outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-200 resize-none"
+              placeholder="Closing notes..."
+              className="border border-gray-300 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-cyan-500 resize-none h-16"
               disabled={loading}
             />
-            
-            {/* Error Message */}
+
+            {/* Error */}
             {error && (
-              <div className="mt-3 bg-red-50 border-2 border-red-300 rounded-xl p-3">
-                <p className="text-sm font-semibold text-red-700">{error}</p>
+              <div className="bg-red-50 border border-red-300 rounded p-2">
+                <p className="text-xs font-semibold text-red-700">{error}</p>
+              </div>
+            )}
+
+            {/* Action Buttons */}
+            <div className="mt-auto space-y-1.5">
+              <button
+                onClick={() => {
+                  try {
+                    printEndOfDayReport(till, summary, Object.fromEntries(
+                      (tenders || []).map(t => [t.name, { physical: parseFloat(tenderCounts[t.id]) || 0, expected: getTenderAmount(summary?.tenderBreakdown, t.name) }])
+                    ), tenders, closingNotes.trim(), location?.name || '');
+                  } catch {}
+                }}
+                className="w-full py-2 bg-gray-200 hover:bg-gray-300 rounded-lg text-xs font-bold text-gray-700 transition active:scale-95"
+              >
+                🖨️ Print Report
+              </button>
+              <button
+                onClick={handleCloseTill}
+                disabled={isButtonDisabled || showConfirmation}
+                className="w-full py-2.5 bg-green-600 hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-bold text-sm rounded-lg transition active:scale-95 flex items-center justify-center gap-1.5"
+              >
+                {loading && <FontAwesomeIcon icon={faSpinner} className="w-3.5 h-3.5 animate-spin" />}
+                {loading ? "Closing..." : "PRINT & CLOSE"}
+              </button>
+            </div>
+          </div>
+
+          {/* CENTER: Tab Content */}
+          <div className="overflow-y-auto p-3">
+            {activeTab === 'summary' ? (
+              <>
+                {/* Stats Row */}
+                <div className="grid grid-cols-5 gap-2 mb-3">
+                  <div className="text-center">
+                    <p className="text-[10px] text-gray-500 font-semibold uppercase">Transactions</p>
+                    <p className="text-sm font-bold text-gray-800">{till?.transactionCount || 0}</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-[10px] text-gray-500 font-semibold uppercase">Counted</p>
+                    <p className="text-sm font-bold text-gray-800">₦{totalCounted.toLocaleString('en-NG', { minimumFractionDigits: 2 })}</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-[10px] text-gray-500 font-semibold uppercase">Takings</p>
+                    <p className="text-sm font-bold text-gray-800">₦{totalExpected.toLocaleString('en-NG', { minimumFractionDigits: 2 })}</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-[10px] text-gray-500 font-semibold uppercase">Float</p>
+                    <p className="text-sm font-bold text-gray-800">₦{Number(summary.openingBalance).toLocaleString('en-NG', { minimumFractionDigits: 2 })}</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-[10px] text-gray-500 font-semibold uppercase">Total Variance</p>
+                    <p className={`text-sm font-bold ${totalVariance >= 0 ? 'text-green-700' : 'text-red-700'}`}>₦{totalVariance.toLocaleString('en-NG', { minimumFractionDigits: 2 })}</p>
+                  </div>
+                </div>
+
+                {/* Cash Up Table */}
+                <div className="border border-gray-200 rounded-lg overflow-hidden">
+                  <div className="bg-gray-50 px-3 py-2 border-b border-gray-200 flex items-center justify-between">
+                    <h3 className="text-xs font-bold text-gray-700 uppercase">Cash Up</h3>
+                  </div>
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-gray-200 bg-gray-50">
+                        <th className="text-left px-3 py-2 text-[10px] font-semibold text-gray-500 uppercase">Tender</th>
+                        <th className="text-right px-3 py-2 text-[10px] font-semibold text-gray-500 uppercase"></th>
+                        <th className="text-right px-3 py-2 text-[10px] font-semibold text-gray-500 uppercase">Counted</th>
+                        <th className="text-right px-3 py-2 text-[10px] font-semibold text-gray-500 uppercase">Expected</th>
+                        <th className="text-right px-3 py-2 text-[10px] font-semibold text-gray-500 uppercase">Variance</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {tenders && tenders.map((tender) => {
+                        const expected = getTenderAmount(summary?.tenderBreakdown, tender.name);
+                        const counted = parseFloat(tenderCounts[tender.id]) || 0;
+                        const variance = counted - expected;
+                        const hasVal = tenderCounts[tender.id] !== undefined && tenderCounts[tender.id] !== "";
+                        return (
+                          <tr
+                            key={tender.id}
+                            onClick={() => setActiveTenderKeypad(tender.id)}
+                            className={`border-b border-gray-100 cursor-pointer transition-all ${activeTenderKeypad === tender.id ? 'bg-cyan-50' : 'hover:bg-gray-50'}`}
+                          >
+                            <td className="px-3 py-2.5 font-semibold text-gray-800">{tender.name}</td>
+                            <td className="px-1 py-2.5">
+                              {activeTenderKeypad === tender.id && <span className="text-cyan-600 text-xs">✏️</span>}
+                            </td>
+                            <td className="px-3 py-2.5 text-right font-medium">
+                              <input
+                                type={isMobile ? "number" : "text"}
+                                inputMode={isMobile ? "decimal" : undefined}
+                                value={formatDisplayValue(tenderCounts[tender.id])}
+                                readOnly={!isMobile}
+                                onChange={(e) => { if (isMobile) setTenderCounts(prev => ({ ...prev, [tender.id]: e.target.value })); }}
+                                placeholder="—"
+                                onClick={() => setActiveTenderKeypad(tender.id)}
+                                className={`w-28 text-right border rounded px-2 py-1 text-sm font-bold ${activeTenderKeypad === tender.id ? 'border-cyan-400 bg-white' : 'border-gray-200 bg-gray-50'}`}
+                              />
+                            </td>
+                            <td className="px-3 py-2.5 text-right text-gray-600">₦{Number(expected).toLocaleString('en-NG', { minimumFractionDigits: 2 })}</td>
+                            <td className={`px-3 py-2.5 text-right font-bold ${!hasVal ? 'text-gray-400' : variance === 0 ? 'text-green-600' : variance > 0 ? 'text-yellow-600' : 'text-red-600'}`}>
+                              {hasVal ? `₦${Number(variance).toLocaleString('en-NG', { minimumFractionDigits: 2 })}` : '—'}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                    <tfoot>
+                      <tr className="border-t-2 border-gray-300 bg-gray-50">
+                        <td className="px-3 py-2 font-bold text-gray-800" colSpan={2}>Sub-Total</td>
+                        <td className="px-3 py-2 text-right font-bold text-gray-800">₦{totalCounted.toLocaleString('en-NG', { minimumFractionDigits: 2 })}</td>
+                        <td className="px-3 py-2 text-right font-bold text-gray-600">₦{totalExpected.toLocaleString('en-NG', { minimumFractionDigits: 2 })}</td>
+                        <td className={`px-3 py-2 text-right font-bold ${totalVariance >= 0 ? 'text-green-600' : 'text-red-600'}`}>₦{totalVariance.toLocaleString('en-NG', { minimumFractionDigits: 2 })}</td>
+                      </tr>
+                      <tr className="border-t border-gray-200">
+                        <td className="px-3 py-2 font-bold text-gray-600" colSpan={2}>Float</td>
+                        <td className="px-3 py-2 text-right text-gray-500">-</td>
+                        <td className="px-3 py-2 text-right font-medium text-gray-600">₦{Number(summary.openingBalance).toLocaleString('en-NG', { minimumFractionDigits: 2 })}</td>
+                        <td className="px-3 py-2 text-right font-medium text-gray-500">₦0.00</td>
+                      </tr>
+                      <tr className="border-t-2 border-gray-400">
+                        <td className="px-3 py-2.5 font-black text-gray-800" colSpan={2}>Total</td>
+                        <td className="px-3 py-2.5 text-right font-black text-gray-800">₦{totalCounted.toLocaleString('en-NG', { minimumFractionDigits: 2 })}</td>
+                        <td className="px-3 py-2.5 text-right font-bold text-gray-600">₦{totalExpected.toLocaleString('en-NG', { minimumFractionDigits: 2 })}</td>
+                        <td className={`px-3 py-2.5 text-right font-black ${totalVariance >= 0 ? 'text-green-600' : 'text-red-600'}`}>₦{totalVariance.toLocaleString('en-NG', { minimumFractionDigits: 2 })}</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              </>
+            ) : (
+              /* Transaction tab placeholder — filtered by type */
+              <div className="border border-gray-200 rounded-lg p-4">
+                <h3 className="text-sm font-bold text-gray-700 uppercase mb-3">
+                  {TABS.find(t => t.id === activeTab)?.label} Transactions
+                </h3>
+                <p className="text-xs text-gray-500">
+                  {activeTab === 'sales' && `${till?.transactionCount || 0} completed sale(s) during this session.`}
+                  {activeTab === 'refunds' && 'Refund transactions for this session.'}
+                  {activeTab === 'void' && 'Voided transactions for this session.'}
+                  {activeTab === 'credit' && 'Credit/unpaid transactions for this session.'}
+                </p>
+                <div className="mt-3 bg-gray-50 rounded p-3 text-center">
+                  <p className="text-xs text-gray-400">Transaction details available in Completed Transactions view.</p>
+                </div>
               </div>
             )}
           </div>
-        </div>
 
-        {/* Footer - Buttons */}
-        <div className="px-4 py-4 bg-gray-50 border-t border-gray-200 flex gap-3 flex-shrink-0">
-          <button
-            onClick={onClose}
-            disabled={loading || showConfirmation}
-            className="flex-1 px-4 py-3.5 bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold rounded-lg text-base transition-all active:scale-95 disabled:opacity-50"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleCloseTill}
-            disabled={isButtonDisabled || showConfirmation}
-            className="flex-1 px-4 py-3.5 bg-cyan-600 hover:bg-cyan-700 text-white font-bold rounded-lg text-base transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-          >
-            {loading && <FontAwesomeIcon icon={faSpinner} className="w-4 h-4 animate-spin" />}
-            {loading ? "Closing Till..." : "Close Till & Logout"}
-          </button>
+          {/* RIGHT: Keypad */}
+          <div className="hidden sm:flex flex-col border-l border-gray-200 p-3 overflow-y-auto bg-gray-50">
+            <h3 className="text-xs font-bold text-gray-700 uppercase mb-2">
+              {activeTenderKeypad ? `📝 ${tenders.find(t => t.id === activeTenderKeypad)?.name}` : "Keypad"}
+            </h3>
+            {tenders && tenders.length > 0 ? (
+              <>
+                {activeTenderKeypad && (
+                  <div className="bg-white border-2 border-gray-300 rounded-lg p-2.5 text-right mb-2 shadow-sm">
+                    <div className="text-[10px] text-gray-500 mb-0.5">Amount in ₦</div>
+                    <div className="text-2xl font-bold text-cyan-700 truncate">
+                      {formatDisplayValue(tenderCounts[activeTenderKeypad]) || '0'}
+                    </div>
+                  </div>
+                )}
+                {!activeTenderKeypad && (
+                  <div className="text-xs text-gray-500 bg-gray-100 rounded p-2 mb-2">← Select a tender to enter amount</div>
+                )}
+                <NumKeypad
+                  value={activeTenderKeypad ? (tenderCounts[activeTenderKeypad] || "") : ""}
+                  onChange={(newValue) => {
+                    if (!activeTenderKeypad) return;
+                    setTenderCounts(prev => ({ ...prev, [activeTenderKeypad]: newValue }));
+                  }}
+                  placeholder="Amount in ₦"
+                  disabled={loading || !activeTenderKeypad}
+                  showCalc
+                />
+              </>
+            ) : (
+              <div className="text-xs text-gray-500">No payment methods available.</div>
+            )}
+          </div>
         </div>
       </div>
       </div>

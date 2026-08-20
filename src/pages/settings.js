@@ -604,6 +604,22 @@ export default function SettingsPage() {
                     </select>
                   </div>
                 </div>
+
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    Border Radius
+                  </label>
+                  <select
+                    value={settings.layout?.borderRadius || 'standard'}
+                    onChange={(e) => updateLayoutSetting('borderRadius', e.target.value)}
+                    className="w-full border border-gray-300 rounded p-2 focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="none">None (Sharp corners)</option>
+                    <option value="small">Small (Subtle rounding)</option>
+                    <option value="standard">Standard (Default)</option>
+                    <option value="large">Large (More rounded)</option>
+                  </select>
+                </div>
               </div>
             )}
           </div>

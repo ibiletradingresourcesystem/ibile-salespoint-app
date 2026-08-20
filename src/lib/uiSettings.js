@@ -34,6 +34,7 @@ export const defaultUiSettings = {
     sidebarWidth: 'standard', // compact | standard | wide
     cartPanelWidth: 'standard', // compact | standard | wide
     contentDensity: 'comfortable', // compact | comfortable | spacious
+    borderRadius: 'standard', // none | small | standard | large
   },
   payment: {
     scale: 'standard', // compact | standard | large

@@ -434,26 +434,18 @@ export default function PaymentModal({ total, onConfirm, onCancel, inline = fals
           </div>
 
           {/* RIGHT: Numpad + Tenders */}
-          <div className="flex flex-col gap-2 min-h-0">
+          <div className="flex flex-col gap-1.5 min-h-0">
 
-            {/* Amount Display Row */}
-            <div className="flex items-center gap-2">
-              <button
-                onClick={handleClearAllTenders}
-                className="px-3 py-2 bg-gray-100 hover:bg-gray-200 border border-gray-200 rounded-lg text-xs font-bold text-gray-600 transition-all active:scale-95 whitespace-nowrap"
-              >
-                Tenders
-              </button>
-              <div className="flex-1 bg-white border-2 border-gray-200 rounded-lg px-3 py-2 text-right">
-                <p className="text-2xl sm:text-3xl font-black text-gray-800 font-mono tracking-tight">
-                  ₦{Number(displayAmount || 0).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </p>
-              </div>
+            {/* Amount Display */}
+            <div className="bg-white border-2 border-gray-200 rounded-lg px-3 py-1.5 text-right">
+              <p className="text-2xl sm:text-3xl font-black text-gray-800 font-mono tracking-tight">
+                ₦{Number(displayAmount || 0).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </p>
             </div>
 
             {/* Duplicate Warning */}
             {duplicateWarning && (
-              <div className="bg-amber-50 border border-amber-300 rounded-lg px-3 py-1.5 flex items-center gap-2">
+              <div className="bg-amber-50 border border-amber-300 rounded-lg px-3 py-1 flex items-center gap-2">
                 <span className="text-amber-600 text-xs">⚠️</span>
                 <p className="text-amber-700 text-[10px] font-semibold flex-1">{duplicateWarning}</p>
                 <button onClick={() => setDuplicateWarning('')} className="text-amber-400 text-xs font-bold">✕</button>
@@ -462,8 +454,8 @@ export default function PaymentModal({ total, onConfirm, onCancel, inline = fals
 
             {/* Numpad + Quick Amounts */}
             <div className="flex-1 grid grid-cols-[3fr_1fr] gap-1.5 min-h-0">
-              {/* Numpad 3x4 */}
-              <div className="grid grid-cols-3 gap-1.5">
+              {/* Numpad 4x3 */}
+              <div className="grid grid-cols-3 gap-1">
                 {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(num => (
                   <button
                     key={num}
@@ -481,7 +473,7 @@ export default function PaymentModal({ total, onConfirm, onCancel, inline = fals
               </div>
 
               {/* Quick Amounts Column */}
-              <div className="flex flex-col gap-1.5">
+              <div className="flex flex-col gap-1">
                 {[500, 1000, 2000, 5000, 10000, 20000, 50000]
                   .filter(amount => quickAmountSettings[amount] !== false)
                   .slice(0, 4)

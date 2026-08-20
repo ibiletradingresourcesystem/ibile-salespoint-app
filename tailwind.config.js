@@ -241,6 +241,7 @@ module.exports = {
         xl: 'var(--radius-xl)',
         '2xl': 'var(--radius-2xl)',
         full: '9999px',
+        pos: 'var(--pos-radius)',
       },
       
       boxShadow: {
