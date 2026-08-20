@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
   faBackspace,
@@ -7,10 +7,16 @@ import {
   faKeyboard,
 } from "@fortawesome/free-solid-svg-icons";
 
+const NUM_ROW = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"];
 const KEY_ROWS = [
   ["Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P"],
   ["A", "S", "D", "F", "G", "H", "J", "K", "L"],
   ["Z", "X", "C", "V", "B", "N", "M"],
+];
+const SYMBOL_ROWS = [
+  ["!", "@", "#", "$", "%", "^", "&", "*", "(", ")"],
+  ["-", "_", "=", "+", "[", "]", "{", "}", "|"],
+  [";", ":", "'", "\"", ",", ".", "/"],
 ];
 
 export default function AlphaKeyboardModal({
@@ -24,11 +30,14 @@ export default function AlphaKeyboardModal({
   onClose = () => {},
   onSubmit = () => {},
 }) {
+  const [showSymbols, setShowSymbols] = useState(false);
+
   if (!isOpen) return null;
 
   const append = (next) => onChange(`${value || ""}${next}`);
   const backspace = () => onChange((value || "").slice(0, -1));
   const clear = () => onChange("");
+  const activeRows = showSymbols ? SYMBOL_ROWS : KEY_ROWS;
 
   return (
     <div className="fixed inset-0 z-[80] bg-black/60 flex items-end sm:items-center justify-center p-2 sm:p-4">
@@ -57,17 +66,30 @@ export default function AlphaKeyboardModal({
             </div>
           </div>
 
-          <div className="space-y-2">
-            {KEY_ROWS.map((row, rowIndex) => (
+          <div className="space-y-1.5">
+            {/* Number Row */}
+            <div className="grid grid-cols-10 gap-1.5">
+              {NUM_ROW.map((key) => (
+                <button
+                  key={key}
+                  onClick={() => append(key)}
+                  className="bg-cyan-600/80 border border-cyan-400/40 text-white hover:bg-cyan-500 rounded-lg py-2.5 sm:py-3 font-bold text-sm sm:text-lg shadow-sm transition active:scale-95"
+                >
+                  {key}
+                </button>
+              ))}
+            </div>
+            {/* Letter/Symbol Rows */}
+            {activeRows.map((row, rowIndex) => (
               <div
                 key={rowIndex}
-                className={`grid gap-2 ${rowIndex === 1 ? "grid-cols-9 px-3 sm:px-8" : rowIndex === 2 ? "grid-cols-7 px-8 sm:px-16" : "grid-cols-10"}`}
+                className={`grid gap-1.5 ${rowIndex === 1 ? "grid-cols-9 px-3 sm:px-8" : rowIndex === 2 ? "grid-cols-7 px-8 sm:px-16" : "grid-cols-10"}`}
               >
                 {row.map((key) => (
                   <button
                     key={key}
                     onClick={() => append(key)}
-                    className="bg-white border border-cyan-200/60 text-cyan-900 hover:bg-cyan-50 rounded-lg py-3 sm:py-4 font-bold text-sm sm:text-lg shadow-sm transition active:scale-95"
+                    className="bg-white border border-cyan-200/60 text-cyan-900 hover:bg-cyan-50 rounded-lg py-2.5 sm:py-3.5 font-bold text-sm sm:text-lg shadow-sm transition active:scale-95"
                   >
                     {key}
                   </button>
@@ -76,32 +98,38 @@ export default function AlphaKeyboardModal({
             ))}
           </div>
 
-          <div className="grid grid-cols-12 gap-2">
+          <div className="grid grid-cols-12 gap-1.5">
             <button
               onClick={clear}
-              className="col-span-3 sm:col-span-2 bg-red-500 hover:bg-red-600 rounded-lg py-3 font-bold text-xs sm:text-sm transition active:scale-95"
+              className="col-span-2 bg-red-500 hover:bg-red-600 rounded-lg py-2.5 font-bold text-xs sm:text-sm transition active:scale-95"
             >
               CLEAR
             </button>
             <button
+              onClick={() => setShowSymbols(!showSymbols)}
+              className="col-span-2 bg-cyan-500 hover:bg-cyan-400 rounded-lg py-2.5 font-bold text-xs sm:text-sm transition active:scale-95"
+            >
+              {showSymbols ? "ABC" : "!@#"}
+            </button>
+            <button
               onClick={() => append(" ")}
-              className="col-span-5 sm:col-span-6 bg-white border border-cyan-200/60 text-cyan-900 hover:bg-cyan-50 rounded-lg py-3 font-bold text-xs sm:text-sm transition active:scale-95"
+              className="col-span-4 bg-white border border-cyan-200/60 text-cyan-900 hover:bg-cyan-50 rounded-lg py-2.5 font-bold text-xs sm:text-sm transition active:scale-95"
             >
               SPACE
             </button>
             <button
               onClick={backspace}
-              className="col-span-4 sm:col-span-2 bg-orange-500 hover:bg-orange-600 rounded-lg py-3 font-bold text-xs sm:text-sm transition active:scale-95 flex items-center justify-center gap-2"
+              className="col-span-2 bg-orange-500 hover:bg-orange-600 rounded-lg py-2.5 font-bold text-xs sm:text-sm transition active:scale-95 flex items-center justify-center gap-1"
             >
               <FontAwesomeIcon icon={faBackspace} className="w-4 h-4" />
-              <span>BACK</span>
+              <span className="hidden sm:inline">BACK</span>
             </button>
             <button
               onClick={onSubmit}
-              className="col-span-12 sm:col-span-2 bg-green-500 hover:bg-green-600 rounded-lg py-3 font-bold text-sm transition active:scale-95 flex items-center justify-center gap-2"
+              className="col-span-2 bg-green-500 hover:bg-green-600 rounded-lg py-2.5 font-bold text-sm transition active:scale-95 flex items-center justify-center gap-1"
             >
               <FontAwesomeIcon icon={faSearch} className="w-4 h-4" />
-              <span>{submitLabel}</span>
+              <span className="hidden sm:inline">{submitLabel}</span>
             </button>
           </div>
         </div>

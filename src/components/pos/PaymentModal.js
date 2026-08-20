@@ -355,298 +355,200 @@ export default function PaymentModal({ total, onConfirm, onCancel, inline = fals
 
   const paymentContent = (
     <div className={`${inline ? 'bg-white rounded-xl border border-neutral-200 shadow-lg w-full' : 'bg-white rounded-xl shadow-2xl max-w-4xl w-full h-[calc(100vh-1rem)]'} flex flex-col overflow-hidden relative z-50 ${contentSizeClass}`}>
-        {/* Header */}
-        <div className="bg-gradient-to-r from-cyan-600 to-cyan-700 text-white px-3 py-2 sm:px-4 sm:py-3 flex justify-between items-center flex-shrink-0">
-          <div>
-            <h2 className="text-base sm:text-lg font-bold">Complete Payment</h2>
-            <p className="text-cyan-100 text-[11px] sm:text-xs">Select payment method and enter amount</p>
-          </div>
-          {onCancel && (
-            <button
-              onClick={onCancel}
-              className="hover:bg-white/20 p-1.5 rounded transition-all active:scale-95"
-            >
-              <FontAwesomeIcon icon={faXmark} className="w-5 h-5" />
-            </button>
-          )}
-        </div>
 
-        {/* Main Content */}
-        <div className="flex-1 p-2 sm:p-3 grid grid-cols-3 gap-2 sm:gap-3 overflow-hidden">
-          {/* Left Column: Amount Summary */}
-          <div className="space-y-2">
-            {/* Total Due Card */}
-            <div className="bg-gradient-to-br from-gray-50 to-gray-100 border border-gray-200 rounded-lg p-2 sm:p-3">
-              <p className="text-xs text-gray-500 font-semibold uppercase">Total Due</p>
-              <p className="text-lg sm:text-xl font-black text-gray-800">
-                {formatNaira(total)}
-              </p>
+        {/* Main Content — 2 column: summary | numpad+tenders */}
+        <div className="flex-1 p-2 sm:p-3 grid grid-cols-[minmax(160px,1fr)_2.2fr] gap-2 sm:gap-3 overflow-hidden">
+
+          {/* LEFT: Payment Summary */}
+          <div className="space-y-2 overflow-y-auto">
+            {/* Total Due */}
+            <div className="bg-gradient-to-br from-gray-50 to-gray-100 border border-gray-200 rounded-lg p-2.5">
+              <p className="text-[10px] text-gray-500 font-semibold uppercase">Total Due</p>
+              <p className="text-lg font-black text-gray-800">{formatNaira(total)}</p>
             </div>
 
-            {/* Amount Paid Card */}
-            <div className={`rounded-lg p-2 sm:p-3 border ${
-              isPaymentComplete 
-                ? 'bg-gradient-to-br from-green-50 to-green-100 border-green-300' 
-                : 'bg-gradient-to-br from-orange-50 to-orange-100 border-orange-300'
-            }`}>
-              <p className={`text-xs font-semibold uppercase ${isPaymentComplete ? 'text-green-600' : 'text-orange-600'}`}>
-                Amount Paid
-              </p>
-              <p className={`text-lg sm:text-xl font-black ${isPaymentComplete ? 'text-green-700' : 'text-orange-700'}`}>
-                {formatNaira(totalPaid)}
-              </p>
+            {/* Amount Paid */}
+            <div className={`rounded-lg p-2.5 border ${isPaymentComplete ? 'bg-gradient-to-br from-green-50 to-green-100 border-green-300' : 'bg-gradient-to-br from-orange-50 to-orange-100 border-orange-300'}`}>
+              <p className={`text-[10px] font-semibold uppercase ${isPaymentComplete ? 'text-green-600' : 'text-orange-600'}`}>Amount Paid</p>
+              <p className={`text-lg font-black ${isPaymentComplete ? 'text-green-700' : 'text-orange-700'}`}>{formatNaira(totalPaid)}</p>
             </div>
 
-            {/* Change Display */}
-            {isPaymentComplete && (
-              <div className="bg-gradient-to-br from-cyan-50 to-cyan-100 border border-cyan-300 rounded-lg p-2 sm:p-3">
-                <p className="text-xs text-cyan-600 font-semibold uppercase">Change Due</p>
-                <p className="text-lg sm:text-xl font-black text-cyan-700">
-                  {formatNaira(change)}
-                </p>
+            {/* Change or Remaining */}
+            {isPaymentComplete ? (
+              <div className="bg-gradient-to-br from-cyan-50 to-cyan-100 border border-cyan-300 rounded-lg p-2.5">
+                <p className="text-[10px] text-cyan-600 font-semibold uppercase">Change Due</p>
+                <p className="text-lg font-black text-cyan-700">{formatNaira(change)}</p>
               </div>
-            )}
-
-            {/* Remaining */}
-            {!isPaymentComplete && totalPaid > 0 && (
-              <div className="bg-gradient-to-br from-red-50 to-red-100 border border-red-300 rounded-lg p-2 sm:p-3">
-                <p className="text-xs text-red-600 font-semibold uppercase">Still Needed</p>
-                <p className="text-lg sm:text-xl font-black text-red-700">
-                  {formatNaira(total - totalPaid)}
-                </p>
+            ) : totalPaid > 0 ? (
+              <div className="bg-gradient-to-br from-red-50 to-red-100 border border-red-300 rounded-lg p-2.5">
+                <p className="text-[10px] text-red-600 font-semibold uppercase">Still Needed</p>
+                <p className="text-lg font-black text-red-700">{formatNaira(total - totalPaid)}</p>
               </div>
-            )}
+            ) : null}
 
-            {/* Tenders Summary */}
-            <div className="bg-white border-2 border-gray-200 rounded-xl p-2 sm:p-3">
-              <div className="flex justify-between items-center mb-2">
-                <p className="text-xs font-bold text-gray-600 uppercase">Payment Breakdown</p>
+            {/* Payment Breakdown */}
+            <div className="bg-white border border-gray-200 rounded-lg p-2.5">
+              <div className="flex justify-between items-center mb-1.5">
+                <p className="text-[10px] font-bold text-gray-500 uppercase">Breakdown</p>
                 {Object.values(tenders).some(v => v > 0) && (
-                  <button
-                    onClick={handleClearAllTenders}
-                    className="text-xs px-2 py-1 bg-orange-100 hover:bg-orange-200 text-orange-700 font-bold rounded transition-all"
-                  >
-                    Clear All
+                  <button onClick={handleClearAllTenders} className="text-[10px] px-1.5 py-0.5 bg-orange-100 hover:bg-orange-200 text-orange-700 font-bold rounded transition-all">
+                    Clear
                   </button>
                 )}
               </div>
-              <div className="space-y-1.5">
+              <div className="space-y-1">
                 {availableTenders.map(tender => (
                   tenders[tender.id] > 0 && (
-                    <div key={tender.id} className="flex justify-between items-center text-sm">
+                    <div key={tender.id} className="flex justify-between items-center text-xs">
                       <span className="text-gray-700 font-medium">{tender.name}</span>
-                      <span className="font-bold text-cyan-700">
-                        {formatNaira(tenders[tender.id])}
-                      </span>
+                      <span className="font-bold text-cyan-700">{formatNaira(tenders[tender.id])}</span>
                     </div>
                   )
                 ))}
                 {Object.values(tenders).every(v => v === 0) && (
-                  <p className="text-gray-400 text-xs text-center py-2">No payments added yet</p>
+                  <p className="text-gray-400 text-[10px] text-center py-1">No payments yet</p>
                 )}
               </div>
             </div>
-          </div>
 
-          {/* Middle Column: Payment Methods & Input */}
-          <div className="flex flex-col space-y-3">
-            {/* Payment Methods */}
-            <div>
-              <p className="text-xs font-bold text-gray-600 uppercase mb-2">Payment Methods</p>
-              <div className="grid grid-cols-2 gap-2">
-                {availableTenders.map(tender => (
-                  <button
-                    key={tender.id}
-                    onClick={() => {
-                      setSelectedTender(tender.id);
-                      handleClear();
-                    }}
-                    className={`p-2 sm:p-3 rounded-xl font-semibold transition-all text-xs sm:text-sm active:scale-[0.98] ${
-                      selectedTender === tender.id
-                        ? 'bg-gradient-to-br from-cyan-500 to-cyan-600 text-white shadow-lg ring-2 ring-cyan-300'
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200 border-2 border-gray-200'
-                    }`}
-                  >
-                    <div className="font-bold">{tender.name}</div>
-                    <div className={`text-xs mt-0.5 ${selectedTender === tender.id ? 'text-cyan-100' : 'text-gray-500'}`}>
-                      {formatNaira(tenders[tender.id])}
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Amount Input Display */}
-            <div className="bg-gradient-to-br from-cyan-50 to-cyan-100 border-2 border-cyan-300 rounded-xl p-3 sm:p-4">
-              <p className="text-cyan-600 text-xs font-bold uppercase mb-1">
-                Entering for: {availableTenders.find(t => t.id === selectedTender)?.name || 'Select Method'}
-              </p>
-              <p className="text-3xl sm:text-4xl font-black text-cyan-700 text-right font-mono">
-                ₦{Number(displayAmount || 0).toLocaleString('en-NG')}
-              </p>
-            </div>
-
-            {/* Duplicate Amount Warning */}
-            {duplicateWarning && (
-              <div className="bg-amber-50 border border-amber-300 rounded-lg px-3 py-2 flex items-center gap-2 animate-pulse">
-                <span className="text-amber-600 text-sm">⚠️</span>
-                <p className="text-amber-700 text-xs font-semibold flex-1">{duplicateWarning}</p>
-                <button onClick={() => setDuplicateWarning('')} className="text-amber-400 hover:text-amber-600 text-xs font-bold">✕</button>
-              </div>
-            )}
-
-            {/* Quick Amount Buttons */}
-            <div className="grid grid-cols-4 gap-1.5">
-              {[500, 1000, 2000, 5000, 10000, 20000, 50000]
-                .filter(amount => quickAmountSettings[amount] !== false)
-                .map(amount => (
-                <button
-                  key={amount}
-                  onClick={() => {
-                    setCurrentAmount(amount.toString());
-                    setDisplayAmount(amount.toString());
-                  }}
-                  className="py-1.5 sm:py-2 px-1 bg-gray-100 hover:bg-cyan-100 border-2 border-gray-200 hover:border-cyan-300 rounded-lg text-[10px] sm:text-xs font-bold text-gray-700 transition-all active:scale-95"
-                >
-                  ₦{amount >= 1000 ? `${amount / 1000}K` : amount}
-                </button>
-              ))}
-              {quickAmountSettings.exact !== false && (
-                <button
-                  onClick={() => {
-                    setCurrentAmount(total.toString());
-                    setDisplayAmount(total.toString());
-                  }}
-                  className="py-1.5 sm:py-2 px-1 bg-cyan-100 hover:bg-cyan-200 border-2 border-cyan-300 rounded-lg text-[10px] sm:text-xs font-bold text-cyan-700 transition-all active:scale-95"
-                >
-                  EXACT
+            {/* Confirm / Cancel */}
+            <div className="space-y-1.5 pt-1">
+              <button
+                onClick={handleConfirm}
+                disabled={!isPaymentComplete || isProcessing}
+                className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-lg font-bold text-sm transition-all active:scale-[0.98] ${
+                  isPaymentComplete && !isProcessing
+                    ? 'bg-green-600 hover:bg-green-700 text-white shadow-lg'
+                    : 'bg-gray-200 cursor-not-allowed text-gray-400'
+                }`}
+              >
+                <FontAwesomeIcon icon={faCheckCircle} className="w-4 h-4" />
+                {isProcessing ? 'Processing...' : 'Confirm'}
+              </button>
+              {onCancel && (
+                <button onClick={onCancel} className="w-full py-2 bg-gray-200 hover:bg-gray-300 rounded-lg font-bold text-xs text-gray-600 transition-all active:scale-[0.98]">
+                  Cancel
                 </button>
               )}
             </div>
           </div>
 
-          {/* Right Column: Numeric Keypad (desktop) or native input (mobile) */}
-          <div className="flex flex-col space-y-1.5">
-            {isMobile ? (
-              <>
-                <p className="text-xs font-bold text-gray-600 uppercase text-center">Amount</p>
-                <input
-                  type="number"
-                  inputMode="decimal"
-                  value={currentAmount}
-                  onChange={(e) => {
-                    setCurrentAmount(e.target.value);
-                    setDisplayAmount(e.target.value || '0');
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      handleAdd();
-                    }
-                  }}
-                  placeholder="Enter amount"
-                  className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-cyan-200 text-sm font-semibold"
-                />
-                <div className="space-y-1.5">
-                  <button
-                    onClick={handleClear}
-                    className="w-full py-2 bg-gray-200 hover:bg-gray-300 border border-gray-300 text-gray-700 rounded-lg font-bold text-xs transition-all active:scale-[0.98]"
-                  >
-                    CLEAR
-                  </button>
-                  <button
-                    onClick={handleAdd}
-                    className="w-full py-2.5 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white rounded-lg font-bold text-sm shadow-lg transition-all active:scale-[0.98]"
-                  >
-                    + ADD AMOUNT
-                  </button>
-                </div>
-              </>
-            ) : (
-              <>
-                <p className="text-xs font-bold text-gray-600 uppercase text-center">Keypad</p>
+          {/* RIGHT: Numpad + Tenders */}
+          <div className="flex flex-col gap-2 min-h-0">
 
-                {/* Number Grid */}
-                <div className="grid grid-cols-3 gap-1.5 flex-1">
-                  {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(num => (
-                    <button
-                      key={num}
-                      onClick={() => handleNumberClick(num)}
-                      className={`bg-gray-100 hover:bg-gray-200 border border-gray-200 rounded-lg font-bold transition-all active:scale-95 active:bg-cyan-100 ${keypadButtonClass}`}
-                    >
-                      {num}
-                    </button>
-                  ))}
+            {/* Amount Display Row */}
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleClearAllTenders}
+                className="px-3 py-2 bg-gray-100 hover:bg-gray-200 border border-gray-200 rounded-lg text-xs font-bold text-gray-600 transition-all active:scale-95 whitespace-nowrap"
+              >
+                Tenders
+              </button>
+              <div className="flex-1 bg-white border-2 border-gray-200 rounded-lg px-3 py-2 text-right">
+                <p className="text-2xl sm:text-3xl font-black text-gray-800 font-mono tracking-tight">
+                  ₦{Number(displayAmount || 0).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </p>
+              </div>
+            </div>
 
-                  {/* Zero and Decimal */}
-                  <button
-                    onClick={() => handleNumberClick(0)}
-                    className={`col-span-2 bg-gray-100 hover:bg-gray-200 border border-gray-200 rounded-lg font-bold transition-all active:scale-95 ${keypadButtonClass}`}
-                  >
-                    0
-                  </button>
-                  <button
-                    onClick={handleDecimal}
-                    className={`bg-cyan-100 hover:bg-cyan-200 border border-cyan-300 text-cyan-700 rounded-lg font-bold transition-all active:scale-95 ${keypadButtonClass}`}
-                  >
-                    .
-                  </button>
-                </div>
-
-                {/* Action Buttons */}
-                <div className="space-y-1.5">
-                  <button
-                    onClick={handleBackspace}
-                    className="w-full py-2 bg-orange-100 hover:bg-orange-200 border border-orange-300 text-orange-700 rounded-lg font-bold text-xs sm:text-sm transition-all active:scale-[0.98]"
-                  >
-                    ← BACK
-                  </button>
-                  <button
-                    onClick={handleClear}
-                    className="w-full py-2 bg-gray-200 hover:bg-gray-300 border border-gray-300 text-gray-700 rounded-lg font-bold text-xs sm:text-sm transition-all active:scale-[0.98]"
-                  >
-                    CLEAR
-                  </button>
-                  <button
-                    onClick={handleAdd}
-                    className="w-full py-2.5 sm:py-3 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white rounded-lg font-bold text-sm sm:text-base shadow-lg transition-all active:scale-[0.98]"
-                  >
-                    + ADD AMOUNT
-                  </button>
-                </div>
-              </>
+            {/* Duplicate Warning */}
+            {duplicateWarning && (
+              <div className="bg-amber-50 border border-amber-300 rounded-lg px-3 py-1.5 flex items-center gap-2">
+                <span className="text-amber-600 text-xs">⚠️</span>
+                <p className="text-amber-700 text-[10px] font-semibold flex-1">{duplicateWarning}</p>
+                <button onClick={() => setDuplicateWarning('')} className="text-amber-400 text-xs font-bold">✕</button>
+              </div>
             )}
-          </div>
-        </div>
 
-        {/* Footer - Action Buttons */}
-        <div className="px-3 py-2 bg-gray-100 border-t border-gray-200 grid grid-cols-2 gap-3 flex-shrink-0">
-          <button
-            onClick={onCancel}
-            className="flex items-center justify-center gap-2 py-3 bg-gray-200 hover:bg-gray-300 rounded-lg transition-all active:scale-[0.98]"
-          >
-            <div className="w-10 h-10 bg-gray-600 rounded-full flex items-center justify-center">
-              <FontAwesomeIcon icon={faTimes} className="w-5 h-5 text-white" />
+            {/* Numpad + Quick Amounts */}
+            <div className="flex-1 grid grid-cols-[3fr_1fr] gap-1.5 min-h-0">
+              {/* Numpad 3x4 */}
+              <div className="grid grid-cols-3 gap-1.5">
+                {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(num => (
+                  <button
+                    key={num}
+                    onClick={() => handleNumberClick(num)}
+                    className={`bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-lg font-bold transition-all active:scale-95 active:bg-cyan-50 ${keypadButtonClass}`}
+                  >
+                    {num}
+                  </button>
+                ))}
+                <button onClick={handleDecimal} className={`bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-lg font-bold transition-all active:scale-95 ${keypadButtonClass}`}>.</button>
+                <button onClick={() => handleNumberClick(0)} className={`bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-lg font-bold transition-all active:scale-95 ${keypadButtonClass}`}>0</button>
+                <button onClick={handleBackspace} className={`bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-lg font-bold transition-all active:scale-95 flex items-center justify-center ${keypadButtonClass}`}>
+                  <FontAwesomeIcon icon={faBackspace} className="w-5 h-5 text-gray-500" />
+                </button>
+              </div>
+
+              {/* Quick Amounts Column */}
+              <div className="flex flex-col gap-1.5">
+                {[500, 1000, 2000, 5000, 10000, 20000, 50000]
+                  .filter(amount => quickAmountSettings[amount] !== false)
+                  .slice(0, 4)
+                  .map(amount => (
+                  <button
+                    key={amount}
+                    onClick={() => { setCurrentAmount(amount.toString()); setDisplayAmount(amount.toString()); }}
+                    className="flex-1 bg-white hover:bg-cyan-50 border-2 border-cyan-200 hover:border-cyan-400 rounded-lg text-xs sm:text-sm font-bold text-cyan-700 transition-all active:scale-95"
+                  >
+                    ₦{amount >= 1000 ? `${amount / 1000}K` : amount}
+                  </button>
+                ))}
+              </div>
             </div>
-            <span className="text-gray-700 font-bold text-sm">Cancel</span>
-          </button>
-          <button
-            onClick={handleConfirm}
-            disabled={!isPaymentComplete || isProcessing}
-            className={`flex items-center justify-center gap-2 py-3 rounded-lg transition-all active:scale-[0.98] ${
-              isPaymentComplete && !isProcessing
-                ? 'bg-cyan-100 hover:bg-cyan-200 border border-cyan-300'
-                : 'bg-gray-100 cursor-not-allowed opacity-50 border border-gray-200'
-            }`}
-          >
-            <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-              isPaymentComplete && !isProcessing ? 'bg-cyan-600' : 'bg-gray-400'
-            }`}>
-              <FontAwesomeIcon icon={faCheckCircle} className="w-5 h-5 text-white" />
+
+            {/* Pay By — Tender Cards */}
+            <div>
+              <div className="flex items-center gap-2 mb-1.5">
+                <p className="text-[10px] font-bold text-gray-400 uppercase">Pay By</p>
+                <div className="flex-1 border-t border-gray-200"></div>
+              </div>
+              <div className="flex gap-2">
+                {availableTenders.map(tender => {
+                  const hasAmount = tenders[tender.id] > 0;
+                  const btnColor = tender.buttonColor || '#0891b2';
+                  const isCashLike = tender.classification === 'Cash' || tender.name.toLowerCase() === 'cash';
+                  return (
+                    <button
+                      key={tender.id}
+                      onClick={() => {
+                        const amount = parseFloat(currentAmount) || 0;
+                        if (amount > 0) {
+                          const now = Date.now();
+                          const last = lastAddRef.current;
+                          if (last.tenderId === tender.id && last.amount === amount && (now - last.time) < 10000) {
+                            setDuplicateWarning(`${formatNaira(amount)} was already added to ${tender.name}. Added again.`);
+                            setTimeout(() => setDuplicateWarning(''), 4000);
+                          } else {
+                            setDuplicateWarning('');
+                          }
+                          lastAddRef.current = { tenderId: tender.id, amount, time: now };
+                          setTenders(prev => ({ ...prev, [tender.id]: prev[tender.id] + amount }));
+                          setSelectedTender(tender.id);
+                          handleClear();
+                        } else {
+                          setSelectedTender(tender.id);
+                        }
+                      }}
+                      className={`flex-1 py-2.5 px-2 rounded-lg font-bold text-xs sm:text-sm transition-all active:scale-[0.97] border-2 ${
+                        isCashLike && !hasAmount
+                          ? 'bg-white border-cyan-300 text-cyan-700 hover:bg-cyan-50'
+                          : 'text-white hover:opacity-90'
+                      }`}
+                      style={isCashLike && !hasAmount ? {} : { backgroundColor: btnColor, borderColor: btnColor }}
+                    >
+                      <div className="truncate">{tender.name}</div>
+                      {hasAmount && (
+                        <div className={`text-[10px] mt-0.5 font-semibold ${isCashLike && !hasAmount ? 'text-cyan-500' : 'text-white/80'}`}>
+                          {formatNaira(tenders[tender.id])}
+                        </div>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-            <span className={`font-bold text-sm ${isPaymentComplete && !isProcessing ? 'text-cyan-700' : 'text-gray-400'}`}>
-              {isProcessing ? 'Processing...' : 'Confirm'}
-            </span>
-          </button>
+          </div>
         </div>
     </div>
   );

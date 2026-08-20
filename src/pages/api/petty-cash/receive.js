@@ -44,18 +44,15 @@ export default async function handler(req, res) {
     const productEntries = incomingProducts && Array.isArray(incomingProducts) ? incomingProducts : (Array.isArray(transaction.products) ? transaction.products : []);
     const receivedProducts = [];
 
-    // Batch load existing products to avoid N+1 queries
-    const validEntries = productEntries.filter((e) => e.productId && e.quantity > 0);
-    const existingProducts = validEntries.length > 0
-      ? await Product.find({ _id: { $in: validEntries.map((e) => e.productId) } }).lean()
-      : [];
-    const productMap = new Map(existingProducts.map((p) => [String(p._id), p]));
+    for (const entry of productEntries) {
+      if (!entry.productId || !entry.quantity || entry.quantity <= 0) continue;
 
-    for (const entry of validEntries) {
       try {
-        let product = productMap.get(String(entry.productId));
+        // Check if product exists
+        let product = await Product.findById(entry.productId);
 
         if (!product) {
+          // Create the product if it doesn't exist (petty-cash vendor product)
           product = await Product.create({
             name: entry.productName || "Unnamed Product",
             description: `Auto-created from petty cash vendor order`,
@@ -67,8 +64,10 @@ export default async function handler(req, res) {
             category: "Top Level",
             locations: transaction.location ? [transaction.location] : [],
           });
+          // Update entry with new product ID
           entry.productId = String(product._id);
         } else {
+          // Increment existing product quantity
           await Product.updateOne(
             { _id: product._id },
             { $inc: { quantity: entry.quantity } }
@@ -82,7 +81,9 @@ export default async function handler(req, res) {
           costPrice: entry.costPrice || product.costPrice || 0,
         });
       } catch (productErr) {
+        // Log product error but continue processing other products
         console.error(`Failed to update product ${entry.productId}:`, productErr.message);
+        // Still add to received products so we don't lose the record
         receivedProducts.push({
           productId: entry.productId || "",
           productName: entry.productName,

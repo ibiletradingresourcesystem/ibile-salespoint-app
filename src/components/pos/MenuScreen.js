@@ -944,11 +944,20 @@ export default function MenuScreen() {
                 />
                 <input
                   type="text"
-                  placeholder="Search products or categories..."
+                  inputMode="none"
+                  placeholder="Search products or scan barcode..."
                   value={searchTerm}
-                  readOnly
-                  onClick={() => setShowSearchKeyboard(true)}
-                  onFocus={() => setShowSearchKeyboard(true)}
+                  onChange={(e) => {
+                    setSearchTerm(e.target.value);
+                    if (!e.target.value.trim()) setAppliedSearch('');
+                  }}
+                  onDoubleClick={() => setShowSearchKeyboard(true)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleSearchClick();
+                    }
+                  }}
                   className="w-full pl-8 pr-3 py-1.5 sm:py-2 text-xs sm:text-sm border border-neutral-200 rounded-lg focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-200 transition-all font-medium"
                 />
               </div>
@@ -1173,10 +1182,12 @@ export default function MenuScreen() {
             ) : (() => {
               const searchSource = appliedSearch && allProducts.length > 0 ? allProducts : products;
               const filteredProducts = appliedSearch
-                ? searchSource.filter(product =>
-                    product.name.toLowerCase().includes(appliedSearch.toLowerCase()) ||
-                    (product.description && product.description.toLowerCase().includes(appliedSearch.toLowerCase()))
-                  )
+                ? searchSource.filter(product => {
+                    const q = appliedSearch.toLowerCase();
+                    return product.name.toLowerCase().includes(q) ||
+                      (product.barcode && product.barcode.toLowerCase().includes(q)) ||
+                      (product.description && product.description.toLowerCase().includes(q));
+                  })
                 : searchSource;
               
               return filteredProducts.length > 0 ? (
