@@ -164,14 +164,22 @@ export default function PrinterSettings() {
 
   return (
     <div className="max-w-4xl mx-auto p-6 space-y-4">
-      {/* Back Button */}
-      <button 
-        onClick={() => router.back()}
-        className="flex items-center gap-2 px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 transition"
-      >
-        <FontAwesomeIcon icon={faArrowLeft} className="w-4 h-4" />
-        <span>Back</span>
-      </button>
+      {/* Sticky Back Button + Save Confirmation */}
+      <div className="sticky top-0 z-30 bg-white/90 backdrop-blur-sm py-2 -mx-6 px-6 flex items-center gap-3">
+        <button
+          onClick={() => router.back()}
+          className="flex items-center gap-2 px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 transition"
+        >
+          <FontAwesomeIcon icon={faArrowLeft} className="w-4 h-4" />
+          <span>Back</span>
+        </button>
+        {success && (
+          <span className="text-sm text-green-700 bg-green-50 border border-green-200 px-3 py-1.5 rounded-lg">{success}</span>
+        )}
+        {error && (
+          <span className="text-sm text-red-700 bg-red-50 border border-red-200 px-3 py-1.5 rounded-lg">{error}</span>
+        )}
+      </div>
 
       <div className="bg-white rounded-lg shadow-lg">
         {/* Header */}
@@ -206,18 +214,7 @@ export default function PrinterSettings() {
             <p className="text-xs text-purple-800 mt-2 italic">Detection checks Windows printer queue and USB devices</p>
           </div>
 
-          {/* Messages */}
-          {error && (
-            <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded-lg">
-              {error}
-            </div>
-          )}
 
-          {success && (
-            <div className="bg-green-50 border border-green-200 text-green-800 px-4 py-3 rounded-lg">
-              {success}
-            </div>
-          )}
 
           {/* Printer Availability Status */}
           {printerAvailable && (

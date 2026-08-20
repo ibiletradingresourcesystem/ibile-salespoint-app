@@ -355,8 +355,8 @@ export default function SettingsPage() {
 
   return (
     <div className="max-w-5xl mx-auto p-6 space-y-4">
-      {/* Back Button */}
-      <div className="flex items-center justify-between gap-4">
+      {/* Sticky Back Button + Save Confirmation */}
+      <div className="sticky top-0 z-30 bg-white/90 backdrop-blur-sm py-2 -mx-6 px-6 flex items-center gap-3">
         <button
           onClick={() => router.back()}
           className="flex items-center gap-2 px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 transition"
@@ -364,6 +364,12 @@ export default function SettingsPage() {
           <FontAwesomeIcon icon={faArrowLeft} className="w-4 h-4" />
           <span>Back</span>
         </button>
+        {success && (
+          <span className="text-sm text-green-700 bg-green-50 border border-green-200 px-3 py-1.5 rounded-lg">{success}</span>
+        )}
+        {error && (
+          <span className="text-sm text-red-700 bg-red-50 border border-red-200 px-3 py-1.5 rounded-lg">{error}</span>
+        )}
       </div>
 
       <div className="bg-white rounded-lg shadow-lg overflow-hidden">
@@ -383,21 +389,7 @@ export default function SettingsPage() {
         </div>
 
         <div className="p-6 space-y-6">
-          {/* Messages */}
-          {error && (
-            <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded-lg">
-              {error}
-            </div>
-          )}
 
-          {success && (
-            <div className="bg-green-50 border border-green-200 text-green-800 px-4 py-3 rounded-lg flex items-center justify-between">
-              <span>{success}</span>
-              <span className="text-xs font-semibold bg-green-100 text-green-700 px-2 py-1 rounded-full border border-green-200">
-                Saved
-              </span>
-            </div>
-          )}
 
           {/* Sidebar Sections */}
           <div className="border border-gray-200 rounded-lg overflow-hidden">
