@@ -35,6 +35,7 @@ export default function ReceiptPrinter({
   // Compute font settings from receiptSettings
   const receiptFontFamily = (receiptSettings?.fontFamily || 'Arial').trim();
   const receiptFontSize = Number(receiptSettings?.fontSize) || 6.5;
+  const receiptFontWeight = receiptSettings?.fontWeight === 'light' ? '300' : receiptSettings?.fontWeight === 'bold' ? '700' : '400';
 
   // Font family mapping for receipt
   const FONT_FAMILY_MAP = {
@@ -87,6 +88,7 @@ export default function ReceiptPrinter({
 	                width: 100%;
                 padding: 1mm 0;
                 font-size: ${receiptFontSize}pt;
+                font-weight: ${receiptFontWeight};
                 line-height: 1.15;
                 color: #000;
               }
@@ -430,10 +432,12 @@ export default function ReceiptPrinter({
 
         {/* Totals */}
         <div className="totals-section">
-          <div className="total-row">
-            <span>Subtotal:</span>
-            <span style={{ textAlign: 'right' }}>{formatReceiptNaira(model.subtotal)}</span>
-          </div>
+          {(model.tax > 0 || model.adjustmentLines.length > 0) && (
+            <div className="total-row">
+              <span>Subtotal:</span>
+              <span style={{ textAlign: 'right' }}>{formatReceiptNaira(model.subtotal)}</span>
+            </div>
+          )}
           
           {model.tax > 0 && (
             <div className="total-row">
@@ -517,6 +521,7 @@ export default function ReceiptPrinter({
         <div className="status-box">
           {model.status}
         </div>
+        <div style={{ marginBottom: '3mm' }}></div>
       </div>
 
       {/* Print Button (visible during development, remove for production) */}

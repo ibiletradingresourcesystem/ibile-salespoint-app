@@ -1485,11 +1485,6 @@ export default function StaffLogin() {
                             {member.name?.charAt(0)?.toUpperCase() || '?'}
                           </div>
                           <div className="font-bold text-xs leading-tight break-words w-full">{member.name}</div>
-                          <div className={`text-[10px] capitalize px-2 py-0.5 rounded-full ${
-                            selectedStaff === member._id
-                              ? "bg-cyan-600 text-white"
-                              : "bg-cyan-900/40 text-cyan-200"
-                          }`}>{member.role || 'Staff'}</div>
                           {isNonAdminRole(member.role) && resolveStaffLocationId(member) && (
                             <div className={`text-[10px] px-2 py-0.5 rounded-full ${
                               selectedStaff === member._id
