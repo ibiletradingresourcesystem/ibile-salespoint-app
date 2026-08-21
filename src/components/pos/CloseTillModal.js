@@ -880,7 +880,7 @@ export default function CloseTillModal({ isOpen, onClose, onTillClosed }) {
         </div>
 
         {/* Main Content — 3 columns */}
-        <div className="flex-1 grid grid-cols-[220px_1fr_280px] gap-0 overflow-hidden">
+        <div className="flex-1 grid grid-cols-[220px_1fr_340px] gap-0 overflow-hidden">
 
           {/* LEFT: Till Info + Actions */}
           <div className="bg-white border-r border-gray-200 p-4 flex flex-col gap-3 overflow-y-auto">
@@ -1105,20 +1105,34 @@ export default function CloseTillModal({ isOpen, onClose, onTillClosed }) {
           </div>
 
           {/* RIGHT: Keypad */}
-          <div className="hidden sm:flex flex-col border-l border-gray-200 p-4 overflow-y-auto bg-white">
-            <h3 className="text-xs font-bold text-gray-700 uppercase mb-2">
+          <div className="hidden sm:flex flex-col border-l border-gray-200 p-3 overflow-y-auto bg-white">
+            <h3 className="text-sm font-bold text-gray-700 uppercase mb-2">
               {activeTenderKeypad ? `📝 ${tenders.find(t => t.id === activeTenderKeypad)?.name}` : "Keypad"}
             </h3>
             {tenders && tenders.length > 0 ? (
               <>
-                {activeTenderKeypad && (
-                  <div className="bg-white border-2 border-gray-300 rounded-lg p-2.5 text-right mb-2 shadow-sm">
-                    <div className="text-[10px] text-gray-500 mb-0.5">Amount in ₦</div>
-                    <div className="text-2xl font-bold text-cyan-700 truncate">
-                      {formatDisplayValue(tenderCounts[activeTenderKeypad]) || '0'}
+                {/* Show all tender amount displays */}
+                {tenders.map((tender) => (
+                  <div
+                    key={tender.id}
+                    onClick={() => setActiveTenderKeypad(tender.id)}
+                    className={`border-2 rounded-lg p-3 text-right mb-2 shadow-sm cursor-pointer transition-all ${
+                      activeTenderKeypad === tender.id
+                        ? 'border-cyan-400 bg-cyan-50'
+                        : 'border-gray-200 bg-white hover:border-gray-300'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-xs font-semibold text-gray-600">{tender.name}</span>
+                      <span className="text-[10px] text-gray-400">Amount in ₦</span>
+                    </div>
+                    <div className={`text-3xl font-bold truncate ${
+                      activeTenderKeypad === tender.id ? 'text-cyan-700' : 'text-gray-700'
+                    }`}>
+                      {formatDisplayValue(tenderCounts[tender.id]) || '0'}
                     </div>
                   </div>
-                )}
+                ))}
                 {!activeTenderKeypad && (
                   <div className="text-xs text-gray-500 bg-gray-100 rounded p-2 mb-2">← Select a tender to enter amount</div>
                 )}
@@ -1131,6 +1145,7 @@ export default function CloseTillModal({ isOpen, onClose, onTillClosed }) {
                   placeholder="Amount in ₦"
                   disabled={loading || !activeTenderKeypad}
                   showCalc
+                  size="large"
                 />
               </>
             ) : (

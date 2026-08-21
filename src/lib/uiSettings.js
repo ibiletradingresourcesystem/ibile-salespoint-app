@@ -35,6 +35,7 @@ export const defaultUiSettings = {
     cartPanelWidth: 'standard', // compact | standard | wide
     contentDensity: 'comfortable', // compact | comfortable | spacious
     borderRadius: 'standard', // none | small | standard | large
+    productCardTextSize: 'standard', // small | standard | large | extra-large
   },
   payment: {
     scale: 'standard', // compact | standard | large

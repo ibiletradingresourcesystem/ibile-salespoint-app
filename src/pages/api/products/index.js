@@ -38,9 +38,10 @@ export default async function handler(req, res) {
       query.name = { $regex: search, $options: "i" };
     }
 
+    const requestLimit = req.query.sync === 'true' ? 10000 : 2000;
     let products = await Product.find(query)
-      .select("_id name category salePriceIncTax quantity images description locations isChildProduct parentProduct packType qtyPerPack childSalePrice productType roomStatus currentBooking")
-      .limit(500)
+      .select("_id name category salePriceIncTax quantity images description locations isChildProduct parentProduct packType qtyPerPack childSalePrice productType roomStatus currentBooking barcode")
+      .limit(requestLimit)
       .lean();
 
     // Filter by location in JavaScript (more reliable than $or with mixed data)

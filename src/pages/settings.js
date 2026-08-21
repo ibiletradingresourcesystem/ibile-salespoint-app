@@ -355,7 +355,7 @@ export default function SettingsPage() {
 
   return (
     <div className="max-w-5xl mx-auto p-6 space-y-4">
-      {/* Sticky Back Button + Save Confirmation */}
+      {/* Sticky Back Button + Save */}
       <div className="sticky top-0 z-30 bg-white/90 backdrop-blur-sm py-2 -mx-6 px-6 flex items-center gap-3">
         <button
           onClick={() => router.back()}
@@ -363,6 +363,13 @@ export default function SettingsPage() {
         >
           <FontAwesomeIcon icon={faArrowLeft} className="w-4 h-4" />
           <span>Back</span>
+        </button>
+        <button
+          onClick={handleSave}
+          disabled={saving}
+          className="px-6 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition disabled:opacity-50 font-semibold"
+        >
+          {saving ? 'Saving...' : saveLabel}
         </button>
         {success && (
           <span className="text-sm text-green-700 bg-green-50 border border-green-200 px-3 py-1.5 rounded-lg">{success}</span>
@@ -618,6 +625,22 @@ export default function SettingsPage() {
                     <option value="small">Small (Subtle rounding)</option>
                     <option value="standard">Standard (Default)</option>
                     <option value="large">Large (More rounded)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    Product Card Text Size
+                  </label>
+                  <select
+                    value={settings.layout?.productCardTextSize || 'standard'}
+                    onChange={(e) => updateLayoutSetting('productCardTextSize', e.target.value)}
+                    className="w-full border border-gray-300 rounded p-2 focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="small">Small</option>
+                    <option value="standard">Standard</option>
+                    <option value="large">Large</option>
+                    <option value="extra-large">Extra Large</option>
                   </select>
                 </div>
               </div>

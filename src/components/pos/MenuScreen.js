@@ -34,6 +34,7 @@ import { useStaff } from '../../context/StaffContext';
 import { getLocalCategories, getLocalProductsByCategory, syncCategories, syncProducts, getAllLocalProducts } from '../../lib/indexedDB';
 import { initOfflineSync, getOnlineStatus, getImageUrl, shouldShowPlaceholder, syncPendingTransactions, syncPendingTillCloses } from '../../lib/offlineSync';
 import { cleanupOldTransactions } from '../../lib/indexedDBCleanup';
+import { getUiSettings } from '../../lib/uiSettings';
 import AlphaKeyboardModal from '../common/AlphaKeyboardModal';
 
 // Color mapping for categories
@@ -195,6 +196,7 @@ export default function MenuScreen() {
   const [isOnline, setIsOnline] = useState(true); // Track online status
   const [pendingTransactions, setPendingTransactions] = useState(0); // Track unsync'd transactions
   const [showSearchKeyboard, setShowSearchKeyboard] = useState(false);
+  const [productCardTextSize, setProductCardTextSize] = useState('standard');
   const imageObserver = useRef(null);
   const handleManualSyncRef = useRef(null);
   const { addItem, activeCart, showPaymentPanel } = useCart();
@@ -269,6 +271,16 @@ export default function MenuScreen() {
   // Initialize offline sync on mount ONLY (empty deps — runs once)
   useEffect(() => {
     initOfflineSync();
+
+    // Load product card text size from settings
+    const settings = getUiSettings();
+    setProductCardTextSize(settings.layout?.productCardTextSize || 'standard');
+
+    const handleSettingsUpdate = (event) => {
+      const updated = event?.detail || getUiSettings();
+      setProductCardTextSize(updated.layout?.productCardTextSize || 'standard');
+    };
+    window.addEventListener('uiSettings:updated', handleSettingsUpdate);
     
     // Clean up old invalid transactions from previous schema
     cleanupOldTransactions().catch(err => {
@@ -297,6 +309,7 @@ export default function MenuScreen() {
     return () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('uiSettings:updated', handleSettingsUpdate);
     };
   }, []);
 
@@ -772,26 +785,36 @@ export default function MenuScreen() {
         try { localStorage.setItem('cachedCategories', JSON.stringify(fetchedCategories)); } catch (e) {}
         console.log(`✅ Categories synced: ${fetchedCategories.length} categories`);
         
-        // Now fetch products for ALL categories
+        // Fetch ALL products in one call (sync mode bypasses per-category limit)
         let allFetchedProducts = [];
         
-        for (const category of fetchedCategories) {
-          const categoryId = category._id || category.id;
-          console.log(`📦 Fetching products for category: ${category.name}...`);
+        try {
+          let prodUrl = `/api/products?sync=true`;
+          if (location?._id) prodUrl += `&locationId=${encodeURIComponent(location._id)}`;
+          console.log(`📦 Fetching all products in sync mode...`);
+          const prodResponse = await fetch(prodUrl, { signal: AbortSignal.timeout(30000) });
           
-          try {
-            let prodUrl = `/api/products?category=${encodeURIComponent(categoryId)}`;
-            if (location?._id) prodUrl += `&locationId=${encodeURIComponent(location._id)}`;
-            const prodResponse = await fetch(prodUrl, { signal: AbortSignal.timeout(15000) });
-            
-            if (prodResponse.ok) {
-              const prodData = await prodResponse.json();
-              const categoryProducts = prodData.data || [];
-              allFetchedProducts = [...allFetchedProducts, ...categoryProducts];
-              console.log(`   ✅ ${categoryProducts.length} products for ${category.name}`);
+          if (prodResponse.ok) {
+            const prodData = await prodResponse.json();
+            allFetchedProducts = prodData.data || [];
+            console.log(`✅ Fetched ${allFetchedProducts.length} products in single call`);
+          }
+        } catch (prodErr) {
+          console.warn(`⚠️ Single-call sync failed, falling back to per-category fetch:`, prodErr.message);
+          // Fallback: fetch per category
+          for (const category of fetchedCategories) {
+            const categoryId = category._id || category.id;
+            try {
+              let prodUrl = `/api/products?category=${encodeURIComponent(categoryId)}`;
+              if (location?._id) prodUrl += `&locationId=${encodeURIComponent(location._id)}`;
+              const prodResponse = await fetch(prodUrl, { signal: AbortSignal.timeout(15000) });
+              if (prodResponse.ok) {
+                const prodData = await prodResponse.json();
+                allFetchedProducts = [...allFetchedProducts, ...(prodData.data || [])];
+              }
+            } catch (e) {
+              console.warn(`   ⚠️ Failed for ${category.name}:`, e.message);
             }
-          } catch (prodErr) {
-            console.warn(`   ⚠️ Failed to fetch products for ${category.name}:`, prodErr.message);
           }
         }
         
@@ -866,6 +889,16 @@ export default function MenuScreen() {
     setSearchTerm(value);
     setShowSearchKeyboard(false);
   };
+
+  // Auto-search debounce for barcode scanning and typed input
+  useEffect(() => {
+    const trimmed = searchTerm.trim();
+    if (!trimmed) return;
+    const timer = setTimeout(() => {
+      setAppliedSearch(trimmed);
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
 
   return (
     <div className="flex flex-col h-full bg-neutral-50 overflow-hidden text-sm sm:text-base">
@@ -1126,7 +1159,9 @@ export default function MenuScreen() {
 
                         {/* Product Details */}
                         <div className="flex-1 p-1.5 flex flex-col justify-between min-w-0">
-                          <div className="text-[11px] sm:text-xs font-semibold text-gray-800 leading-tight line-clamp-2">
+                          <div className={`font-semibold text-gray-800 leading-tight line-clamp-2 ${
+                            { small: 'text-[9px] sm:text-[10px]', standard: 'text-[11px] sm:text-xs', large: 'text-sm sm:text-base', 'extra-large': 'text-base sm:text-lg' }[productCardTextSize] || 'text-[11px] sm:text-xs'
+                          }`}>
                             {product.name}
                           </div>
                           <div className="flex items-center justify-between mt-1">
@@ -1240,7 +1275,9 @@ export default function MenuScreen() {
 
                       {/* Product Details */}
                       <div className="flex-1 p-1 flex flex-col justify-between min-w-0">
-                        <div className="text-[11px] sm:text-xs font-bold text-gray-800 leading-tight line-clamp-2">
+                        <div className={`font-bold text-gray-800 leading-tight line-clamp-2 ${
+                          { small: 'text-[9px] sm:text-[10px]', standard: 'text-[11px] sm:text-xs', large: 'text-sm sm:text-base', 'extra-large': 'text-base sm:text-lg' }[productCardTextSize] || 'text-[11px] sm:text-xs'
+                        }`}>
                           {product.name}
                         </div>
                         <div className="flex items-center justify-end mt-0.5">

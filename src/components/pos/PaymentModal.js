@@ -473,15 +473,22 @@ export default function PaymentModal({ total, onConfirm, onCancel, inline = fals
               </div>
 
               {/* Quick Amounts Column */}
-              <div className="flex flex-col gap-1">
+              <div className="flex flex-col gap-1 min-w-[60px]">
+                {quickAmountSettings.exact !== false && (
+                  <button
+                    onClick={() => { setCurrentAmount(String(total)); setDisplayAmount(String(total)); }}
+                    className="py-2 bg-green-50 hover:bg-green-100 border-2 border-green-300 hover:border-green-400 rounded-lg text-xs font-bold text-green-700 transition-all active:scale-95"
+                  >
+                    Exact
+                  </button>
+                )}
                 {[500, 1000, 2000, 5000, 10000, 20000, 50000]
                   .filter(amount => quickAmountSettings[amount] !== false)
-                  .slice(0, 4)
                   .map(amount => (
                   <button
                     key={amount}
                     onClick={() => { setCurrentAmount(amount.toString()); setDisplayAmount(amount.toString()); }}
-                    className="flex-1 bg-white hover:bg-cyan-50 border-2 border-cyan-200 hover:border-cyan-400 rounded-lg text-xs sm:text-sm font-bold text-cyan-700 transition-all active:scale-95"
+                    className="py-2 bg-white hover:bg-cyan-50 border-2 border-cyan-200 hover:border-cyan-400 rounded-lg text-xs sm:text-sm font-bold text-cyan-700 transition-all active:scale-95"
                   >
                     ₦{amount >= 1000 ? `${amount / 1000}K` : amount}
                   </button>

@@ -45,11 +45,12 @@ export default async function handler(req, res) {
     const receivedProducts = [];
 
     for (const entry of productEntries) {
-      if (!entry.productId || !entry.quantity || entry.quantity <= 0) continue;
+      const pid = entry.productId || entry.product;
+      if (!pid || !entry.quantity || entry.quantity <= 0) continue;
 
       try {
         // Check if product exists
-        let product = await Product.findById(entry.productId);
+        let product = await Product.findById(pid);
 
         if (!product) {
           // Create the product if it doesn't exist (petty-cash vendor product)
@@ -82,10 +83,10 @@ export default async function handler(req, res) {
         });
       } catch (productErr) {
         // Log product error but continue processing other products
-        console.error(`Failed to update product ${entry.productId}:`, productErr.message);
+        console.error(`Failed to update product ${pid}:`, productErr.message);
         // Still add to received products so we don't lose the record
         receivedProducts.push({
-          productId: entry.productId || "",
+          productId: pid || "",
           productName: entry.productName,
           quantity: entry.quantity,
           costPrice: entry.costPrice || 0,

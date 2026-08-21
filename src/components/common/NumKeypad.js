@@ -9,9 +9,21 @@ import React, { useState } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faBackspace, faTimes } from '@fortawesome/free-solid-svg-icons';
 
-export default function NumKeypad({ value, onChange, placeholder = "0.00", disabled = false, displayValue, showCalc = false }) {
+export default function NumKeypad({ value, onChange, placeholder = "0.00", disabled = false, displayValue, showCalc = false, size = 'standard' }) {
   const [calcExpr, setCalcExpr] = useState('');
   const [calcMode, setCalcMode] = useState(false);
+
+  const btnClass = {
+    compact: 'py-2 text-base',
+    standard: 'py-2.5 text-lg',
+    large: 'py-3.5 text-xl',
+  }[size] || 'py-2.5 text-lg';
+
+  const displayClass = {
+    compact: 'text-xl',
+    standard: 'text-2xl',
+    large: 'text-3xl',
+  }[size] || 'text-2xl';
 
   const handleKeyPress = (key) => {
     if (disabled) return;
@@ -71,7 +83,7 @@ export default function NumKeypad({ value, onChange, placeholder = "0.00", disab
       {/* Display */}
       <div className="bg-gray-100 border-2 border-gray-300 rounded-lg p-2.5 text-right shadow-sm">
         <div className="text-[10px] text-gray-500 mb-1">{calcMode ? 'Calculator' : placeholder}</div>
-        <div className="text-2xl font-bold text-gray-800 truncate">
+        <div className={`${displayClass} font-bold text-gray-800 truncate`}>
           {calcMode ? (calcExpr || '0') : (displayValue || value || '0')}
         </div>
       </div>
@@ -119,36 +131,36 @@ export default function NumKeypad({ value, onChange, placeholder = "0.00", disab
         {/* Row 1: 7 8 9 C */}
         {[7, 8, 9].map(n => (
           <button key={n} onClick={() => handleKeyPress(String(n))} disabled={disabled}
-            className="bg-white border-2 border-gray-300 hover:bg-gray-50 active:bg-gray-200 active:scale-95 disabled:opacity-50 rounded-lg py-2.5 font-bold text-lg transition-all shadow-sm">{n}</button>
+            className={`bg-white border-2 border-gray-300 hover:bg-gray-50 active:bg-gray-200 active:scale-95 disabled:opacity-50 rounded-lg font-bold transition-all shadow-sm ${btnClass}`}>{n}</button>
         ))}
         <button onClick={() => handleKeyPress('CLEAR')} disabled={disabled}
-          className="bg-red-500 hover:bg-red-600 active:scale-95 disabled:opacity-50 text-white rounded-lg py-2.5 font-bold text-lg shadow-md">C</button>
+          className={`bg-red-500 hover:bg-red-600 active:scale-95 disabled:opacity-50 text-white rounded-lg font-bold shadow-md ${btnClass}`}>C</button>
 
         {/* Row 2: 4 5 6 BS */}
         {[4, 5, 6].map(n => (
           <button key={n} onClick={() => handleKeyPress(String(n))} disabled={disabled}
-            className="bg-white border-2 border-gray-300 hover:bg-gray-50 active:bg-gray-200 active:scale-95 disabled:opacity-50 rounded-lg py-2.5 font-bold text-lg transition-all shadow-sm">{n}</button>
+            className={`bg-white border-2 border-gray-300 hover:bg-gray-50 active:bg-gray-200 active:scale-95 disabled:opacity-50 rounded-lg font-bold transition-all shadow-sm ${btnClass}`}>{n}</button>
         ))}
         <button onClick={() => handleKeyPress('BACKSPACE')} disabled={disabled}
-          className="bg-orange-500 hover:bg-orange-600 active:scale-95 disabled:opacity-50 text-white rounded-lg py-2.5 font-bold text-lg shadow-md flex items-center justify-center">
+          className={`bg-orange-500 hover:bg-orange-600 active:scale-95 disabled:opacity-50 text-white rounded-lg font-bold shadow-md flex items-center justify-center ${btnClass}`}>
           <FontAwesomeIcon icon={faBackspace} className="w-5 h-5" />
         </button>
 
         {/* Row 3: 1 2 3 . */}
         {[1, 2, 3].map(n => (
           <button key={n} onClick={() => handleKeyPress(String(n))} disabled={disabled}
-            className="bg-white border-2 border-gray-300 hover:bg-gray-50 active:bg-gray-200 active:scale-95 disabled:opacity-50 rounded-lg py-2.5 font-bold text-lg transition-all shadow-sm">{n}</button>
+            className={`bg-white border-2 border-gray-300 hover:bg-gray-50 active:bg-gray-200 active:scale-95 disabled:opacity-50 rounded-lg font-bold transition-all shadow-sm ${btnClass}`}>{n}</button>
         ))}
         <button onClick={() => handleKeyPress('.')} disabled={disabled}
-          className="bg-blue-500 hover:bg-blue-600 active:scale-95 disabled:opacity-50 text-white rounded-lg py-2.5 font-bold text-lg shadow-md">.</button>
+          className={`bg-blue-500 hover:bg-blue-600 active:scale-95 disabled:opacity-50 text-white rounded-lg font-bold shadow-md ${btnClass}`}>.</button>
 
         {/* Row 4: 0 00 X */}
         <button onClick={() => handleKeyPress('0')} disabled={disabled}
-          className="col-span-2 bg-white border-2 border-gray-300 hover:bg-gray-50 active:bg-gray-200 active:scale-95 disabled:opacity-50 rounded-lg py-2.5 font-bold text-lg shadow-sm">0</button>
+          className={`col-span-1 bg-white border-2 border-gray-300 hover:bg-gray-50 active:bg-gray-200 active:scale-95 disabled:opacity-50 rounded-lg font-bold shadow-sm ${btnClass}`}>0</button>
         <button onClick={() => handleKeyPress('00')} disabled={disabled}
-          className="bg-white border-2 border-gray-300 hover:bg-gray-50 active:bg-gray-200 active:scale-95 disabled:opacity-50 rounded-lg py-2.5 font-bold text-lg shadow-sm">00</button>
+          className={`bg-white border-2 border-gray-300 hover:bg-gray-50 active:bg-gray-200 active:scale-95 disabled:opacity-50 rounded-lg font-bold shadow-sm ${btnClass}`}>00</button>
         <button onClick={() => handleKeyPress('CLEAR')} disabled={disabled}
-          className="bg-gray-400 hover:bg-gray-500 active:scale-95 disabled:opacity-50 text-white rounded-lg py-2.5 font-bold text-lg shadow-md flex items-center justify-center">
+          className={`bg-gray-400 hover:bg-gray-500 active:scale-95 disabled:opacity-50 text-white rounded-lg font-bold shadow-md flex items-center justify-center ${btnClass}`}>
           <FontAwesomeIcon icon={faTimes} className="w-5 h-5" />
         </button>
       </div>

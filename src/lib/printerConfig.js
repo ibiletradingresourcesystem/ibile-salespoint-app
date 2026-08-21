@@ -37,7 +37,7 @@ export function getDefaultPrinterSettings() {
     port: 9100,
     printMethod: 'both', // browser, direct, both
     autoPrint: false, // Auto print without dialog
-    paperWidth: 58, // mm
+    paperWidth: 80, // mm
     paperSize: 'receipt', // receipt, label, custom
   };
 }
