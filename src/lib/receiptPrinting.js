@@ -420,6 +420,9 @@ function generateReceiptHTML(transaction, settings) {
     companyLogo: settings?.companyLogo || fallbackLogo,
   });
 
+  const printerCfg = getPrinterSettings();
+  const paperW = `${printerCfg.paperWidth || 80}mm`;
+
   // Resolve font family from settings
   const FONT_FAMILY_MAP = {
     'Arial': "'Arial', 'Helvetica Neue', sans-serif",
@@ -500,9 +503,9 @@ function generateReceiptHTML(transaction, settings) {
             overflow-x: hidden;
           }
           .receipt-page {
-            width: 58mm;
-            min-width: 58mm;
-            max-width: 58mm;
+            width: ${paperW};
+            min-width: ${paperW};
+            max-width: ${paperW};
             margin: 0 auto;
             padding: 0;
             background: white;
@@ -691,9 +694,9 @@ function generateReceiptHTML(transaction, settings) {
               overflow-x: hidden;
             }
             .receipt-page {
-              width: 58mm;
-              min-width: 58mm;
-              max-width: 58mm;
+              width: ${paperW};
+              min-width: ${paperW};
+              max-width: ${paperW};
               margin: 0 auto !important;
               padding: 0 !important;
             }
@@ -703,7 +706,7 @@ function generateReceiptHTML(transaction, settings) {
               padding: 0.5mm 0;
             }
             @page {
-              size: 58mm auto;
+              size: ${paperW} auto;
               margin: 0;
               padding: 0;
             }

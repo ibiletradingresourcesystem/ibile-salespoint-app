@@ -12,11 +12,15 @@ import NumKeypad from "../common/NumKeypad";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faSpinner } from "@fortawesome/free-solid-svg-icons";
 
+import { getPrinterSettings } from "../../lib/printerConfig";
+
 // Generate and print End-of-Day report
 const printEndOfDayReport = (tillData, summaryData, tenderCounts, tenders, closingNotes, locationName) => {
   const formatNaira = (amount) =>
     `₦${(amount || 0).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
+  const printerCfg = getPrinterSettings();
+  const paperW = `${printerCfg.paperWidth || 80}mm`;
   const now = new Date();
   const dateStr = now.toLocaleDateString('en-NG', { year: 'numeric', month: '2-digit', day: '2-digit' });
   const timeStr = now.toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
@@ -66,9 +70,9 @@ const printEndOfDayReport = (tillData, summaryData, tenderCounts, tenders, closi
       overflow-x: hidden;
     }
     .report-page {
-      width: 58mm;
-      min-width: 58mm;
-      max-width: 58mm;
+      width: ${paperW};
+      min-width: ${paperW};
+      max-width: ${paperW};
       margin: 0 auto;
       padding: 0;
       background: white;
@@ -101,9 +105,9 @@ const printEndOfDayReport = (tillData, summaryData, tenderCounts, tenders, closi
         overflow-x: hidden;
       }
       .report-page {
-        width: 58mm;
-        min-width: 58mm;
-        max-width: 58mm;
+        width: ${paperW};
+        min-width: ${paperW};
+        max-width: ${paperW};
         margin: 0 auto !important;
         padding: 0 !important;
       }
@@ -112,7 +116,7 @@ const printEndOfDayReport = (tillData, summaryData, tenderCounts, tenders, closi
         margin: 0;
         padding: 2mm 1.5mm 1.5mm;
       }
-      @page { size: 58mm auto; margin: 0; }
+      @page { size: ${paperW} auto; margin: 0; }
     }
   </style>
 </head>
@@ -887,18 +891,18 @@ export default function CloseTillModal({ isOpen, onClose, onTillClosed }) {
             {/* Till Card */}
             <div className="bg-white border border-gray-200 rounded-lg p-3">
               <h3 className="font-bold text-sm text-gray-800 mb-2">{till?.tillNumber || till?.tillName || 'Till'}</h3>
-              <div className="grid grid-cols-3 gap-1 text-[10px] text-gray-500">
+              <div className="grid grid-cols-3 gap-2 text-[10px] text-gray-500">
                 <div>
-                  <span className="uppercase font-semibold block">Opened By</span>
-                  <span className="text-gray-800 font-medium text-xs">{till?.staffName || '—'}</span>
+                  <span className="uppercase font-semibold block mb-0.5">Opened By</span>
+                  <span className="text-gray-800 font-medium text-xs block">{till?.staffName || '—'}</span>
                 </div>
                 <div>
-                  <span className="uppercase font-semibold block">Date</span>
-                  <span className="text-gray-800 font-medium text-xs">{till?.openedAt ? new Date(till.openedAt).toLocaleDateString() : '—'}</span>
+                  <span className="uppercase font-semibold block mb-0.5">Date</span>
+                  <span className="text-gray-800 font-medium text-xs block">{till?.openedAt ? new Date(till.openedAt).toLocaleDateString() : '—'}</span>
                 </div>
                 <div>
-                  <span className="uppercase font-semibold block">Time</span>
-                  <span className="text-gray-800 font-medium text-xs">{till?.openedAt ? new Date(till.openedAt).toLocaleTimeString() : '—'}</span>
+                  <span className="uppercase font-semibold block mb-0.5">Time</span>
+                  <span className="text-gray-800 font-medium text-xs block">{till?.openedAt ? new Date(till.openedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }) : '—'}</span>
                 </div>
               </div>
             </div>

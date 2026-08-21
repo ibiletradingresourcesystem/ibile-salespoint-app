@@ -331,6 +331,9 @@ export default function MenuScreen() {
 
       // If online + auto-refresh enabled, fetch fresh quantities from API
       if (autoRefresh && getOnlineStatus()) {
+        // Wait for server to finish processing inventory update
+        await new Promise(r => setTimeout(r, 1500));
+
         try {
           // Quick network quality check — abort after 3s to avoid blocking slow connections
           const controller = new AbortController();
@@ -353,6 +356,16 @@ export default function MenuScreen() {
               const freshProducts = data.data || [];
               if (freshProducts.length > 0) {
                 setProducts(freshProducts);
+                // Also update allProducts so search reflects new quantities
+                setAllProducts(prev => {
+                  const merged = [...prev];
+                  freshProducts.forEach(fp => {
+                    const idx = merged.findIndex(p => p._id === fp._id);
+                    if (idx >= 0) merged[idx] = fp;
+                    else merged.push(fp);
+                  });
+                  return merged;
+                });
                 // Also update IndexedDB with fresh data
                 try { await syncProducts(freshProducts); } catch (e) {}
                 console.log(`✅ Auto-refreshed ${freshProducts.length} products from API`);
