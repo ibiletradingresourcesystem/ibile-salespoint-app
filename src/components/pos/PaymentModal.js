@@ -412,11 +412,11 @@ export default function PaymentModal({ total, onConfirm, onCancel, inline = fals
             </div>
 
             {/* Confirm / Cancel */}
-            <div className="space-y-1.5 pt-1">
+            <div className="space-y-2 pt-2">
               <button
                 onClick={handleConfirm}
                 disabled={!isPaymentComplete || isProcessing}
-                className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-lg font-bold text-sm transition-all active:scale-[0.98] ${
+                className={`w-full flex items-center justify-center gap-2 py-3.5 rounded-lg font-bold text-sm transition-all active:scale-[0.98] ${
                   isPaymentComplete && !isProcessing
                     ? 'bg-green-600 hover:bg-green-700 text-white shadow-lg'
                     : 'bg-gray-200 cursor-not-allowed text-gray-400'
@@ -426,7 +426,7 @@ export default function PaymentModal({ total, onConfirm, onCancel, inline = fals
                 {isProcessing ? 'Processing...' : 'Confirm'}
               </button>
               {onCancel && (
-                <button onClick={onCancel} className="w-full py-2 bg-gray-200 hover:bg-gray-300 rounded-lg font-bold text-xs text-gray-600 transition-all active:scale-[0.98]">
+                <button onClick={onCancel} className="w-full py-3 bg-gray-200 hover:bg-gray-300 rounded-lg font-bold text-sm text-gray-600 transition-all active:scale-[0.98]">
                   Cancel
                 </button>
               )}
@@ -522,7 +522,7 @@ export default function PaymentModal({ total, onConfirm, onCancel, inline = fals
                           setSelectedTender(tender.id);
                         }
                       }}
-                      className={`flex-1 py-2.5 px-2 rounded-lg font-bold text-xs sm:text-sm transition-all active:scale-[0.97] border-2 ${
+                      className={`flex-1 py-3.5 px-2 rounded-lg font-bold text-sm transition-all active:scale-[0.97] border-2 ${
                         isCashLike && !hasAmount
                           ? 'bg-white border-cyan-300 text-cyan-700 hover:bg-cyan-50'
                           : 'text-white hover:opacity-90'

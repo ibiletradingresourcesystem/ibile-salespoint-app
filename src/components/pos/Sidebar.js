@@ -98,7 +98,7 @@ export default function Sidebar({ isOpen, onToggle, widthClass = 'w-56', mobileW
   const [printerAvailable, setPrinterAvailable] = useState(null);
   const [checkingPrinter, setCheckingPrinter] = useState(false);
   const [uiSettings, setUiSettings] = useState(getUiSettings());
-  const { lastSyncTime, isOnline, pendingSyncCount, manualSync } = useCart();
+  const { lastSyncTime, isOnline, pendingSyncCount, manualSync, setShowPaymentPanel } = useCart();
   const { staff, location, till, setCurrentTill } = useStaff();
   const canAccessSettings = hasPosPermission(staff, 'settingsAccess');
   const canAccessPrinterSettings = hasPosPermission(staff, 'printerSettingsAccess');
@@ -343,7 +343,7 @@ export default function Sidebar({ isOpen, onToggle, widthClass = 'w-56', mobileW
           <div key={section.id} className="rounded-lg bg-white border border-neutral-200 overflow-hidden shadow-sm">
             {/* Section Header */}
             <button
-              onClick={() => toggleSection(section.id)}
+              onClick={() => { toggleSection(section.id); setShowPaymentPanel(false); }}
               className={`w-full flex items-center ${scaleClasses.gap} ${scaleClasses.padding} hover:bg-primary-50 transition-colors duration-base text-left font-semibold text-neutral-800 hover:text-primary-700`}
             >
               <FontAwesomeIcon icon={section.icon} className={`${scaleClasses.iconLg} text-primary-600`} />
@@ -363,6 +363,7 @@ export default function Sidebar({ isOpen, onToggle, widthClass = 'w-56', mobileW
                   <button
                     key={idx}
                     onClick={() => {
+                      setShowPaymentPanel(false);
                       if (item.label === 'Close Till') {
                         setShowCloseTillModal(true);
                       } else if (item.label === 'Adjust Float') {
@@ -383,7 +384,7 @@ export default function Sidebar({ isOpen, onToggle, widthClass = 'w-56', mobileW
 
         {/* Petty Cash - Standalone */}
         <button
-          onClick={() => setShowPettyCashPanel(true)}
+          onClick={() => { setShowPaymentPanel(false); setShowPettyCashPanel(true); }}
           className={`w-full flex items-center ${scaleClasses.gap} ${scaleClasses.padding} rounded-lg bg-amber-50 border border-amber-200 hover:bg-amber-100 hover:border-amber-300 text-left font-semibold text-amber-900 transition-colors duration-base shadow-sm`}
         >
           <FontAwesomeIcon icon={faPiggyBank} className={`${scaleClasses.iconLg} text-amber-600`} />
@@ -448,6 +449,7 @@ export default function Sidebar({ isOpen, onToggle, widthClass = 'w-56', mobileW
               {canAccessSettings && (
                 <button 
                   onClick={() => {
+                    setShowPaymentPanel(false);
                     onToggle();
                     router.push('/settings');
                   }}
@@ -465,6 +467,7 @@ export default function Sidebar({ isOpen, onToggle, widthClass = 'w-56', mobileW
                 <div className="flex items-center gap-1">
                   <button
                     onClick={() => {
+                      setShowPaymentPanel(false);
                       onToggle();
                       router.push('/printer-settings');
                     }}

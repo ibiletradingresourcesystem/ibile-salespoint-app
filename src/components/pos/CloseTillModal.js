@@ -853,16 +853,16 @@ export default function CloseTillModal({ isOpen, onClose, onTillClosed }) {
         <div className="bg-white rounded-xl shadow-2xl w-full max-w-6xl h-[calc(100vh-1rem)] flex flex-col overflow-hidden">
 
         {/* Tab Bar */}
-        <div className="bg-gradient-to-r from-cyan-600 to-cyan-700 flex items-center flex-shrink-0">
+        <div className="bg-cyan-700 flex items-center flex-shrink-0">
           <div className="flex-1 flex">
             {TABS.map(tab => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`px-4 py-2.5 text-xs font-bold uppercase tracking-wide transition-all ${
+                className={`px-5 py-3 text-xs font-bold uppercase tracking-wide transition-all border-b-2 ${
                   activeTab === tab.id
-                    ? 'bg-white text-cyan-700 border-b-2 border-white'
-                    : 'text-cyan-100 hover:text-white hover:bg-white/10'
+                    ? 'text-white border-white'
+                    : 'text-cyan-200 border-transparent hover:text-white hover:border-cyan-300'
                 }`}
               >
                 {tab.label}
@@ -883,7 +883,7 @@ export default function CloseTillModal({ isOpen, onClose, onTillClosed }) {
         <div className="flex-1 grid grid-cols-[220px_1fr_280px] gap-0 overflow-hidden">
 
           {/* LEFT: Till Info + Actions */}
-          <div className="bg-gray-50 border-r border-gray-200 p-3 flex flex-col gap-3 overflow-y-auto">
+          <div className="bg-white border-r border-gray-200 p-4 flex flex-col gap-3 overflow-y-auto">
             {/* Till Card */}
             <div className="bg-white border border-gray-200 rounded-lg p-3">
               <h3 className="font-bold text-sm text-gray-800 mb-2">{till?.tillNumber || till?.tillName || 'Till'}</h3>
@@ -952,7 +952,14 @@ export default function CloseTillModal({ isOpen, onClose, onTillClosed }) {
             )}
 
             {/* Action Buttons */}
-            <div className="mt-auto space-y-1.5">
+            <div className="mt-auto space-y-2 pt-3 border-t border-gray-200">
+              <button
+                onClick={onClose}
+                disabled={loading || showConfirmation}
+                className="w-full py-2.5 bg-gray-100 hover:bg-gray-200 border border-gray-300 rounded-lg text-sm font-semibold text-gray-700 transition active:scale-95"
+              >
+                Cancel
+              </button>
               <button
                 onClick={() => {
                   try {
@@ -961,46 +968,46 @@ export default function CloseTillModal({ isOpen, onClose, onTillClosed }) {
                     ), tenders, closingNotes.trim(), location?.name || '');
                   } catch {}
                 }}
-                className="w-full py-2 bg-gray-200 hover:bg-gray-300 rounded-lg text-xs font-bold text-gray-700 transition active:scale-95"
+                className="w-full py-2.5 bg-white hover:bg-gray-50 border border-gray-300 rounded-lg text-sm font-semibold text-gray-700 transition active:scale-95"
               >
                 🖨️ Print Report
               </button>
               <button
                 onClick={handleCloseTill}
                 disabled={isButtonDisabled || showConfirmation}
-                className="w-full py-2.5 bg-green-600 hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-bold text-sm rounded-lg transition active:scale-95 flex items-center justify-center gap-1.5"
+                className="w-full py-3 bg-green-600 hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-bold text-sm rounded-lg transition active:scale-95 flex items-center justify-center gap-2"
               >
-                {loading && <FontAwesomeIcon icon={faSpinner} className="w-3.5 h-3.5 animate-spin" />}
+                {loading && <FontAwesomeIcon icon={faSpinner} className="w-4 h-4 animate-spin" />}
                 {loading ? "Closing..." : "PRINT & CLOSE"}
               </button>
             </div>
           </div>
 
           {/* CENTER: Tab Content */}
-          <div className="overflow-y-auto p-3">
+          <div className="overflow-y-auto p-4 bg-white">
             {activeTab === 'summary' ? (
               <>
                 {/* Stats Row */}
-                <div className="grid grid-cols-5 gap-2 mb-3">
+                <div className="grid grid-cols-5 gap-3 mb-4 bg-gray-50 rounded-lg p-3 border border-gray-200">
                   <div className="text-center">
-                    <p className="text-[10px] text-gray-500 font-semibold uppercase">Transactions</p>
-                    <p className="text-sm font-bold text-gray-800">{till?.transactionCount || 0}</p>
+                    <p className="text-[10px] text-gray-500 font-semibold uppercase tracking-wide">Transactions</p>
+                    <p className="text-base font-bold text-gray-800 mt-1">{till?.transactionCount || 0}</p>
                   </div>
                   <div className="text-center">
-                    <p className="text-[10px] text-gray-500 font-semibold uppercase">Counted</p>
-                    <p className="text-sm font-bold text-gray-800">₦{totalCounted.toLocaleString('en-NG', { minimumFractionDigits: 2 })}</p>
+                    <p className="text-[10px] text-gray-500 font-semibold uppercase tracking-wide">Counted</p>
+                    <p className="text-base font-bold text-gray-800 mt-1">₦{totalCounted.toLocaleString('en-NG', { minimumFractionDigits: 2 })}</p>
                   </div>
                   <div className="text-center">
-                    <p className="text-[10px] text-gray-500 font-semibold uppercase">Takings</p>
-                    <p className="text-sm font-bold text-gray-800">₦{totalExpected.toLocaleString('en-NG', { minimumFractionDigits: 2 })}</p>
+                    <p className="text-[10px] text-gray-500 font-semibold uppercase tracking-wide">Takings</p>
+                    <p className="text-base font-bold text-gray-800 mt-1">₦{totalExpected.toLocaleString('en-NG', { minimumFractionDigits: 2 })}</p>
                   </div>
                   <div className="text-center">
-                    <p className="text-[10px] text-gray-500 font-semibold uppercase">Float</p>
-                    <p className="text-sm font-bold text-gray-800">₦{Number(summary.openingBalance).toLocaleString('en-NG', { minimumFractionDigits: 2 })}</p>
+                    <p className="text-[10px] text-gray-500 font-semibold uppercase tracking-wide">Float</p>
+                    <p className="text-base font-bold text-gray-800 mt-1">₦{Number(summary.openingBalance).toLocaleString('en-NG', { minimumFractionDigits: 2 })}</p>
                   </div>
                   <div className="text-center">
-                    <p className="text-[10px] text-gray-500 font-semibold uppercase">Total Variance</p>
-                    <p className={`text-sm font-bold ${totalVariance >= 0 ? 'text-green-700' : 'text-red-700'}`}>₦{totalVariance.toLocaleString('en-NG', { minimumFractionDigits: 2 })}</p>
+                    <p className="text-[10px] text-gray-500 font-semibold uppercase tracking-wide">Total Variance</p>
+                    <p className={`text-base font-bold mt-1 ${totalVariance >= 0 ? 'text-green-700' : 'text-red-700'}`}>₦{totalVariance.toLocaleString('en-NG', { minimumFractionDigits: 2 })}</p>
                   </div>
                 </div>
 
@@ -1098,7 +1105,7 @@ export default function CloseTillModal({ isOpen, onClose, onTillClosed }) {
           </div>
 
           {/* RIGHT: Keypad */}
-          <div className="hidden sm:flex flex-col border-l border-gray-200 p-3 overflow-y-auto bg-gray-50">
+          <div className="hidden sm:flex flex-col border-l border-gray-200 p-4 overflow-y-auto bg-white">
             <h3 className="text-xs font-bold text-gray-700 uppercase mb-2">
               {activeTenderKeypad ? `📝 ${tenders.find(t => t.id === activeTenderKeypad)?.name}` : "Keypad"}
             </h3>
