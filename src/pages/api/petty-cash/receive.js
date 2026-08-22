@@ -45,21 +45,28 @@ export default async function handler(req, res) {
     const receivedProducts = [];
 
     for (const entry of productEntries) {
-      const rawPid = entry.productId || entry.product;
-      const pid = rawPid && String(rawPid) !== "undefined" && String(rawPid) !== "null" ? String(rawPid) : null;
-      if (!pid || !entry.quantity || entry.quantity <= 0) continue;
+      if (!entry.quantity || entry.quantity <= 0) continue;
 
-      const isValidObjectId = mongoose.Types.ObjectId.isValid(pid);
+      const rawPid = entry.productId || entry.product;
+      const pid = rawPid && String(rawPid) !== "undefined" && String(rawPid) !== "null" && String(rawPid) !== "" ? String(rawPid) : null;
+      const isValidObjectId = pid && mongoose.Types.ObjectId.isValid(pid);
 
       try {
-        // Check if product exists
         let product = isValidObjectId ? await Product.findById(pid) : null;
 
+        // No valid ID or product not found — try matching by name
+        if (!product && entry.productName) {
+          product = await Product.findOne({ name: entry.productName }).lean();
+          if (product) {
+            product = await Product.findById(product._id);
+          }
+        }
+
         if (!product) {
-          // Create the product if it doesn't exist (petty-cash vendor product)
+          // Create the product (petty-cash vendor product with no linked Product doc)
           product = await Product.create({
             name: entry.productName || "Unnamed Product",
-            description: `Auto-created from petty cash vendor order`,
+            description: "Auto-created from petty cash vendor order",
             costPrice: entry.costPrice || 0,
             taxRate: 0,
             salePriceIncTax: entry.costPrice || 0,
@@ -68,8 +75,6 @@ export default async function handler(req, res) {
             category: "Top Level",
             locations: transaction.location ? [transaction.location] : [],
           });
-          // Update entry with new product ID
-          entry.productId = String(product._id);
         } else {
           // Increment existing product quantity
           await Product.updateOne(

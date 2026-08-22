@@ -49,7 +49,12 @@ export default async function handler(req, res) {
       }
 
       // Calculate total from product entries if provided
-      const productEntries = Array.isArray(products) ? products.filter((p) => p.productId && p.productId !== "undefined" && p.productId !== "null" && p.quantity > 0) : [];
+      const productEntries = Array.isArray(products) ? products.filter((p) => (p.productId || p.productName) && p.quantity > 0).map(p => ({
+        productId: (p.productId && p.productId !== "undefined" && p.productId !== "null") ? p.productId : "",
+        productName: p.productName || "",
+        costPrice: Number(p.costPrice) || 0,
+        quantity: Number(p.quantity) || 0,
+      })) : [];
       const totalAmount = productEntries.length > 0
         ? productEntries.reduce((sum, p) => sum + (p.costPrice || 0) * p.quantity, 0)
         : Number(amount) || 0;
