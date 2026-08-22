@@ -69,7 +69,7 @@ export default function ThankYouNote({
               className="mt-3 text-4xl font-semibold tracking-tight text-slate-900 sm:text-5xl"
               style={{ fontFamily: "Georgia, 'Times New Roman', serif" }}
             >
-              Thank you
+              Thank you for shopping with us!
             </h1>
             <div className="mt-3 text-xl font-semibold text-slate-800 sm:text-2xl">{companyDisplayName}</div>
           </div>

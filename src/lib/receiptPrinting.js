@@ -805,7 +805,7 @@ function generateReceiptHTML(transaction, settings) {
 
             ${model.receiptMessage ? `<div class="message">${escapeHtml(model.receiptMessage)}</div>` : ''}
 
-            <div class="status-box">THANK YOU</div>
+            <div class="status-box">Thank you for shopping with us!</div>
             <div class="status-box">${escapeHtml(model.status)}</div>
           </div>
         </div>
