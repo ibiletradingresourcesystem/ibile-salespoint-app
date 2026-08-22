@@ -259,6 +259,7 @@ const getOfflineTillData = async (tillId) => {
             totalSales,
             tenderBreakdown,
             unsyncedCount,
+            transactions: tillTransactions,
           });
         };
         
@@ -336,6 +337,7 @@ export default function CloseTillModal({ isOpen, onClose, onTillClosed }) {
   const [showConfirmation, setShowConfirmation] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [activeTab, setActiveTab] = useState('summary');
+  const [tillTransactions, setTillTransactions] = useState([]);
 
   // Track online/offline status
   useEffect(() => {
@@ -426,6 +428,7 @@ export default function CloseTillModal({ isOpen, onClose, onTillClosed }) {
               // Always get offline data (reliable source of tenderBreakdown from IndexedDB)
               const offlineData = await getOfflineTillData(contextTill._id);
               setPendingLocalTransactions(offlineData.unsyncedCount || 0);
+              setTillTransactions(offlineData.transactions || []);
               
               if (data.till) {
                 // IndexedDB tenderBreakdown is always reliable (built from actual transactions).
@@ -454,6 +457,7 @@ export default function CloseTillModal({ isOpen, onClose, onTillClosed }) {
                 ...offlineData,
               });
               setPendingLocalTransactions(offlineData.unsyncedCount || 0);
+              setTillTransactions(offlineData.transactions || []);
             }
           } else {
             // Offline: Use context + IndexedDB data
@@ -468,6 +472,7 @@ export default function CloseTillModal({ isOpen, onClose, onTillClosed }) {
               tenderBreakdown: offlineData.tenderBreakdown || contextTill.tenderBreakdown || {},
             });
             setPendingLocalTransactions(offlineData.unsyncedCount || 0);
+            setTillTransactions(offlineData.transactions || []);
           }
           
           setFetchingProgress(90);
@@ -884,25 +889,25 @@ export default function CloseTillModal({ isOpen, onClose, onTillClosed }) {
         </div>
 
         {/* Main Content — 3 columns */}
-        <div className="flex-1 grid grid-cols-[220px_1fr_340px] gap-0 overflow-hidden">
+        <div className="flex-1 grid grid-cols-[240px_1fr_340px] gap-0 overflow-hidden">
 
           {/* LEFT: Till Info + Actions */}
           <div className="bg-white border-r border-gray-200 p-4 flex flex-col gap-3 overflow-y-auto">
             {/* Till Card */}
             <div className="bg-white border border-gray-200 rounded-lg p-3">
               <h3 className="font-bold text-sm text-gray-800 mb-2">{till?.tillNumber || till?.tillName || 'Till'}</h3>
-              <div className="grid grid-cols-3 gap-2 text-[10px] text-gray-500">
-                <div>
-                  <span className="uppercase font-semibold block mb-0.5">Opened By</span>
-                  <span className="text-gray-800 font-medium text-xs block">{till?.staffName || '—'}</span>
+              <div className="space-y-1.5 text-[10px] text-gray-500">
+                <div className="flex justify-between">
+                  <span className="uppercase font-semibold">Opened By</span>
+                  <span className="text-gray-800 font-medium text-xs">{till?.staffName || '—'}</span>
                 </div>
-                <div>
-                  <span className="uppercase font-semibold block mb-0.5">Date</span>
-                  <span className="text-gray-800 font-medium text-xs block">{till?.openedAt ? new Date(till.openedAt).toLocaleDateString() : '—'}</span>
+                <div className="flex justify-between">
+                  <span className="uppercase font-semibold">Date</span>
+                  <span className="text-gray-800 font-medium text-xs">{till?.openedAt ? new Date(till.openedAt).toLocaleDateString() : '—'}</span>
                 </div>
-                <div>
-                  <span className="uppercase font-semibold block mb-0.5">Time</span>
-                  <span className="text-gray-800 font-medium text-xs block">{till?.openedAt ? new Date(till.openedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }) : '—'}</span>
+                <div className="flex justify-between">
+                  <span className="uppercase font-semibold">Time</span>
+                  <span className="text-gray-800 font-medium text-xs">{till?.openedAt ? new Date(till.openedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }) : '—'}</span>
                 </div>
               </div>
             </div>
@@ -1090,21 +1095,58 @@ export default function CloseTillModal({ isOpen, onClose, onTillClosed }) {
                 </div>
               </>
             ) : (
-              /* Transaction tab placeholder — filtered by type */
-              <div className="border border-gray-200 rounded-lg p-4">
-                <h3 className="text-sm font-bold text-gray-700 uppercase mb-3">
-                  {TABS.find(t => t.id === activeTab)?.label} Transactions
-                </h3>
-                <p className="text-xs text-gray-500">
-                  {activeTab === 'sales' && `${till?.transactionCount || 0} completed sale(s) during this session.`}
-                  {activeTab === 'refunds' && 'Refund transactions for this session.'}
-                  {activeTab === 'void' && 'Voided transactions for this session.'}
-                  {activeTab === 'credit' && 'Credit/unpaid transactions for this session.'}
-                </p>
-                <div className="mt-3 bg-gray-50 rounded p-3 text-center">
-                  <p className="text-xs text-gray-400">Transaction details available in Completed Transactions view.</p>
-                </div>
-              </div>
+              /* Transaction tab — filtered by type */
+              (() => {
+                const tabLabel = TABS.find(t => t.id === activeTab)?.label || activeTab;
+                const filtered = tillTransactions.filter(tx => {
+                  if (activeTab === 'sales') return !tx.subStatus || tx.subStatus === 'completed' || tx.subStatus === 'edited';
+                  if (activeTab === 'refunds') return tx.subStatus === 'refund' || tx.subStatus === 'refunded';
+                  if (activeTab === 'void') return tx.subStatus === 'void' || tx.subStatus === 'voided';
+                  if (activeTab === 'credit') return tx.subStatus === 'credit' || tx.subStatus === 'unpaid';
+                  return false;
+                });
+                const formatNaira = (v) => `₦${Number(v || 0).toLocaleString('en-NG', { minimumFractionDigits: 2 })}`;
+                return (
+                  <div className="border border-gray-200 rounded-lg overflow-hidden">
+                    <div className="bg-gray-50 px-3 py-2 border-b border-gray-200 flex items-center justify-between">
+                      <h3 className="text-xs font-bold text-gray-700 uppercase">{tabLabel} ({filtered.length})</h3>
+                      <span className="text-xs font-bold text-gray-600">
+                        Total: {formatNaira(filtered.reduce((s, tx) => s + (tx.total || 0), 0))}
+                      </span>
+                    </div>
+                    {filtered.length === 0 ? (
+                      <div className="p-6 text-center text-gray-400 text-sm">No {tabLabel.toLowerCase()} transactions this session.</div>
+                    ) : (
+                      <div className="max-h-[calc(100vh-14rem)] overflow-y-auto divide-y divide-gray-100">
+                        {filtered.map((tx, idx) => (
+                          <div key={tx._id || tx.clientId || idx} className="px-3 py-2.5 hover:bg-gray-50 transition-colors">
+                            <div className="flex items-center justify-between mb-1">
+                              <span className="text-xs font-bold text-gray-800">#{idx + 1}</span>
+                              <span className="text-[10px] text-gray-400">
+                                {tx.createdAt ? new Date(tx.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }) : '—'}
+                              </span>
+                            </div>
+                            {Array.isArray(tx.items) && tx.items.length > 0 && (
+                              <div className="space-y-0.5 mb-1">
+                                {tx.items.map((item, i) => (
+                                  <div key={i} className="flex justify-between text-[11px]">
+                                    <span className="text-gray-600 truncate flex-1 mr-2">{item.name} × {item.quantity}</span>
+                                    <span className="text-gray-700 font-medium whitespace-nowrap">{formatNaira(item.price * item.quantity)}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                            <div className="flex justify-between items-center">
+                              <span className="text-[10px] text-gray-400">{tx.tenderType || tx.tenderPayments?.[0]?.tenderName || '—'}</span>
+                              <span className="text-xs font-bold text-gray-800">{formatNaira(tx.total)}</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()
             )}
           </div>
 
