@@ -25,34 +25,53 @@ export default async function handler(req, res) {
 
     // Batch load all referenced products in one query
     const allProductIds = [];
+    const allProductNames = [];
     (vendors || []).forEach((v) => {
       if (Array.isArray(v.products)) {
-        v.products.forEach((p) => { if (p.product) allProductIds.push(p.product); });
+        v.products.forEach((p) => {
+          if (p.product) allProductIds.push(p.product);
+          else if (p.productName) allProductNames.push(p.productName);
+        });
       }
     });
 
-    const dbProducts = allProductIds.length > 0
-      ? await Product.find({ _id: { $in: [...new Set(allProductIds.map(String))] } })
+    const idQuery = allProductIds.length > 0
+      ? Product.find({ _id: { $in: [...new Set(allProductIds.map(String))] } })
           .select("_id name costPrice salePriceIncTax barcode quantity")
           .lean()
-      : [];
-    const productMap = new Map(dbProducts.map((p) => [String(p._id), p]));
+      : Promise.resolve([]);
+    const nameQuery = allProductNames.length > 0
+      ? Product.find({ name: { $in: allProductNames } })
+          .select("_id name costPrice salePriceIncTax barcode quantity")
+          .lean()
+      : Promise.resolve([]);
+
+    const [dbProductsById, dbProductsByName] = await Promise.all([idQuery, nameQuery]);
+    const productMap = new Map(dbProductsById.map((p) => [String(p._id), p]));
+    const productNameMap = new Map(dbProductsByName.map((p) => [p.name, p]));
 
     const vendorsWithProducts = (vendors || []).map((vendor) => {
       if (!Array.isArray(vendor.products) || vendor.products.length === 0) return vendor;
 
       vendor.products = vendor.products
-        .filter((vp) => vp.product)
         .map((vp) => {
-        const dbProd = productMap.get(String(vp.product)) || {};
-        return {
-          ...vp,
-          productId: String(vp.product),
-          productName: vp.productName || dbProd.name || "",
-          costPrice: dbProd.costPrice || vp.price || 0,
-          currentStock: dbProd.quantity || 0,
-        };
-      });
+          let dbProd = null;
+          if (vp.product) {
+            dbProd = productMap.get(String(vp.product));
+          }
+          if (!dbProd && vp.productName) {
+            dbProd = productNameMap.get(vp.productName);
+          }
+          if (!dbProd) return null;
+          return {
+            ...vp,
+            productId: String(dbProd._id),
+            productName: dbProd.name || vp.productName || "",
+            costPrice: dbProd.costPrice || vp.price || 0,
+            currentStock: dbProd.quantity || 0,
+          };
+        })
+        .filter(Boolean);
 
       return vendor;
     });
