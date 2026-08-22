@@ -61,7 +61,7 @@ function PettyCashPanel({ isOpen, onClose, staffName, location }) {
     if (vendor && Array.isArray(vendor.products) && vendor.products.length > 0) {
       setProductEntries(
         vendor.products.map((p) => ({
-          productId: p.productId || String(p.product),
+          productId: (p.productId && p.productId !== "undefined") ? p.productId : (p.product ? String(p.product) : ""),
           productName: p.productName || "",
           costPrice: p.costPrice || p.price || 0,
           quantity: 0,
