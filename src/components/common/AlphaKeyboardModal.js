@@ -40,7 +40,10 @@ export default function AlphaKeyboardModal({
   const activeRows = showSymbols ? SYMBOL_ROWS : KEY_ROWS;
 
   return (
-    <div className="fixed inset-0 z-[80] bg-black/60 flex items-end sm:items-center justify-center p-2 sm:p-4">
+    <div
+      className="fixed inset-0 z-[80] bg-black/60 flex items-end sm:items-center justify-center p-2 sm:p-4"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
       <div className="w-full max-w-4xl bg-gradient-to-br from-cyan-700 via-cyan-800 to-cyan-900 text-white rounded-2xl shadow-2xl border border-cyan-400/40 overflow-hidden">
         <div className="px-4 py-3 border-b border-cyan-400/30 flex items-center justify-between">
           <div className="flex items-center gap-2">

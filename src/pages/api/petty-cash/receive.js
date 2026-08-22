@@ -54,34 +54,17 @@ export default async function handler(req, res) {
       try {
         let product = isValidObjectId ? await Product.findById(pid) : null;
 
-        // No valid ID or product not found — try matching by name
-        if (!product && entry.productName) {
-          product = await Product.findOne({ name: entry.productName }).lean();
-          if (product) {
-            product = await Product.findById(product._id);
-          }
+        if (!product) {
+          // Skip entries with no valid product — POS should only receive linked products
+          console.warn(`Skipping product entry with invalid ID: ${pid}, name: ${entry.productName}`);
+          continue;
         }
 
-        if (!product) {
-          // Create the product (petty-cash vendor product with no linked Product doc)
-          product = await Product.create({
-            name: entry.productName || "Unnamed Product",
-            description: "Auto-created from petty cash vendor order",
-            costPrice: entry.costPrice || 0,
-            taxRate: 0,
-            salePriceIncTax: entry.costPrice || 0,
-            quantity: entry.quantity,
-            isStockManaged: true,
-            category: "Top Level",
-            locations: transaction.location ? [transaction.location] : [],
-          });
-        } else {
-          // Increment existing product quantity
-          await Product.updateOne(
-            { _id: product._id },
-            { $inc: { quantity: entry.quantity } }
-          );
-        }
+        // Increment existing product quantity
+        await Product.updateOne(
+          { _id: product._id },
+          { $inc: { quantity: entry.quantity } }
+        );
 
         receivedProducts.push({
           productId: String(product._id),

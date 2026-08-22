@@ -41,12 +41,13 @@ export default async function handler(req, res) {
     const vendorsWithProducts = (vendors || []).map((vendor) => {
       if (!Array.isArray(vendor.products) || vendor.products.length === 0) return vendor;
 
-      vendor.products = vendor.products.map((vp) => {
+      vendor.products = vendor.products
+        .filter((vp) => vp.product)
+        .map((vp) => {
         const dbProd = productMap.get(String(vp.product)) || {};
-        const resolvedId = vp.product ? String(vp.product) : "";
         return {
           ...vp,
-          productId: resolvedId,
+          productId: String(vp.product),
           productName: vp.productName || dbProd.name || "",
           costPrice: dbProd.costPrice || vp.price || 0,
           currentStock: dbProd.quantity || 0,

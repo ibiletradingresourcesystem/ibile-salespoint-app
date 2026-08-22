@@ -1213,7 +1213,7 @@ export default function MenuScreen() {
           // Category View
           <div className="bg-white rounded-lg border-2 border-primary-200 p-2 sm:p-3 mt-2 sm:mt-3">
             <div className="text-sm sm:text-base font-bold text-neutral-900 mb-2 sm:mb-3">
-              {selectedCategory.name}
+              {appliedSearch ? `🔍 Search: "${appliedSearch}"` : selectedCategory.name}
             </div>
             {loadingProducts ? (
               <div className="flex items-center justify-center py-6">
@@ -1351,7 +1351,10 @@ export default function MenuScreen() {
           }
         }}
         onClose={() => setShowSearchKeyboard(false)}
-        onSubmit={handleSearchClick}
+        onSubmit={() => {
+          handleSearchClick();
+          setSearchTerm('');
+        }}
       />
     </div>
   );

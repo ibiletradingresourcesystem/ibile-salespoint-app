@@ -167,7 +167,7 @@ function PettyCashPanel({ isOpen, onClose, staffName, location }) {
     e.preventDefault();
     if (!editingOrderId) return;
 
-    const validEntries = productEntries.filter((p) => (p.productId || p.productName) && p.quantity > 0);
+    const validEntries = productEntries.filter((p) => p.productId && p.quantity > 0);
     if (validEntries.length === 0) {
       setMessage({ type: "error", text: "Add at least one product with quantity" });
       return;
