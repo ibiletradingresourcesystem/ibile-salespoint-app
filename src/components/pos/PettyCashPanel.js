@@ -227,12 +227,15 @@ function PettyCashPanel({ isOpen, onClose, staffName, location }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           orderId,
-          products: (order.products || []).map(p => ({
-            productId: p.productId || p.product || "",
-            productName: p.productName || p.name || "",
-            costPrice: p.costPrice || p.price || 0,
-            quantity: p.quantity || 0,
-          })),
+          products: (order.products || []).map(p => {
+            const id = p.productId || p.product || "";
+            return {
+              productId: id && String(id) !== "undefined" && String(id) !== "null" ? String(id) : "",
+              productName: p.productName || p.name || "",
+              costPrice: p.costPrice || p.price || 0,
+              quantity: p.quantity || 0,
+            };
+          }),
           staffName,
           location,
         }),

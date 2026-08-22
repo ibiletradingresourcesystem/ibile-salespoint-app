@@ -45,12 +45,15 @@ export default async function handler(req, res) {
     const receivedProducts = [];
 
     for (const entry of productEntries) {
-      const pid = entry.productId || entry.product;
+      const rawPid = entry.productId || entry.product;
+      const pid = rawPid && String(rawPid) !== "undefined" && String(rawPid) !== "null" ? String(rawPid) : null;
       if (!pid || !entry.quantity || entry.quantity <= 0) continue;
+
+      const isValidObjectId = mongoose.Types.ObjectId.isValid(pid);
 
       try {
         // Check if product exists
-        let product = await Product.findById(pid);
+        let product = isValidObjectId ? await Product.findById(pid) : null;
 
         if (!product) {
           // Create the product if it doesn't exist (petty-cash vendor product)
