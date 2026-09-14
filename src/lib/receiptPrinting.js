@@ -133,7 +133,7 @@ export function buildReceiptHtml(transaction, settings = {}, printerSettings = g
   const qrImageSrc = toAbsoluteAssetUrl(model.qrImageSrc);
   const isUnpaid = model.status === 'UNPAID';
   // Narrow rolls (58mm): the item name gets its own line so the amount columns never squeeze it
-  const stackItems = layout.previewWidth < 60;
+  const stackItems = layout.contentWidth < 60;
   const itemRows = model.items.map((item) => {
     const amounts = `
             <td class="num">${formatReceiptNairaCompact(item.unitPrice)}</td>
@@ -169,8 +169,8 @@ export function buildReceiptHtml(transaction, settings = {}, printerSettings = g
       font-weight: ${fontWeight};
       line-height: 1.18;
     }
-    /* Space above and below so the printout doesn't start or end right at the tear edge */
-    .receipt { padding: 4mm 0 6mm; text-align: center; }
+    /* The printer already leaves a gap above the first line; the space below comes from .print-end */
+    .receipt { padding: 0; text-align: center; }
     .section { border-top: 0.5px dashed #444; padding: 1mm 0; margin: 1mm 0; text-align: left; }
     .header { padding-bottom: 1.5mm; }
     .logo { display: block; max-width: 30mm; max-height: 12mm; margin: 0 auto 1mm; filter: grayscale(100%) contrast(1.05); }
@@ -255,6 +255,7 @@ ${model.tenderPayments.length > 0 ? `
         <div class="status${isUnpaid ? ' unpaid' : ''}">${escapeHtml(model.status)}</div>
       </div>
     </div>
+    <div class="print-end"></div>
   </div>
 </body>
 </html>`;

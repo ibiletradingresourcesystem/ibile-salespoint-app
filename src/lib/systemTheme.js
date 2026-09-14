@@ -208,11 +208,6 @@ export function applySystemThemeToDOM(themeConfig) {
   root.style.setProperty("--shadow-lg", `0 24px 52px ${rgbaString(primary[900], 0.16)}`);
   root.style.setProperty("--brand-shadow", `0 18px 40px ${rgbaString(brandHover, 0.18)}`);
   root.style.setProperty("--accent-shadow", `0 18px 36px ${rgbaString(secondary[700], 0.18)}`);
-  root.style.setProperty("--radius-sm", "0.22rem");
-  root.style.setProperty("--radius-md", "0.38rem");
-  root.style.setProperty("--radius-lg", "0.58rem");
-  root.style.setProperty("--radius-xl", "0.82rem");
-  root.style.setProperty("--radius-2xl", "1.02rem");
   root.style.setProperty("--brand", brandBase);
   root.style.setProperty("--brand-strong", brandHover);
   root.style.setProperty("--accent", secondary[400]);

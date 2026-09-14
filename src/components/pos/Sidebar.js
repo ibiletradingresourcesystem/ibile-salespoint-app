@@ -103,6 +103,11 @@ export default function Sidebar({ isOpen, onToggle, widthClass = 'w-56', mobileW
   const canAccessSettings = hasPosPermission(staff, 'settingsAccess');
   const canAccessPrinterSettings = hasPosPermission(staff, 'printerSettingsAccess');
 
+  // Opening the sidebar closes Complete Payment so the two don't overlap
+  useEffect(() => {
+    if (isOpen) setShowPaymentPanel(false);
+  }, [isOpen, setShowPaymentPanel]);
+
   // Derive content scale classes from sidebar width setting
   const sidebarScale = uiSettings.layout?.sidebarWidth || 'standard';
   const scaleClasses = {

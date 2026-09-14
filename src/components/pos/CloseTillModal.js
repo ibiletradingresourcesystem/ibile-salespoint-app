@@ -3,6 +3,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/router";
 import Image from "next/image";
 import { useStaff } from "../../context/StaffContext";
+import { useCart } from "../../context/CartContext";
 import { useLocationTenders } from "../../hooks/useLocationTenders";
 import { getOnlineStatus, resolveTillId } from "../../lib/offlineSync";
 import { getStoreLogo } from "../../lib/logoCache";
@@ -10,7 +11,16 @@ import { escapeHtml } from "../../lib/receiptViewModel";
 import { addTenderAmount, getTenderAmount, normalizeTenderBreakdown } from "../../lib/tenderKey";
 import NumKeypad from "../common/NumKeypad";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faSpinner } from "@fortawesome/free-solid-svg-icons";
+import {
+  faCashRegister,
+  faLock,
+  faPenToSquare,
+  faPrint,
+  faRotate,
+  faSpinner,
+  faTriangleExclamation,
+  faXmark,
+} from "@fortawesome/free-solid-svg-icons";
 
 import { getPrintLayout } from "../../lib/printerConfig";
 import { buildPrintPageCss, printHtmlDocument } from "../../lib/printDocument";
@@ -63,7 +73,7 @@ const printEndOfDayReport = (tillData, summaryData, tenderCounts, tenders, closi
       line-height: 1.1;
     }
     .report {
-      padding: 4mm 0 6mm;
+      padding: 0;
     }
     .header { text-align: center; border-bottom: 2px solid #000; padding-bottom: 2mm; margin-bottom: 2mm; }
     .logo { max-width: 35mm; max-height: 20mm; display: block; margin: 0 auto 2mm auto; filter: grayscale(100%); }
@@ -133,6 +143,7 @@ const printEndOfDayReport = (tillData, summaryData, tenderCounts, tenders, closi
       <div style="margin-top: 1mm;">Printed: ${escapeHtml(dateStr)} ${escapeHtml(timeStr)}</div>
     </div>
   </div>
+  <div class="print-end"></div>
   </div>
 </body>
 </html>`;
@@ -249,6 +260,7 @@ const getPendingTransactionsForTill = async (tillId) => {
 export default function CloseTillModal({ isOpen, onClose, onTillClosed }) {
   const router = useRouter();
   const { till: contextTill, setCurrentTill, logout, location } = useStaff();
+  const { orders: cartOrders } = useCart();
   const { tenders, loading: tendersLoading } = useLocationTenders(location?._id);
   const [till, setTill] = useState(null);
   const [tenderCounts, setTenderCounts] = useState({});
@@ -684,48 +696,43 @@ export default function CloseTillModal({ isOpen, onClose, onTillClosed }) {
 
   if (!isOpen) return null;
 
-  if (fetchingTill) {
-    return (
-      <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-        <div className="bg-gradient-to-br from-cyan-600 to-cyan-700 rounded-xl shadow-2xl p-8 text-center w-full max-w-md">
-          {/* Logo */}
-          <div className="w-24 h-24 bg-white rounded-full flex items-center justify-center mx-auto mb-6 shadow-lg overflow-hidden">
-            <Image 
-              src={getStoreLogo()} 
-              alt="Store Logo" 
-              width={90}
-              height={90}
-              className="object-contain"
-              onError={(e) => {
-                e.target.onerror = null;
-                e.target.src = '/images/placeholder.jpg';
-              }}
-              unoptimized
-            />
-          </div>
-
-          {/* Loading Text */}
-          <p className="text-white font-bold text-lg mb-2">Loading Till Data...</p>
-          <p className="text-cyan-100 text-sm mb-6 font-medium">{fetchingStep || "Initializing..."}</p>
-
-          {/* Progress Bar */}
-          <div className="mb-4">
-            <div className="w-full h-2 bg-cyan-900 rounded-full overflow-hidden shadow-inner">
-              <div 
-                className="h-full bg-gradient-to-r from-cyan-300 to-green-300 rounded-full transition-all duration-300 shadow-lg"
-                style={{ width: `${fetchingProgress}%` }}
-              />
-            </div>
-            <div className="mt-2 text-cyan-100 text-sm font-semibold">{fetchingProgress}%</div>
-          </div>
+  const progressOverlay = (title, step, progress) => (
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+      <div className="bg-white border border-neutral-200 rounded-lg shadow-2xl p-8 text-center w-full max-w-md">
+        <div className="w-20 h-20 bg-primary-50 border border-primary-100 rounded-full flex items-center justify-center mx-auto mb-5 overflow-hidden">
+          <Image
+            src={getStoreLogo()}
+            alt="Store Logo"
+            width={72}
+            height={72}
+            className="object-contain"
+            onError={(e) => {
+              e.target.onerror = null;
+              e.target.src = '/images/placeholder.jpg';
+            }}
+            unoptimized
+          />
         </div>
+        <p className="text-neutral-900 font-bold text-lg mb-1">{title}</p>
+        <p className="text-neutral-500 text-sm mb-5">{step || "Initializing..."}</p>
+        <div className="w-full h-2 bg-neutral-100 rounded-full overflow-hidden">
+          <div
+            className="h-full bg-primary-600 rounded-full transition-all duration-300"
+            style={{ width: `${progress}%` }}
+          />
+        </div>
+        <div className="mt-2 text-neutral-600 text-sm font-semibold">{progress}%</div>
       </div>
-    );
+    </div>
+  );
+
+  if (fetchingTill) {
+    return progressOverlay("Loading Till Data", fetchingStep, fetchingProgress);
   }
 
   if (!till || !summary) return null;
 
-  const isButtonDisabled = loading || syncing || !tenders?.length || 
+  const isButtonDisabled = loading || syncing || !tenders?.length ||
     tenders?.some(t => tenderCounts[t.id] === undefined || tenderCounts[t.id] === "");
 
   // Helper function to format number with "," as thousands separator
@@ -735,235 +742,243 @@ export default function CloseTillModal({ isOpen, onClose, onTillClosed }) {
     return numValue.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
   };
 
+  const formatNaira = (value) => `₦${Number(value || 0).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
   // Loading overlay while closing till
   if (loading) {
-    return (
-      <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-        <div className="bg-gradient-to-br from-cyan-600 to-cyan-700 rounded-xl shadow-2xl p-8 text-center w-full max-w-md">
-          {/* Logo */}
-          <div className="w-24 h-24 bg-white rounded-full flex items-center justify-center mx-auto mb-6 shadow-lg overflow-hidden">
-            <Image 
-              src={getStoreLogo()} 
-              alt="Store Logo" 
-              width={90}
-              height={90}
-              className="object-contain"
-              onError={(e) => {
-                e.target.onerror = null;
-                e.target.src = '/images/placeholder.jpg';
-              }}
-              unoptimized
-            />
-          </div>
-
-          {/* Loading Text */}
-          <p className="text-white font-bold text-lg mb-2">Closing Till & Logging Out...</p>
-          <p className="text-cyan-100 text-sm mb-6 font-medium">{loadingStep}</p>
-
-          {/* Progress Bar */}
-          <div className="mb-4">
-            <div className="w-full h-2 bg-cyan-900 rounded-full overflow-hidden shadow-inner">
-              <div 
-                className="h-full bg-gradient-to-r from-cyan-300 to-green-300 rounded-full transition-all duration-300 shadow-lg"
-                style={{ width: `${loadingProgress}%` }}
-              />
-            </div>
-            <div className="mt-2 text-cyan-100 text-sm font-semibold">{loadingProgress}%</div>
-          </div>
-        </div>
-      </div>
-    );
+    return progressOverlay("Closing Till & Logging Out", loadingStep, loadingProgress);
   }
 
+  // Held orders are kept on this device; show the ones held today at this location
+  const todayKey = new Date().toDateString();
+  const heldToday = (cartOrders || [])
+    .filter((order) => {
+      if (order.status !== 'HELD' || !order.createdAt) return false;
+      if (new Date(order.createdAt).toDateString() !== todayKey) return false;
+      const orderLocation = typeof order.location === 'string' ? order.location : order.location?.name;
+      return !location?.name || !orderLocation || orderLocation === location.name;
+    })
+    .map((order) => ({
+      ...order,
+      staffName: order.staffMember?.name || order.staffMember || '',
+      customerName: order.customer?.name || '',
+    }));
+
+  const transactionTabs = {
+    sales: tillTransactions.filter(tx => tx.status !== 'held' && (!tx.subStatus || tx.subStatus === 'completed' || tx.subStatus === 'edited')),
+    refunds: tillTransactions.filter(tx => tx.subStatus === 'refund' || tx.subStatus === 'refunded'),
+    void: tillTransactions.filter(tx => tx.subStatus === 'void' || tx.subStatus === 'voided'),
+    held: heldToday,
+  };
+
   const TABS = [
-    { id: 'summary', label: 'SUMMARY' },
-    { id: 'sales', label: 'SALES' },
-    { id: 'refunds', label: 'REFUNDS' },
-    { id: 'void', label: 'VOID' },
-    { id: 'credit', label: 'CREDIT' },
+    { id: 'summary', label: 'Summary' },
+    { id: 'sales', label: 'Sales', count: transactionTabs.sales.length },
+    { id: 'refunds', label: 'Refunds', count: transactionTabs.refunds.length },
+    { id: 'void', label: 'Void', count: transactionTabs.void.length },
+    { id: 'held', label: 'Held', count: transactionTabs.held.length },
   ];
 
   const totalCounted = Object.values(tenderCounts).reduce((s, v) => s + (parseFloat(v) || 0), 0);
   const totalExpected = tenders ? tenders.reduce((s, t) => s + getTenderAmount(summary?.tenderBreakdown, t.name), 0) : 0;
   const totalVariance = totalCounted - totalExpected;
+  const activeTender = tenders?.find(t => t.id === activeTenderKeypad);
+  const varianceClass = (variance) => (variance === 0 ? 'text-green-700' : variance > 0 ? 'text-amber-700' : 'text-red-700');
+
+  const statRows = [
+    { label: 'Opening balance', value: formatNaira(summary.openingBalance) },
+    { label: 'Total sales', value: formatNaira(summary.totalSales) },
+    { label: 'Expected closing', value: formatNaira(summary.expectedClosingBalance), strong: true },
+    { label: 'Transactions', value: till?.transactionCount || 0 },
+  ];
+
+  const summaryCards = [
+    { label: 'Transactions', value: till?.transactionCount || 0 },
+    { label: 'Counted', value: formatNaira(totalCounted) },
+    { label: 'Takings', value: formatNaira(totalExpected) },
+    { label: 'Float', value: formatNaira(summary.openingBalance) },
+    { label: 'Total variance', value: formatNaira(totalVariance), className: varianceClass(totalVariance) },
+  ];
 
   return (
     <>
-      <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-2">
-        <div className="bg-white rounded-xl shadow-2xl w-full max-w-6xl h-[calc(100vh-1rem)] flex flex-col overflow-hidden">
+      <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-2 sm:p-3">
+        <div className="bg-neutral-50 border border-neutral-200 rounded-lg shadow-2xl w-full max-w-6xl h-[calc(100vh-1rem)] flex flex-col overflow-hidden">
 
-        {/* Tab Bar */}
-        <div className="bg-cyan-700 flex items-center flex-shrink-0">
-          <div className="flex-1 flex">
+        {/* Header + tabs */}
+        <div className="bg-primary-700 text-white flex items-stretch flex-shrink-0">
+          <div className="flex items-center gap-2.5 px-4 border-r border-white/15">
+            <FontAwesomeIcon icon={faCashRegister} className="w-4 h-4" />
+            <span className="text-sm font-bold uppercase tracking-wide whitespace-nowrap">Close Till</span>
+          </div>
+          <nav className="flex-1 flex overflow-x-auto" aria-label="Close till sections">
             {TABS.map(tab => (
               <button
                 key={tab.id}
+                type="button"
                 onClick={() => setActiveTab(tab.id)}
-                className={`px-5 py-3 text-xs font-bold uppercase tracking-wide transition-all border-b-2 ${
+                className={`px-4 sm:px-5 py-3.5 text-xs font-bold uppercase tracking-wide whitespace-nowrap border-b-2 transition-colors flex items-center gap-2 ${
                   activeTab === tab.id
-                    ? 'text-white border-white'
-                    : 'text-cyan-200 border-transparent hover:text-white hover:border-cyan-300'
+                    ? 'text-white border-white bg-white/10'
+                    : 'text-primary-100 border-transparent hover:text-white hover:bg-white/5'
                 }`}
               >
                 {tab.label}
+                {tab.count !== undefined && (
+                  <span className={`min-w-[1.25rem] px-1.5 py-0.5 rounded text-[10px] leading-none ${
+                    activeTab === tab.id ? 'bg-white text-primary-700' : 'bg-white/15 text-white'
+                  }`}>
+                    {tab.count}
+                  </span>
+                )}
               </button>
             ))}
-          </div>
+          </nav>
           <div className="flex items-center gap-2 px-3">
             {!isOnline && (
-              <span className="bg-yellow-500 text-yellow-900 px-2 py-0.5 rounded text-xs font-bold">OFFLINE</span>
+              <span className="bg-amber-100 text-amber-800 px-2 py-1 rounded text-[11px] font-bold">OFFLINE</span>
             )}
-            <button onClick={onClose} disabled={loading} className="p-1.5 hover:bg-white/20 rounded-lg text-white transition active:scale-95">
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={loading}
+              aria-label="Close"
+              className="w-9 h-9 rounded-md hover:bg-white/15 flex items-center justify-center transition-colors"
+            >
+              <FontAwesomeIcon icon={faXmark} className="w-5 h-5" />
             </button>
           </div>
         </div>
 
         {/* Main Content — 3 columns */}
-        <div className="flex-1 grid grid-cols-[240px_1fr_340px] gap-0 overflow-hidden">
+        <div className="flex-1 grid grid-cols-[260px_1fr_360px] overflow-hidden">
 
-          {/* LEFT: Till Info + Actions */}
-          <div className="bg-white border-r border-gray-200 p-4 flex flex-col gap-3 overflow-y-auto">
-            {/* Till Card */}
-            <div className="bg-white border border-gray-200 rounded-lg p-3">
-              <h3 className="font-bold text-sm text-gray-800 mb-2">{till?.tillNumber || till?.tillName || 'Till'}</h3>
-              <div className="space-y-1.5 text-[10px] text-gray-500">
-                <div className="flex justify-between">
-                  <span className="uppercase font-semibold">Opened By</span>
-                  <span className="text-gray-800 font-medium text-xs">{till?.staffName || '—'}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="uppercase font-semibold">Date</span>
-                  <span className="text-gray-800 font-medium text-xs">{till?.openedAt ? new Date(till.openedAt).toLocaleDateString() : '—'}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="uppercase font-semibold">Time</span>
-                  <span className="text-gray-800 font-medium text-xs">{till?.openedAt ? new Date(till.openedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }) : '—'}</span>
-                </div>
-              </div>
+          {/* LEFT: Till info + actions */}
+          <aside className="bg-white border-r border-neutral-200 p-4 flex flex-col gap-4 overflow-y-auto">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500">Till</p>
+              <h3 className="text-base font-bold text-neutral-900 mt-0.5">{till?.tillNumber || till?.tillName || 'Till'}</h3>
+              <dl className="mt-3 space-y-2 text-sm">
+                {[
+                  ['Opened by', till?.staffName || '—'],
+                  ['Date', till?.openedAt ? new Date(till.openedAt).toLocaleDateString() : '—'],
+                  ['Time', till?.openedAt ? new Date(till.openedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }) : '—'],
+                ].map(([label, value]) => (
+                  <div key={label} className="flex justify-between gap-3">
+                    <dt className="text-neutral-500">{label}</dt>
+                    <dd className="font-medium text-neutral-900 text-right">{value}</dd>
+                  </div>
+                ))}
+              </dl>
             </div>
 
-            {/* Summary Stats */}
-            <div className="space-y-1.5">
-              <div className="bg-cyan-50 border border-cyan-200 rounded p-2 flex justify-between items-center">
-                <span className="text-[10px] text-cyan-700 font-semibold uppercase">Opening Balance</span>
-                <span className="text-xs font-bold text-cyan-800">₦{Number(summary.openingBalance).toLocaleString('en-NG', { minimumFractionDigits: 2 })}</span>
-              </div>
-              <div className="bg-green-50 border border-green-200 rounded p-2 flex justify-between items-center">
-                <span className="text-[10px] text-green-700 font-semibold uppercase">Total Sales</span>
-                <span className="text-xs font-bold text-green-800">₦{Number(summary.totalSales).toLocaleString('en-NG', { minimumFractionDigits: 2 })}</span>
-              </div>
-              <div className="bg-purple-50 border border-purple-200 rounded p-2 flex justify-between items-center">
-                <span className="text-[10px] text-purple-700 font-semibold uppercase">Expected Closing</span>
-                <span className="text-xs font-bold text-purple-800">₦{Number(summary.expectedClosingBalance).toLocaleString('en-NG', { minimumFractionDigits: 2 })}</span>
-              </div>
-              <div className="bg-orange-50 border border-orange-200 rounded p-2 flex justify-between items-center">
-                <span className="text-[10px] text-orange-700 font-semibold uppercase">Transactions</span>
-                <span className="text-xs font-bold text-orange-800">{till?.transactionCount || 0}</span>
-              </div>
+            <div className="border border-neutral-200 rounded-md divide-y divide-neutral-200">
+              {statRows.map(row => (
+                <div key={row.label} className={`flex justify-between items-center gap-3 px-3 py-2.5 ${row.strong ? 'bg-primary-50' : ''}`}>
+                  <span className={`text-xs ${row.strong ? 'font-semibold text-primary-800' : 'text-neutral-600'}`}>{row.label}</span>
+                  <span className={`text-sm font-bold text-right ${row.strong ? 'text-primary-800' : 'text-neutral-900'}`}>{row.value}</span>
+                </div>
+              ))}
             </div>
 
-            {/* Pending Sync */}
             {pendingLocalTransactions > 0 && (
-              <div className="bg-yellow-50 border border-yellow-300 rounded p-2">
-                <p className="text-[10px] text-yellow-800 font-semibold">{pendingLocalTransactions} pending sync</p>
+              <div className="bg-amber-50 border border-amber-200 rounded-md p-3">
+                <p className="text-xs font-semibold text-amber-800">
+                  {pendingLocalTransactions} transaction{pendingLocalTransactions === 1 ? '' : 's'} waiting to sync
+                </p>
                 {isOnline && (
-                  <button onClick={handleSyncNow} disabled={syncing} className="mt-1 w-full py-1.5 bg-yellow-600 hover:bg-yellow-700 text-white text-xs font-bold rounded transition">
-                    {syncing ? "Syncing..." : "Sync Now"}
+                  <button
+                    type="button"
+                    onClick={handleSyncNow}
+                    disabled={syncing}
+                    className="mt-2 w-full py-2 bg-amber-600 hover:bg-amber-700 disabled:opacity-60 text-white text-xs font-bold rounded-md transition-colors flex items-center justify-center gap-2"
+                  >
+                    <FontAwesomeIcon icon={faRotate} className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />
+                    {syncing ? "Syncing..." : "Sync now"}
                   </button>
                 )}
               </div>
             )}
 
-            {/* Closing Notes */}
-            <textarea
-              value={closingNotes}
-              onChange={(e) => setClosingNotes(e.target.value)}
-              placeholder="Closing notes..."
-              className="border border-gray-300 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-cyan-500 resize-none h-16"
-              disabled={loading}
-            />
+            <div>
+              <label htmlFor="closing-notes" className="block text-[11px] font-semibold uppercase tracking-wide text-neutral-500 mb-1">Closing notes</label>
+              <textarea
+                id="closing-notes"
+                value={closingNotes}
+                onChange={(e) => setClosingNotes(e.target.value)}
+                placeholder="Anything to note about this till..."
+                className="w-full border border-neutral-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-200 resize-none h-20"
+                disabled={loading}
+              />
+            </div>
 
-            {/* Error */}
             {error && (
-              <div className="bg-red-50 border border-red-300 rounded p-2">
+              <div className="bg-red-50 border border-red-200 rounded-md p-3 flex gap-2">
+                <FontAwesomeIcon icon={faTriangleExclamation} className="w-4 h-4 text-red-600 mt-0.5 flex-shrink-0" />
                 <p className="text-xs font-semibold text-red-700">{error}</p>
               </div>
             )}
 
-            {/* Action Buttons */}
-            <div className="mt-auto space-y-2 pt-3 border-t border-gray-200">
+            <div className="mt-auto space-y-2 pt-4 border-t border-neutral-200">
               <button
+                type="button"
+                onClick={handleCloseTill}
+                disabled={isButtonDisabled || showConfirmation}
+                className="w-full py-3 bg-primary-600 hover:bg-primary-700 disabled:bg-neutral-300 disabled:cursor-not-allowed text-white font-bold text-sm rounded-md transition-colors flex items-center justify-center gap-2"
+              >
+                <FontAwesomeIcon icon={faLock} className="w-4 h-4" />
+                Print &amp; Close Till
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  try {
+                    printEndOfDayReport(till, summary, tenderCounts, tenders, closingNotes.trim(), location?.name || '');
+                  } catch (printErr) {
+                    console.warn('Could not print end-of-day report:', printErr);
+                  }
+                }}
+                className="w-full py-2.5 bg-white hover:bg-neutral-50 border border-neutral-300 rounded-md text-sm font-semibold text-neutral-700 transition-colors flex items-center justify-center gap-2"
+              >
+                <FontAwesomeIcon icon={faPrint} className="w-4 h-4" />
+                Print Report
+              </button>
+              <button
+                type="button"
                 onClick={onClose}
                 disabled={loading || showConfirmation}
-                className="w-full py-2.5 bg-gray-100 hover:bg-gray-200 border border-gray-300 rounded-lg text-sm font-semibold text-gray-700 transition active:scale-95"
+                className="w-full py-2.5 bg-neutral-100 hover:bg-neutral-200 border border-neutral-300 rounded-md text-sm font-semibold text-neutral-700 transition-colors"
               >
                 Cancel
               </button>
-              <button
-                onClick={() => {
-                  try {
-                    printEndOfDayReport(till, summary, Object.fromEntries(
-                      (tenders || []).map(t => [t.name, { physical: parseFloat(tenderCounts[t.id]) || 0, expected: getTenderAmount(summary?.tenderBreakdown, t.name) }])
-                    ), tenders, closingNotes.trim(), location?.name || '');
-                  } catch {}
-                }}
-                className="w-full py-2.5 bg-white hover:bg-gray-50 border border-gray-300 rounded-lg text-sm font-semibold text-gray-700 transition active:scale-95"
-              >
-                🖨️ Print Report
-              </button>
-              <button
-                onClick={handleCloseTill}
-                disabled={isButtonDisabled || showConfirmation}
-                className="w-full py-3 bg-green-600 hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-bold text-sm rounded-lg transition active:scale-95 flex items-center justify-center gap-2"
-              >
-                {loading && <FontAwesomeIcon icon={faSpinner} className="w-4 h-4 animate-spin" />}
-                {loading ? "Closing..." : "PRINT & CLOSE"}
-              </button>
             </div>
-          </div>
+          </aside>
 
-          {/* CENTER: Tab Content */}
-          <div className="overflow-y-auto p-4 bg-white">
+          {/* CENTER: Tab content */}
+          <main className="overflow-y-auto p-4">
             {activeTab === 'summary' ? (
               <>
-                {/* Stats Row */}
-                <div className="grid grid-cols-5 gap-3 mb-4 bg-gray-50 rounded-lg p-3 border border-gray-200">
-                  <div className="text-center">
-                    <p className="text-[10px] text-gray-500 font-semibold uppercase tracking-wide">Transactions</p>
-                    <p className="text-base font-bold text-gray-800 mt-1">{till?.transactionCount || 0}</p>
-                  </div>
-                  <div className="text-center">
-                    <p className="text-[10px] text-gray-500 font-semibold uppercase tracking-wide">Counted</p>
-                    <p className="text-base font-bold text-gray-800 mt-1">₦{totalCounted.toLocaleString('en-NG', { minimumFractionDigits: 2 })}</p>
-                  </div>
-                  <div className="text-center">
-                    <p className="text-[10px] text-gray-500 font-semibold uppercase tracking-wide">Takings</p>
-                    <p className="text-base font-bold text-gray-800 mt-1">₦{totalExpected.toLocaleString('en-NG', { minimumFractionDigits: 2 })}</p>
-                  </div>
-                  <div className="text-center">
-                    <p className="text-[10px] text-gray-500 font-semibold uppercase tracking-wide">Float</p>
-                    <p className="text-base font-bold text-gray-800 mt-1">₦{Number(summary.openingBalance).toLocaleString('en-NG', { minimumFractionDigits: 2 })}</p>
-                  </div>
-                  <div className="text-center">
-                    <p className="text-[10px] text-gray-500 font-semibold uppercase tracking-wide">Total Variance</p>
-                    <p className={`text-base font-bold mt-1 ${totalVariance >= 0 ? 'text-green-700' : 'text-red-700'}`}>₦{totalVariance.toLocaleString('en-NG', { minimumFractionDigits: 2 })}</p>
-                  </div>
+                <div className="grid grid-cols-5 gap-2 mb-4">
+                  {summaryCards.map(card => (
+                    <div key={card.label} className="bg-white border border-neutral-200 rounded-md px-3 py-3">
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500">{card.label}</p>
+                      <p className={`text-base font-bold mt-1 break-all ${card.className || 'text-neutral-900'}`}>{card.value}</p>
+                    </div>
+                  ))}
                 </div>
 
-                {/* Cash Up Table */}
-                <div className="border border-gray-200 rounded-lg overflow-hidden">
-                  <div className="bg-gray-50 px-3 py-2 border-b border-gray-200 flex items-center justify-between">
-                    <h3 className="text-xs font-bold text-gray-700 uppercase">Cash Up</h3>
+                <div className="bg-white border border-neutral-200 rounded-md overflow-hidden">
+                  <div className="px-4 py-3 border-b border-neutral-200 flex items-center justify-between">
+                    <h3 className="text-sm font-bold text-neutral-800">Cash up</h3>
+                    <span className="text-xs text-neutral-500">Tap a tender, then enter the amount counted</span>
                   </div>
                   <table className="w-full text-sm">
                     <thead>
-                      <tr className="border-b border-gray-200 bg-gray-50">
-                        <th className="text-left px-3 py-2 text-[10px] font-semibold text-gray-500 uppercase">Tender</th>
-                        <th className="text-right px-3 py-2 text-[10px] font-semibold text-gray-500 uppercase"></th>
-                        <th className="text-right px-3 py-2 text-[10px] font-semibold text-gray-500 uppercase">Counted</th>
-                        <th className="text-right px-3 py-2 text-[10px] font-semibold text-gray-500 uppercase">Expected</th>
-                        <th className="text-right px-3 py-2 text-[10px] font-semibold text-gray-500 uppercase">Variance</th>
+                      <tr className="bg-neutral-100 border-b border-neutral-200">
+                        <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-neutral-600 uppercase">Tender</th>
+                        <th className="text-right px-4 py-2.5 text-[11px] font-semibold text-neutral-600 uppercase">Counted</th>
+                        <th className="text-right px-4 py-2.5 text-[11px] font-semibold text-neutral-600 uppercase">Expected</th>
+                        <th className="text-right px-4 py-2.5 text-[11px] font-semibold text-neutral-600 uppercase">Variance</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -972,163 +987,166 @@ export default function CloseTillModal({ isOpen, onClose, onTillClosed }) {
                         const counted = parseFloat(tenderCounts[tender.id]) || 0;
                         const variance = counted - expected;
                         const hasVal = tenderCounts[tender.id] !== undefined && tenderCounts[tender.id] !== "";
+                        const isActive = activeTenderKeypad === tender.id;
                         return (
                           <tr
                             key={tender.id}
                             onClick={() => setActiveTenderKeypad(tender.id)}
-                            className={`border-b border-gray-100 cursor-pointer transition-all ${activeTenderKeypad === tender.id ? 'bg-cyan-50' : 'hover:bg-gray-50'}`}
+                            className={`border-b border-neutral-100 cursor-pointer transition-colors ${isActive ? 'bg-primary-50' : 'hover:bg-neutral-50'}`}
                           >
-                            <td className="px-3 py-2.5 font-semibold text-gray-800">{tender.name}</td>
-                            <td className="px-1 py-2.5">
-                              {activeTenderKeypad === tender.id && <span className="text-cyan-600 text-xs">✏️</span>}
+                            <td className={`px-4 py-3 font-semibold text-neutral-800 border-l-4 ${isActive ? 'border-primary-600' : 'border-transparent'}`}>
+                              <span className="flex items-center gap-2">
+                                {tender.name}
+                                {isActive && <FontAwesomeIcon icon={faPenToSquare} className="w-3.5 h-3.5 text-primary-600" />}
+                              </span>
                             </td>
-                            <td className="px-3 py-2.5 text-right font-medium">
+                            <td className="px-4 py-3 text-right">
                               <input
                                 type={isMobile ? "number" : "text"}
                                 inputMode={isMobile ? "decimal" : undefined}
-                                value={formatDisplayValue(tenderCounts[tender.id])}
+                                value={isMobile ? (tenderCounts[tender.id] ?? '') : formatDisplayValue(tenderCounts[tender.id])}
                                 readOnly={!isMobile}
                                 onChange={(e) => { if (isMobile) setTenderCounts(prev => ({ ...prev, [tender.id]: e.target.value })); }}
                                 placeholder="—"
                                 onClick={() => setActiveTenderKeypad(tender.id)}
-                                className={`w-28 text-right border rounded px-2 py-1 text-sm font-bold ${activeTenderKeypad === tender.id ? 'border-cyan-400 bg-white' : 'border-gray-200 bg-gray-50'}`}
+                                className={`w-36 text-right border rounded-md px-2.5 py-1.5 text-sm font-bold cursor-pointer ${isActive ? 'border-primary-400 bg-white' : 'border-neutral-200 bg-neutral-50'}`}
                               />
                             </td>
-                            <td className="px-3 py-2.5 text-right text-gray-600">₦{Number(expected).toLocaleString('en-NG', { minimumFractionDigits: 2 })}</td>
-                            <td className={`px-3 py-2.5 text-right font-bold ${!hasVal ? 'text-gray-400' : variance === 0 ? 'text-green-600' : variance > 0 ? 'text-yellow-600' : 'text-red-600'}`}>
-                              {hasVal ? `₦${Number(variance).toLocaleString('en-NG', { minimumFractionDigits: 2 })}` : '—'}
+                            <td className="px-4 py-3 text-right text-neutral-600 whitespace-nowrap">{formatNaira(expected)}</td>
+                            <td className={`px-4 py-3 text-right font-bold whitespace-nowrap ${hasVal ? varianceClass(variance) : 'text-neutral-400'}`}>
+                              {hasVal ? formatNaira(variance) : '—'}
                             </td>
                           </tr>
                         );
                       })}
                     </tbody>
                     <tfoot>
-                      <tr className="border-t-2 border-gray-300 bg-gray-50">
-                        <td className="px-3 py-2 font-bold text-gray-800" colSpan={2}>Sub-Total</td>
-                        <td className="px-3 py-2 text-right font-bold text-gray-800">₦{totalCounted.toLocaleString('en-NG', { minimumFractionDigits: 2 })}</td>
-                        <td className="px-3 py-2 text-right font-bold text-gray-600">₦{totalExpected.toLocaleString('en-NG', { minimumFractionDigits: 2 })}</td>
-                        <td className={`px-3 py-2 text-right font-bold ${totalVariance >= 0 ? 'text-green-600' : 'text-red-600'}`}>₦{totalVariance.toLocaleString('en-NG', { minimumFractionDigits: 2 })}</td>
+                      <tr className="border-t border-neutral-300 bg-neutral-50">
+                        <td className="px-4 py-2.5 font-semibold text-neutral-700">Sub-total</td>
+                        <td className="px-4 py-2.5 text-right font-bold text-neutral-800 whitespace-nowrap">{formatNaira(totalCounted)}</td>
+                        <td className="px-4 py-2.5 text-right font-semibold text-neutral-600 whitespace-nowrap">{formatNaira(totalExpected)}</td>
+                        <td className={`px-4 py-2.5 text-right font-bold whitespace-nowrap ${varianceClass(totalVariance)}`}>{formatNaira(totalVariance)}</td>
                       </tr>
-                      <tr className="border-t border-gray-200">
-                        <td className="px-3 py-2 font-bold text-gray-600" colSpan={2}>Float</td>
-                        <td className="px-3 py-2 text-right text-gray-500">-</td>
-                        <td className="px-3 py-2 text-right font-medium text-gray-600">₦{Number(summary.openingBalance).toLocaleString('en-NG', { minimumFractionDigits: 2 })}</td>
-                        <td className="px-3 py-2 text-right font-medium text-gray-500">₦0.00</td>
+                      <tr className="border-t border-neutral-200">
+                        <td className="px-4 py-2.5 font-semibold text-neutral-600">Float</td>
+                        <td className="px-4 py-2.5 text-right text-neutral-400">—</td>
+                        <td className="px-4 py-2.5 text-right text-neutral-600 whitespace-nowrap">{formatNaira(summary.openingBalance)}</td>
+                        <td className="px-4 py-2.5 text-right text-neutral-400 whitespace-nowrap">{formatNaira(0)}</td>
                       </tr>
-                      <tr className="border-t-2 border-gray-400">
-                        <td className="px-3 py-2.5 font-black text-gray-800" colSpan={2}>Total</td>
-                        <td className="px-3 py-2.5 text-right font-black text-gray-800">₦{totalCounted.toLocaleString('en-NG', { minimumFractionDigits: 2 })}</td>
-                        <td className="px-3 py-2.5 text-right font-bold text-gray-600">₦{totalExpected.toLocaleString('en-NG', { minimumFractionDigits: 2 })}</td>
-                        <td className={`px-3 py-2.5 text-right font-black ${totalVariance >= 0 ? 'text-green-600' : 'text-red-600'}`}>₦{totalVariance.toLocaleString('en-NG', { minimumFractionDigits: 2 })}</td>
+                      <tr className="border-t-2 border-neutral-300">
+                        <td className="px-4 py-3 font-bold text-neutral-900">Total</td>
+                        <td className="px-4 py-3 text-right font-bold text-neutral-900 whitespace-nowrap">{formatNaira(totalCounted)}</td>
+                        <td className="px-4 py-3 text-right font-semibold text-neutral-700 whitespace-nowrap">{formatNaira(totalExpected)}</td>
+                        <td className={`px-4 py-3 text-right font-bold whitespace-nowrap ${varianceClass(totalVariance)}`}>{formatNaira(totalVariance)}</td>
                       </tr>
                     </tfoot>
                   </table>
                 </div>
               </>
-            ) : (
-              /* Transaction tab — filtered by type */
-              (() => {
-                const tabLabel = TABS.find(t => t.id === activeTab)?.label || activeTab;
-                const filtered = tillTransactions.filter(tx => {
-                  if (activeTab === 'sales') return !tx.subStatus || tx.subStatus === 'completed' || tx.subStatus === 'edited';
-                  if (activeTab === 'refunds') return tx.subStatus === 'refund' || tx.subStatus === 'refunded';
-                  if (activeTab === 'void') return tx.subStatus === 'void' || tx.subStatus === 'voided';
-                  if (activeTab === 'credit') return tx.subStatus === 'credit' || tx.subStatus === 'unpaid';
-                  return false;
-                });
-                const formatNaira = (v) => `₦${Number(v || 0).toLocaleString('en-NG', { minimumFractionDigits: 2 })}`;
-                return (
-                  <div className="border border-gray-200 rounded-lg overflow-hidden">
-                    <div className="bg-gray-50 px-3 py-2 border-b border-gray-200 flex items-center justify-between">
-                      <h3 className="text-xs font-bold text-gray-700 uppercase">{tabLabel} ({filtered.length})</h3>
-                      <span className="text-xs font-bold text-gray-600">
-                        Total: {formatNaira(filtered.reduce((s, tx) => s + (tx.total || 0), 0))}
-                      </span>
-                    </div>
-                    {filtered.length === 0 ? (
-                      <div className="p-6 text-center text-gray-400 text-sm">No {tabLabel.toLowerCase()} transactions this session.</div>
-                    ) : (
-                      <div className="max-h-[calc(100vh-14rem)] overflow-y-auto divide-y divide-gray-100">
-                        {filtered.map((tx, idx) => (
-                          <div key={tx._id || tx.clientId || idx} className="px-3 py-2.5 hover:bg-gray-50 transition-colors">
-                            <div className="flex items-center justify-between mb-1">
-                              <span className="text-xs font-bold text-gray-800">#{idx + 1}</span>
-                              <span className="text-[10px] text-gray-400">
-                                {tx.createdAt ? new Date(tx.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }) : '—'}
-                              </span>
-                            </div>
-                            {Array.isArray(tx.items) && tx.items.length > 0 && (
-                              <div className="space-y-0.5 mb-1">
-                                {tx.items.map((item, i) => (
-                                  <div key={i} className="flex justify-between text-[11px]">
-                                    <span className="text-gray-600 truncate flex-1 mr-2">{item.name} × {item.quantity}</span>
-                                    <span className="text-gray-700 font-medium whitespace-nowrap">{formatNaira(item.price * item.quantity)}</span>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                            <div className="flex justify-between items-center">
-                              <span className="text-[10px] text-gray-400">{tx.tenderType || tx.tenderPayments?.[0]?.tenderName || '—'}</span>
-                              <span className="text-xs font-bold text-gray-800">{formatNaira(tx.total)}</span>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
+            ) : (() => {
+              const tab = TABS.find(t => t.id === activeTab);
+              const list = transactionTabs[activeTab] || [];
+              const isHeld = activeTab === 'held';
+              return (
+                <div className="bg-white border border-neutral-200 rounded-md overflow-hidden">
+                  <div className="px-4 py-3 border-b border-neutral-200 flex items-center justify-between gap-3">
+                    <h3 className="text-sm font-bold text-neutral-800">
+                      {isHeld ? 'Held today' : tab?.label} ({list.length})
+                    </h3>
+                    <span className="text-sm font-bold text-neutral-700">
+                      Total: {formatNaira(list.reduce((s, tx) => s + (Number(tx.total) || 0), 0))}
+                    </span>
                   </div>
-                );
-              })()
-            )}
-          </div>
+                  {list.length === 0 ? (
+                    <div className="p-8 text-center text-neutral-500 text-sm">
+                      {isHeld ? 'No orders on hold today.' : `No ${tab?.label.toLowerCase()} transactions this session.`}
+                    </div>
+                  ) : (
+                    <div className="divide-y divide-neutral-100">
+                      {list.map((tx, idx) => (
+                        <div key={tx.id || tx._id || tx.clientId || idx} className="px-4 py-3 hover:bg-neutral-50 transition-colors">
+                          <div className="flex items-center justify-between gap-3 mb-1.5">
+                            <span className="text-sm font-bold text-neutral-800">
+                              #{idx + 1}
+                              {isHeld && (tx.customerName || tx.tableName) && (
+                                <span className="ml-2 font-medium text-neutral-500">{tx.customerName || tx.tableName}</span>
+                              )}
+                            </span>
+                            <span className="text-xs text-neutral-500">
+                              {tx.createdAt ? new Date(tx.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }) : '—'}
+                            </span>
+                          </div>
+                          {Array.isArray(tx.items) && tx.items.length > 0 && (
+                            <div className="space-y-1 mb-1.5">
+                              {tx.items.map((item, i) => (
+                                <div key={i} className="flex justify-between gap-3 text-xs">
+                                  <span className="text-neutral-600 min-w-0 break-words">{item.name} × {item.quantity}</span>
+                                  <span className="text-neutral-800 font-medium whitespace-nowrap">{formatNaira((Number(item.price) || 0) * (Number(item.quantity) || 0))}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          <div className="flex justify-between items-center gap-3 pt-1.5 border-t border-dashed border-neutral-200">
+                            <span className="text-xs text-neutral-500">
+                              {isHeld
+                                ? `Held by ${tx.staffName || 'staff'}`
+                                : (tx.tenderType || tx.tenderPayments?.[0]?.tenderName || '—')}
+                            </span>
+                            <span className="text-sm font-bold text-neutral-900">{formatNaira(tx.total)}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+          </main>
 
-          {/* RIGHT: Keypad */}
-          <div className="hidden sm:flex flex-col border-l border-gray-200 p-3 overflow-y-auto bg-white">
-            <h3 className="text-sm font-bold text-gray-700 uppercase mb-2">
-              {activeTenderKeypad ? `📝 ${tenders.find(t => t.id === activeTenderKeypad)?.name}` : "Keypad"}
-            </h3>
+          {/* RIGHT: Count keypad */}
+          <aside className="hidden sm:flex flex-col border-l border-neutral-200 bg-white p-4 gap-3 overflow-y-auto">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500">Count</p>
+              <h3 className="text-base font-bold text-neutral-900">{activeTender?.name || 'Select a tender'}</h3>
+            </div>
             {tenders && tenders.length > 0 ? (
               <>
-                {/* Show all tender amount displays */}
-                {tenders.map((tender) => (
-                  <div
-                    key={tender.id}
-                    onClick={() => setActiveTenderKeypad(tender.id)}
-                    className={`border-2 rounded-lg p-3 text-right mb-2 shadow-sm cursor-pointer transition-all ${
-                      activeTenderKeypad === tender.id
-                        ? 'border-cyan-400 bg-cyan-50'
-                        : 'border-gray-200 bg-white hover:border-gray-300'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-xs font-semibold text-gray-600">{tender.name}</span>
-                      <span className="text-[10px] text-gray-400">Amount in ₦</span>
-                    </div>
-                    <div className={`text-3xl font-bold truncate ${
-                      activeTenderKeypad === tender.id ? 'text-cyan-700' : 'text-gray-700'
-                    }`}>
-                      {formatDisplayValue(tenderCounts[tender.id]) || '0'}
-                    </div>
-                  </div>
-                ))}
-                {!activeTenderKeypad && (
-                  <div className="text-xs text-gray-500 bg-gray-100 rounded p-2 mb-2">← Select a tender to enter amount</div>
-                )}
+                <div className="border border-neutral-200 rounded-md divide-y divide-neutral-200">
+                  {tenders.map((tender) => {
+                    const isActive = activeTenderKeypad === tender.id;
+                    return (
+                      <button
+                        key={tender.id}
+                        type="button"
+                        onClick={() => setActiveTenderKeypad(tender.id)}
+                        className={`w-full flex items-center justify-between gap-3 px-3 py-2.5 text-left transition-colors border-l-4 ${
+                          isActive ? 'bg-primary-50 border-primary-600' : 'bg-white border-transparent hover:bg-neutral-50'
+                        }`}
+                      >
+                        <span className={`text-sm font-semibold ${isActive ? 'text-primary-800' : 'text-neutral-700'}`}>{tender.name}</span>
+                        <span className={`text-sm font-bold text-right break-all ${isActive ? 'text-primary-800' : 'text-neutral-900'}`}>
+                          ₦{formatDisplayValue(tenderCounts[tender.id]) || '0'}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
                 <NumKeypad
                   value={activeTenderKeypad ? (tenderCounts[activeTenderKeypad] || "") : ""}
                   onChange={(newValue) => {
                     if (!activeTenderKeypad) return;
                     setTenderCounts(prev => ({ ...prev, [activeTenderKeypad]: newValue }));
                   }}
-                  placeholder="Amount in ₦"
+                  placeholder={activeTender ? `${activeTender.name} amount (₦)` : "Amount (₦)"}
                   disabled={loading || !activeTenderKeypad}
                   showCalc
                   size="large"
                 />
               </>
             ) : (
-              <div className="text-xs text-gray-500">No payment methods available.</div>
+              <div className="text-sm text-neutral-500">No payment methods available.</div>
             )}
-          </div>
+          </aside>
         </div>
       </div>
       </div>
@@ -1136,49 +1154,53 @@ export default function CloseTillModal({ isOpen, onClose, onTillClosed }) {
       {/* Confirmation Modal */}
       {showConfirmation && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6 space-y-4">
-            {/* Warning Icon & Title */}
+          <div className="bg-white border border-neutral-200 rounded-lg shadow-2xl max-w-md w-full p-6 space-y-4">
             <div className="flex items-start gap-3">
-              <div className="text-3xl">⚠️</div>
+              <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0">
+                <FontAwesomeIcon icon={faTriangleExclamation} className="w-5 h-5 text-amber-700" />
+              </div>
               <div>
-                <h3 className="text-lg font-bold text-gray-800">Confirm Till Closure</h3>
-                <p className="text-sm text-gray-600 mt-1">Are you sure you want to close this till? This action cannot be undone.</p>
+                <h3 className="text-lg font-bold text-neutral-900">Close this till?</h3>
+                <p className="text-sm text-neutral-600 mt-1">The end-of-day report will print and you will be logged out. This can&apos;t be undone.</p>
               </div>
             </div>
 
-            {/* Summary Info */}
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 space-y-1">
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-700">Total Sales:</span>
-                <span className="font-bold text-gray-800">₦{Number(summary?.totalSales || 0).toLocaleString('en-NG')}</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-700">Expected Closing:</span>
-                <span className="font-bold text-gray-800">₦{Number(summary?.expectedClosingBalance || 0).toLocaleString('en-NG')}</span>
-              </div>
+            <div className="bg-neutral-50 border border-neutral-200 rounded-md divide-y divide-neutral-200">
+              {[
+                ['Total sales', formatNaira(summary?.totalSales)],
+                ['Expected closing', formatNaira(summary?.expectedClosingBalance)],
+                ['Counted', formatNaira(totalCounted)],
+                ['Variance', formatNaira(totalVariance)],
+              ].map(([label, value]) => (
+                <div key={label} className="flex justify-between px-3 py-2 text-sm">
+                  <span className="text-neutral-600">{label}</span>
+                  <span className={`font-bold ${label === 'Variance' ? varianceClass(totalVariance) : 'text-neutral-900'}`}>{value}</span>
+                </div>
+              ))}
               {closingNotes && (
-                <div className="pt-2 border-t border-blue-200 mt-2">
-                  <p className="text-xs text-gray-600 font-semibold">Notes:</p>
-                  <p className="text-sm text-gray-700 mt-0.5">{closingNotes}</p>
+                <div className="px-3 py-2">
+                  <p className="text-xs font-semibold text-neutral-500">Notes</p>
+                  <p className="text-sm text-neutral-700 mt-0.5">{closingNotes}</p>
                 </div>
               )}
             </div>
 
-            {/* Action Buttons */}
-            <div className="flex gap-3 pt-2">
+            <div className="flex gap-3 pt-1">
               <button
+                type="button"
                 onClick={() => setShowConfirmation(false)}
-                className="flex-1 px-4 py-2.5 bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold rounded-lg transition-all active:scale-95"
+                className="flex-1 px-4 py-2.5 bg-neutral-100 hover:bg-neutral-200 border border-neutral-300 text-neutral-800 font-semibold rounded-md transition-colors"
               >
                 Cancel
               </button>
               <button
+                type="button"
                 onClick={handleConfirmCloseTill}
                 disabled={loading}
-                className="flex-1 px-4 py-2.5 bg-cyan-600 hover:bg-cyan-700 text-white font-bold rounded-lg transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2"
+                className="flex-1 px-4 py-2.5 bg-primary-600 hover:bg-primary-700 text-white font-bold rounded-md transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
               >
                 {loading && <FontAwesomeIcon icon={faSpinner} className="w-4 h-4 animate-spin" />}
-                {loading ? "Processing..." : "Yes, Close Till"}
+                {loading ? "Processing..." : "Yes, close till"}
               </button>
             </div>
           </div>

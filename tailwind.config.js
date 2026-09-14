@@ -234,6 +234,7 @@ module.exports = {
       
       borderRadius: {
         none: '0px',
+        DEFAULT: 'var(--radius-md)',
         sm: 'var(--radius-sm)',
         base: 'var(--radius-md)',
         md: 'var(--radius-lg)',

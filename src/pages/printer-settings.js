@@ -16,7 +16,7 @@ import { hasPosPermission } from '@/src/lib/posPermissions';
 import { showConfirm } from '@/src/components/common/ConfirmDialog';
 import { showToast } from '@/src/components/common/Toast';
 import {
-  AUTO_PRINT_WIDTH,
+  MAX_SIDE_MARGIN,
   PAPER_PROFILES,
   getPrinterSettings,
   setPrinterSettings,
@@ -111,10 +111,9 @@ export default function PrinterSettings() {
   };
 
   const handlePaperChange = (paperWidth) => {
-    update({ paperWidth, printWidth: AUTO_PRINT_WIDTH, leftMargin: 0 });
+    const { sideMargin } = PAPER_PROFILES[paperWidth];
+    update({ paperWidth, marginLeft: sideMargin, marginRight: sideMargin });
   };
-
-  const fitsPaper = settings.printWidth === AUTO_PRINT_WIDTH;
 
   const handleMethodChange = (printMethod) => {
     update({ printMethod });
@@ -243,55 +242,31 @@ export default function PrinterSettings() {
               </div>
               {usesBrowser && (
                 <>
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-1">Receipt width</label>
-                    <select
-                      value={fitsPaper ? AUTO_PRINT_WIDTH : 'custom'}
-                      onChange={(e) => update({
-                        printWidth: e.target.value === AUTO_PRINT_WIDTH
-                          ? AUTO_PRINT_WIDTH
-                          : PAPER_PROFILES[settings.paperWidth].printWidth,
-                      })}
-                      className={inputClass}
-                    >
-                      <option value={AUTO_PRINT_WIDTH}>Fit to paper (no side gaps)</option>
-                      <option value="custom">Custom width</option>
-                    </select>
-                    {!fitsPaper && (
-                      <div className="mt-2 flex items-center gap-2">
-                        <input
-                          type="number"
-                          min={30}
-                          max={settings.paperWidth}
-                          step={0.5}
-                          value={settings.printWidth}
-                          onChange={(e) => update({ printWidth: e.target.value })}
-                          className={inputClass}
-                        />
-                        <span className="text-sm text-gray-500">mm</span>
-                      </div>
-                    )}
-                  </div>
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-1">Left margin (mm)</label>
-                    <input
-                      type="number"
-                      min={0}
-                      max={10}
-                      step={0.5}
-                      value={settings.leftMargin}
-                      onChange={(e) => update({ leftMargin: e.target.value })}
-                      className={inputClass}
-                    />
-                  </div>
+                  {[
+                    { key: 'marginLeft', label: 'Left margin (mm)' },
+                    { key: 'marginRight', label: 'Right margin (mm)' },
+                  ].map((field) => (
+                    <div key={field.key}>
+                      <label className="block text-sm font-semibold text-gray-700 mb-1">{field.label}</label>
+                      <input
+                        type="number"
+                        min={0}
+                        max={MAX_SIDE_MARGIN}
+                        step={0.5}
+                        value={settings[field.key]}
+                        onChange={(e) => update({ [field.key]: e.target.value })}
+                        className={inputClass}
+                      />
+                    </div>
+                  ))}
                 </>
               )}
             </div>
             {usesBrowser && (
               <p className="text-sm text-gray-500 mt-2">
-                &quot;Fit to paper&quot; uses the full width the printer offers, so there is no blank strip at the sides. If a printer cuts off
-                the right-hand side, choose Custom width and start at {PAPER_PROFILES[settings.paperWidth].printWidth} mm, lowering it by 1–2 mm
-                if needed. If the left side is cut off, add a left margin. A thin unprinted edge (about 1–4 mm) is the printer&apos;s own limit.
+                Blank space kept on each side of browser printouts. If text is cut off on one side, raise that side&apos;s margin by
+                1–2 mm and print a test receipt; if there is too much blank space, lower it. The default is{' '}
+                {PAPER_PROFILES[settings.paperWidth].sideMargin} mm per side.
               </p>
             )}
           </section>

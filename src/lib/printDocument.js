@@ -3,29 +3,29 @@
  */
 
 /**
- * Page CSS for thermal rolls. With printWidth 'auto' the printout fills the page width the printer
- * driver gives the browser, edge to edge; a number fixes the width in mm for printers whose driver
- * page is wider than they can print. `leftMargin` shifts it right. On screen (the preview) it is
- * shown at `previewWidth` mm. Wrap the printout in <div class="print-page">.
+ * Page CSS for thermal rolls. The printout fills the width the printer driver gives the browser,
+ * keeping `marginLeft` / `marginRight` mm clear so nothing is cut off at either edge. On screen
+ * (the preview) it is drawn on a `paperWidth` mm strip. Wrap the printout in <div class="print-page">
+ * and finish it with <div class="print-end"></div>.
  */
-export function buildPrintPageCss({ printWidth, leftMargin, previewWidth }) {
-  const fixedWidth = printWidth !== 'auto';
+export function buildPrintPageCss({ paperWidth, marginLeft, marginRight }) {
   return `
     @page { margin: 0; }
     * { box-sizing: border-box; }
     html, body { margin: 0; padding: 0; background: #fff; }
     .print-page {
-      width: ${fixedWidth ? `${printWidth}mm` : 'auto'};
-      max-width: ${fixedWidth ? `${printWidth}mm` : 'none'};
-      margin: 0 0 0 ${leftMargin}mm;
-      padding: 0;
+      width: auto;
+      margin: 0;
+      padding: 0 ${marginRight}mm 0 ${marginLeft}mm;
       color: #000;
       overflow-wrap: anywhere;
       -webkit-print-color-adjust: exact;
       print-color-adjust: exact;
     }
+    /* Printer drivers drop trailing blank paper; this small mark keeps the space above it */
+    .print-end { width: 6mm; margin: 8mm auto 0; border-top: 0.3mm solid #000; }
     @media screen {
-      .print-page { width: ${previewWidth}mm; max-width: ${previewWidth}mm; margin: 0 auto; }
+      .print-page { width: ${paperWidth}mm; margin: 0 auto; }
     }
     img { max-width: 100%; }
   `;

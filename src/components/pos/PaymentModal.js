@@ -131,11 +131,12 @@ export default function PaymentModal({ total, onConfirm, onCancel, inline = fals
     standard: "text-[16px]",
     large: "text-[18px]",
   }[paymentContentSize] || "text-[16px]";
+  // Keypad Size in Settings picks one of these; each is a little taller than before for easier tapping
   const keypadButtonClass = {
-    compact: "text-lg py-2.5",
-    standard: "text-2xl py-3.5",
-    large: "text-3xl py-4.5",
-  }[keypadSize] || "text-2xl py-3.5";
+    compact: "text-lg py-3 min-h-[3rem]",
+    standard: "text-2xl py-4 min-h-[3.75rem]",
+    large: "text-3xl py-5 min-h-[4.5rem]",
+  }[keypadSize] || "text-2xl py-4 min-h-[3.75rem]";
 
   // Format Nigerian Naira with comma separators
   const formatNaira = (amount) => {

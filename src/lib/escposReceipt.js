@@ -49,8 +49,8 @@ export function buildEscposReceipt(transaction, settings = {}, { paperWidth = 80
   const lines = (list) => list.forEach((line) => p.text(line));
   const heading = (text) => p.bold(true).text(text).bold(bodyBold);
 
-  // Header, after a little space at the top
-  p.feed(1).align(1).bold(true).size(1, 2);
+  // Header (no extra top feed: the printer already leaves a gap above the first line)
+  p.align(1).bold(true).size(1, 2);
   lines(wrap(model.companyName.toUpperCase(), width));
   p.size(1, 1).bold(bodyBold);
   lines(wrap(model.locationName, width));

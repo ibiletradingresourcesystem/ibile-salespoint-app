@@ -913,6 +913,61 @@ export default function MenuScreen() {
     return () => clearTimeout(timer);
   }, [searchTerm]);
 
+  // Barcode scanner anywhere on the menu: scanners "type" the code much faster than a person and
+  // usually finish with Enter. Catch that burst when the search box isn't focused and search for it.
+  const scannerRef = useRef({ buffer: '', lastKeyAt: 0, timer: null });
+  useEffect(() => {
+    if (showPaymentPanel || showSearchKeyboard) return undefined;
+
+    const SCAN_KEY_GAP_MS = 60;
+    const MIN_CODE_LENGTH = 3;
+    const scanner = scannerRef.current;
+
+    const runScannedSearch = (code) => {
+      const value = code.trim();
+      if (value.length < MIN_CODE_LENGTH) return;
+      setSearchTerm(value);
+      setAppliedSearch(value);
+    };
+
+    const handleKeyDown = (event) => {
+      const target = event.target;
+      const typingInField = target instanceof HTMLElement
+        && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName));
+      if (typingInField || event.ctrlKey || event.altKey || event.metaKey) return;
+
+      const now = Date.now();
+      if (now - scanner.lastKeyAt > SCAN_KEY_GAP_MS) scanner.buffer = '';
+      scanner.lastKeyAt = now;
+      clearTimeout(scanner.timer);
+
+      if (event.key === 'Enter' || event.key === 'Tab') {
+        if (scanner.buffer.length >= MIN_CODE_LENGTH) {
+          event.preventDefault();
+          runScannedSearch(scanner.buffer);
+        }
+        scanner.buffer = '';
+        return;
+      }
+
+      if (event.key.length === 1) {
+        scanner.buffer += event.key;
+        // Scanners set up without an Enter suffix: search once the burst stops
+        scanner.timer = setTimeout(() => {
+          if (scanner.buffer.length >= 6) runScannedSearch(scanner.buffer);
+          scanner.buffer = '';
+        }, 150);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      clearTimeout(scanner.timer);
+      scanner.buffer = '';
+    };
+  }, [showPaymentPanel, showSearchKeyboard]);
+
   return (
     <div className="flex flex-col h-full bg-neutral-50 overflow-hidden text-sm sm:text-base">
       {/* Error Display */}

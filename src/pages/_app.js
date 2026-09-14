@@ -5,6 +5,7 @@ import Layout from "@/src/components/layout/Layout";
 import { StaffProvider } from "@/src/context/StaffContext";
 import POSErrorBoundary from "@/src/components/common/POSErrorBoundary";
 import { getUiSettings } from "@/src/lib/uiSettings";
+import { applyRadiusScale } from "@/src/lib/radiusScale";
 import { ToastContainer } from "@/src/components/common/Toast";
 import { ConfirmDialogContainer } from "@/src/components/common/ConfirmDialog";
 import PrintPreview from "@/src/components/common/PrintPreview";
@@ -30,13 +31,10 @@ export default function App({ Component, pageProps }) {
       const clamped = Math.min(150, Math.max(60, rawScale));
       const scale = clamped / 100;
 
-      const radiusMap = { none: '0px', small: '4px', standard: '8px', large: '14px' };
-      const radius = radiusMap[settings?.layout?.borderRadius] || radiusMap.standard;
-
       if (document?.documentElement) {
         document.documentElement.style.setProperty('--content-scale', String(scale));
         document.documentElement.style.fontSize = `${scale * 16}px`;
-        document.documentElement.style.setProperty('--pos-radius', radius);
+        applyRadiusScale(settings?.layout?.borderRadius, document.documentElement);
       }
     };
 
