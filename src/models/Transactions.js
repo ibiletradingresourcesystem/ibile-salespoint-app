@@ -73,6 +73,8 @@ const TransactionSchema = new mongoose.Schema({
   
   // Device & Table info
   device: String,
+  deviceId: String, // POS terminal that recorded the sale (src/lib/deviceIdentity.js)
+  deviceName: String,
   tableName: String,
   
   // Customer info
@@ -156,6 +158,7 @@ TransactionSchema.index({ externalId: 1 }, { unique: true, sparse: true });
 TransactionSchema.index({ dedupeKey: 1 }, { unique: true, sparse: true });
 // Index for till reconciliation
 TransactionSchema.index({ tillId: 1 });
+TransactionSchema.index({ tillId: 1, deviceId: 1 });
 // Index for location-based reporting
 TransactionSchema.index({ location: 1, createdAt: -1 });
 TransactionSchema.index({ locationId: 1, createdAt: -1 });

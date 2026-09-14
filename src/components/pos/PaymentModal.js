@@ -27,7 +27,7 @@ const TENDER_COLOR_MAP = {
   'Other': 'bg-indigo-500',
 };
 
-export default function PaymentModal({ total, onConfirm, onCancel, inline = false }) {
+export default function PaymentModal({ total, onConfirm, onCancel, inline = false, fitScreen = false }) {
   const { location } = useStaff();
   const { tenders: locationTenders, loading: tendersLoading, error: tendersError } = useLocationTenders();
   
@@ -137,6 +137,10 @@ export default function PaymentModal({ total, onConfirm, onCancel, inline = fals
     standard: "text-2xl py-4 min-h-[3.75rem]",
     large: "text-3xl py-5 min-h-[4.5rem]",
   }[keypadSize] || "text-2xl py-4 min-h-[3.75rem]";
+  // Fit to screen: keys stretch to share the height instead of having a fixed size
+  const keypadTextClass = { compact: "text-lg", standard: "text-2xl", large: "text-3xl" }[keypadSize] || "text-2xl";
+  const keyClass = fitScreen ? `${keypadTextClass} min-h-0 h-full` : keypadButtonClass;
+  const quickAmountHeightClass = fitScreen ? "min-h-0 py-0.5" : "min-h-[2.25rem] py-2";
 
   // Format Nigerian Naira with comma separators
   const formatNaira = (amount) => {
@@ -355,13 +359,13 @@ export default function PaymentModal({ total, onConfirm, onCancel, inline = fals
   }
 
   const paymentContent = (
-    <div className={`${inline ? 'bg-white rounded-xl border border-neutral-200 shadow-lg w-full' : 'bg-white rounded-xl shadow-2xl max-w-4xl w-full h-[calc(100vh-1rem)]'} flex flex-col overflow-hidden relative z-50 ${contentSizeClass}`}>
+    <div className={`${inline ? `bg-white rounded-xl border border-neutral-200 shadow-lg w-full ${fitScreen ? 'h-full min-h-0' : ''}` : 'bg-white rounded-xl shadow-2xl max-w-4xl w-full h-[calc(100vh-1rem)]'} flex flex-col overflow-hidden relative z-50 ${contentSizeClass}`}>
 
         {/* Main Content — 2 column: summary | numpad+tenders */}
-        <div className="flex-1 p-2 sm:p-3 grid grid-cols-[minmax(160px,1fr)_2.2fr] gap-2 sm:gap-3 overflow-hidden">
+        <div className={`flex-1 min-h-0 p-2 sm:p-3 grid grid-cols-[minmax(160px,1fr)_2.2fr] gap-2 sm:gap-3 overflow-hidden ${fitScreen ? 'grid-rows-[minmax(0,1fr)]' : ''}`}>
 
           {/* LEFT: Payment Summary */}
-          <div className="space-y-2 overflow-y-auto">
+          <div className={fitScreen ? "flex flex-col gap-2 min-h-0 overflow-hidden" : "space-y-2 overflow-y-auto"}>
             {/* Total Due */}
             <div className="bg-gradient-to-br from-gray-50 to-gray-100 border border-gray-200 rounded-lg p-2.5">
               <p className="text-[10px] text-gray-500 font-semibold uppercase">Total Due</p>
@@ -388,7 +392,7 @@ export default function PaymentModal({ total, onConfirm, onCancel, inline = fals
             ) : null}
 
             {/* Payment Breakdown */}
-            <div className="bg-white border border-gray-200 rounded-lg p-2.5">
+            <div className={`bg-white border border-gray-200 rounded-lg p-2.5 ${fitScreen ? 'flex-1 min-h-0 overflow-hidden' : ''}`}>
               <div className="flex justify-between items-center mb-1.5">
                 <p className="text-[10px] font-bold text-gray-500 uppercase">Breakdown</p>
                 {Object.values(tenders).some(v => v > 0) && (
@@ -413,7 +417,7 @@ export default function PaymentModal({ total, onConfirm, onCancel, inline = fals
             </div>
 
             {/* Confirm / Cancel */}
-            <div className="space-y-2 pt-2">
+            <div className={`space-y-2 ${fitScreen ? 'mt-auto flex-shrink-0' : 'pt-2'}`}>
               <button
                 onClick={handleConfirm}
                 disabled={!isPaymentComplete || isProcessing}
@@ -454,31 +458,31 @@ export default function PaymentModal({ total, onConfirm, onCancel, inline = fals
             )}
 
             {/* Numpad + Quick Amounts */}
-            <div className="flex-1 grid grid-cols-[3fr_1fr] gap-1.5 min-h-0">
+            <div className={`flex-1 grid grid-cols-[3fr_1fr] gap-1.5 min-h-0 ${fitScreen ? 'grid-rows-[minmax(0,1fr)]' : ''}`}>
               {/* Numpad 4x3 */}
-              <div className="grid grid-cols-3 gap-1">
+              <div className={`grid grid-cols-3 gap-1 ${fitScreen ? 'grid-rows-4 min-h-0' : ''}`}>
                 {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(num => (
                   <button
                     key={num}
                     onClick={() => handleNumberClick(num)}
-                    className={`bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-lg font-bold transition-all active:scale-95 active:bg-cyan-50 ${keypadButtonClass}`}
+                    className={`bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-lg font-bold transition-all active:scale-95 active:bg-cyan-50 ${keyClass}`}
                   >
                     {num}
                   </button>
                 ))}
-                <button onClick={handleDecimal} className={`bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-lg font-bold transition-all active:scale-95 ${keypadButtonClass}`}>.</button>
-                <button onClick={() => handleNumberClick(0)} className={`bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-lg font-bold transition-all active:scale-95 ${keypadButtonClass}`}>0</button>
-                <button onClick={handleBackspace} className={`bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-lg font-bold transition-all active:scale-95 flex items-center justify-center ${keypadButtonClass}`}>
+                <button onClick={handleDecimal} className={`bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-lg font-bold transition-all active:scale-95 ${keyClass}`}>.</button>
+                <button onClick={() => handleNumberClick(0)} className={`bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-lg font-bold transition-all active:scale-95 ${keyClass}`}>0</button>
+                <button onClick={handleBackspace} className={`bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-lg font-bold transition-all active:scale-95 flex items-center justify-center ${keyClass}`}>
                   <FontAwesomeIcon icon={faBackspace} className="w-5 h-5 text-gray-500" />
                 </button>
               </div>
 
               {/* Quick Amounts Column — buttons share the full height of the keypad */}
-              <div className="flex flex-col gap-1 min-w-[60px] h-full">
+              <div className="flex flex-col gap-1 min-w-[60px] h-full min-h-0">
                 {quickAmountSettings.exact !== false && (
                   <button
                     onClick={() => { setCurrentAmount(String(total)); setDisplayAmount(String(total)); }}
-                    className="flex-1 min-h-[2.25rem] py-2 bg-green-50 hover:bg-green-100 border-2 border-green-300 hover:border-green-400 rounded-lg text-xs sm:text-sm font-bold text-green-700 transition-all active:scale-95"
+                    className={`flex-1 ${quickAmountHeightClass} bg-green-50 hover:bg-green-100 border-2 border-green-300 hover:border-green-400 rounded-lg text-xs sm:text-sm font-bold text-green-700 transition-all active:scale-95`}
                   >
                     Exact
                   </button>
@@ -489,7 +493,7 @@ export default function PaymentModal({ total, onConfirm, onCancel, inline = fals
                   <button
                     key={amount}
                     onClick={() => { setCurrentAmount(amount.toString()); setDisplayAmount(amount.toString()); }}
-                    className="flex-1 min-h-[2.25rem] py-2 bg-white hover:bg-cyan-50 border-2 border-cyan-200 hover:border-cyan-400 rounded-lg text-xs sm:text-sm font-bold text-cyan-700 transition-all active:scale-95"
+                    className={`flex-1 ${quickAmountHeightClass} bg-white hover:bg-cyan-50 border-2 border-cyan-200 hover:border-cyan-400 rounded-lg text-xs sm:text-sm font-bold text-cyan-700 transition-all active:scale-95`}
                   >
                     ₦{amount >= 1000 ? `${amount / 1000}K` : amount}
                   </button>
@@ -498,7 +502,7 @@ export default function PaymentModal({ total, onConfirm, onCancel, inline = fals
             </div>
 
             {/* Pay By — Tender Cards */}
-            <div>
+            <div className="flex-shrink-0">
               <div className="flex items-center gap-2 mb-1.5">
                 <p className="text-[10px] font-bold text-gray-400 uppercase">Pay By</p>
                 <div className="flex-1 border-t border-gray-200"></div>

@@ -8,6 +8,8 @@
  * - Image placeholder when offline
  */
 
+import { getDeviceId, getDeviceName } from './deviceIdentity';
+
 const SYNC_INTERVAL = 30000; // Auto-sync every 30 seconds
 const DB_VERSION = 3;
 const DB_NAME = 'SalesPOS';
@@ -243,6 +245,9 @@ export async function saveTransactionOffline(transaction) {
         ...transaction,
         externalId: transaction.externalId || generatedId,
         clientId: transaction.clientId || generatedId,
+        // Which terminal recorded it, so tills shared by several terminals can be reconciled
+        deviceId: transaction.deviceId || getDeviceId(),
+        deviceName: transaction.deviceName || getDeviceName(),
         staffName: normalizeStaffName(transaction),
         location: normalizeLocationName(transaction?.location),
         status: normalizeTransactionStatus(transaction?.status),
@@ -277,7 +282,7 @@ export async function saveTransactionOffline(transaction) {
  * Update the till stored in localStorage with new transaction totals
  * Called after each offline transaction is saved
  */
-function updateTillInLocalStorage(tillId, transactionTotal, status = 'completed') {
+function updateTillInLocalStorage(tillId, transactionTotal, status = 'completed', countChange = 1) {
   try {
     if (status !== 'completed') return;
     if (typeof window === 'undefined') return;
@@ -290,8 +295,8 @@ function updateTillInLocalStorage(tillId, transactionTotal, status = 'completed'
     // Only update if the transaction belongs to this till
     if (String(till._id) !== String(tillId)) return;
 
-    till.totalSales = (till.totalSales || 0) + (transactionTotal || 0);
-    till.transactionCount = (till.transactionCount || 0) + 1;
+    till.totalSales = Math.max(0, (till.totalSales || 0) + (transactionTotal || 0));
+    till.transactionCount = Math.max(0, (till.transactionCount || 0) + countChange);
 
     localStorage.setItem('till', JSON.stringify(till));
     console.log(`📊 Till localStorage updated - Sales: ₦${till.totalSales}, Transactions: ${till.transactionCount}`);
@@ -588,6 +593,46 @@ export async function markTransactionSynced(transactionId) {
   } catch (err) {
     console.error('❌ Error marking transaction as synced:', err);
     throw err;
+  }
+}
+
+/**
+ * Mark this terminal's copy of a sale as voided/refunded after the cloud has processed it,
+ * so Close Till and offline views stop counting it as a sale.
+ * refs: { id, externalId } of the transaction (cloud id and/or client reference)
+ */
+export async function markLocalTransactionVoided(refs = {}, details = {}) {
+  const wanted = [refs.externalId, refs.clientId, refs.id].filter(Boolean).map(String);
+  if (wanted.length === 0) return 0;
+
+  try {
+    const db = await openSalesPosDb();
+    return await new Promise((resolve, reject) => {
+      const txStore = db.transaction(['transactions'], 'readwrite').objectStore('transactions');
+      const getAllRequest = txStore.getAll();
+      getAllRequest.onsuccess = () => {
+        const matches = (getAllRequest.result || []).filter((record) =>
+          [record.id, record.externalId, record.clientId, record.serverId].filter(Boolean).map(String).some((ref) => wanted.includes(ref))
+        );
+        matches.forEach((record) => {
+          const wasCompleted = normalizeTransactionStatus(record.status) === 'completed';
+          txStore.put({
+            ...record,
+            status: 'refunded',
+            subStatus: details.subStatus || 'void',
+            refundedAt: details.refundedAt || new Date().toISOString(),
+          });
+          if (wasCompleted) {
+            updateTillInLocalStorage(record.tillId, -Number(record.total || 0), 'completed', -1);
+          }
+        });
+        resolve(matches.length);
+      };
+      getAllRequest.onerror = () => reject(getAllRequest.error);
+    });
+  } catch (err) {
+    console.warn('⚠️ Could not mark local transaction as voided:', err);
+    return 0;
   }
 }
 

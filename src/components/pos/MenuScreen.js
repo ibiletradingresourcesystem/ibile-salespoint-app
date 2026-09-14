@@ -196,6 +196,7 @@ export default function MenuScreen() {
   const [isOnline, setIsOnline] = useState(true); // Track online status
   const [pendingTransactions, setPendingTransactions] = useState(0); // Track unsync'd transactions
   const [showSearchKeyboard, setShowSearchKeyboard] = useState(false);
+  const [paymentFitScreen, setPaymentFitScreen] = useState(false);
   const [productCardTextSize, setProductCardTextSize] = useState('standard');
   const imageObserver = useRef(null);
   const handleManualSyncRef = useRef(null);
@@ -275,10 +276,12 @@ export default function MenuScreen() {
     // Load product card text size from settings
     const settings = getUiSettings();
     setProductCardTextSize(settings.layout?.productCardTextSize || 'standard');
+    setPaymentFitScreen(settings.payment?.fitScreen === true);
 
     const handleSettingsUpdate = (event) => {
       const updated = event?.detail || getUiSettings();
       setProductCardTextSize(updated.layout?.productCardTextSize || 'standard');
+      setPaymentFitScreen(updated.payment?.fitScreen === true);
     };
     window.addEventListener('uiSettings:updated', handleSettingsUpdate);
     
@@ -1082,7 +1085,7 @@ export default function MenuScreen() {
 
       {/* Payment Panel - Full Content Side */}
       {showPaymentPanel && (
-        <div className="flex-1 overflow-y-auto p-1.5 sm:p-2">
+        <div className={`flex-1 min-h-0 p-1.5 sm:p-2 ${paymentFitScreen ? 'overflow-hidden' : 'overflow-y-auto'}`}>
           <PaymentPanel />
         </div>
       )}

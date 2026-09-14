@@ -69,7 +69,7 @@ export default async function handler(req, res) {
   try {
     await mongooseConnect();
 
-    const { tillId, tenderCounts, closingNotes } = req.body;
+    const { tillId, tenderCounts, closingNotes, deviceId, deviceName, closedByStaffName } = req.body;
     const safeTenderCounts = tenderCounts && typeof tenderCounts === "object" ? tenderCounts : {};
 
     console.log("================================================================================");
@@ -270,12 +270,31 @@ export default async function handler(req, res) {
       tenderBreakdown: tenderBreakdown,
       tenderVariances: tenderVariances,
       closingNotes: closingNotes || "",
+      closedByDeviceId: String(deviceId || ""),
+      closedByDeviceName: String(deviceName || ""),
+      closedByStaffName: String(closedByStaffName || ""),
     };
 
     const updateResult = await Till.updateOne(
       { _id: till._id, status: "OPEN" },
       { $set: updatePayload }
     );
+
+    // Terminals that handed over are now included in this close
+    if (updateResult.matchedCount > 0) {
+      await Till.updateOne(
+        { _id: till._id, "handovers.status": "pending" },
+        {
+          $set: {
+            "handovers.$[h].status": "merged",
+            "handovers.$[h].mergedAt": new Date(),
+            "handovers.$[h].mergedByDeviceName": String(deviceName || ""),
+            "handovers.$[h].mergedByStaffName": String(closedByStaffName || ""),
+          },
+        },
+        { arrayFilters: [{ "h.status": "pending" }] }
+      );
+    }
 
     if (updateResult.matchedCount === 0) {
       console.warn("⚠️ Till was already closed by another request.");

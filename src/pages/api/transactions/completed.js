@@ -93,6 +93,7 @@ export default async function handler(req, res) {
     // Format transactions for frontend
     const formattedTransactions = transactions.map(tx => ({
       id: tx._id?.toString() || tx.id,
+      externalId: tx.externalId || null,
       createdAt: tx.createdAt,
       total: tx.total || 0,
       subtotal: tx.subtotal || 0,

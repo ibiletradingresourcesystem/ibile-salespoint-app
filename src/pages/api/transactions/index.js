@@ -130,6 +130,8 @@ export default async function handler(req, res) {
       location = 'Default Location',
       locationId,
       device,
+      deviceId,
+      deviceName,
       tableName,
       customerName,
       customerId,
@@ -496,6 +498,8 @@ export default async function handler(req, res) {
         locationId: new mongoose.Types.ObjectId(String(locationId)),
       }),
       device: device,
+      ...(deviceId && { deviceId: String(deviceId) }),
+      ...(deviceName && { deviceName: String(deviceName) }),
       tableName: tableName,
       discount: discount || 0,
       ...(discountName && { discountName }),
@@ -555,6 +559,15 @@ export default async function handler(req, res) {
           till.totalSales = (till.totalSales || 0) + Number(total || 0);
           // DO NOT manually increment transactionCount - it should always equal transactions.length
           till.transactionCount = till.transactions.length;
+
+          // A terminal that handed over and then kept selling is back on the till
+          if (deviceId && Array.isArray(till.handovers)) {
+            till.handovers.forEach((handover) => {
+              if (handover.deviceId === String(deviceId) && handover.status === 'pending') {
+                handover.status = 'resumed';
+              }
+            });
+          }
           
           // Ensure tenderBreakdown is initialized
           if (!(till.tenderBreakdown instanceof Map)) {

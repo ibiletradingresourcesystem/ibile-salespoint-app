@@ -1,6 +1,26 @@
 // models/Till.js - Merged from inventory & current app
 import mongoose from "mongoose";
 
+// A terminal that sent its sales to the cloud so another terminal at the location can close the till
+const HandoverSchema = new mongoose.Schema(
+  {
+    deviceId: { type: String, required: true },
+    deviceName: { type: String, default: "" },
+    staffId: { type: mongoose.Schema.Types.ObjectId, ref: "Staff", default: null },
+    staffName: { type: String, default: "" },
+    transactionCount: { type: Number, default: 0 },
+    totalSales: { type: Number, default: 0 },
+    tenderBreakdown: { type: mongoose.Schema.Types.Mixed, default: {} },
+    sentAt: { type: Date, default: Date.now },
+    // pending: waiting for the till to close · merged: included when the till closed · resumed: the terminal went back to selling
+    status: { type: String, enum: ["pending", "merged", "resumed"], default: "pending" },
+    mergedAt: { type: Date, default: null },
+    mergedByDeviceName: { type: String, default: "" },
+    mergedByStaffName: { type: String, default: "" },
+  },
+  { _id: true }
+);
+
 const TillSchema = new mongoose.Schema(
   {
     // Reference to store location
@@ -102,6 +122,12 @@ const TillSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+
+    // Terminals sharing this till
+    handovers: { type: [HandoverSchema], default: [] },
+    closedByDeviceId: { type: String, default: "" },
+    closedByDeviceName: { type: String, default: "" },
+    closedByStaffName: { type: String, default: "" },
     notes: {
       type: String,
       default: "",

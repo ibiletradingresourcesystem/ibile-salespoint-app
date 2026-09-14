@@ -1,5 +1,5 @@
 // components/pos/CloseTillModal.js
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/router";
 import Image from "next/image";
 import { useStaff } from "../../context/StaffContext";
@@ -8,12 +8,16 @@ import { useLocationTenders } from "../../hooks/useLocationTenders";
 import { getOnlineStatus, resolveTillId } from "../../lib/offlineSync";
 import { getStoreLogo } from "../../lib/logoCache";
 import { escapeHtml } from "../../lib/receiptViewModel";
-import { addTenderAmount, getTenderAmount, normalizeTenderBreakdown } from "../../lib/tenderKey";
+import { getTenderAmount, normalizeTenderBreakdown } from "../../lib/tenderKey";
+import { describeTillTerminals, mergeTillTransactions, summarizeTillTransactions } from "../../lib/tillReconciliation";
+import { getDeviceId, getDeviceName } from "../../lib/deviceIdentity";
 import NumKeypad from "../common/NumKeypad";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
   faCashRegister,
+  faDesktop,
   faLock,
+  faRightFromBracket,
   faPenToSquare,
   faPrint,
   faRotate,
@@ -174,30 +178,15 @@ const getOfflineTillData = async (tillId) => {
           const allTransactions = allTxRequest.result || [];
           // Filter transactions for this specific till using string comparison
           const tillTransactions = allTransactions.filter(tx => String(tx.tillId) === tillIdStr);
-          
-          // Calculate totals from offline transactions
-          let totalSales = 0;
-          const tenderBreakdown = {};
-          let unsyncedCount = 0;
-          
-          tillTransactions.forEach(tx => {
-            totalSales += tx.total || 0;
-            if (tx.synced !== true) {
-              unsyncedCount += 1;
-            }
-            
-            // Process tender payments
-            if (tx.tenderPayments && Array.isArray(tx.tenderPayments)) {
-              tx.tenderPayments.forEach(tp => {
-                addTenderAmount(tenderBreakdown, tp.tenderName, tp.amount, 'Cash');
-              });
-            } else if (tx.tenderType) {
-              addTenderAmount(tenderBreakdown, tx.tenderType, tx.total, 'Cash');
-            }
-          });
-          
+          const unsyncedCount = tillTransactions.filter(tx => tx.synced !== true).length;
+
+          // Only completed sales count: voids, refunds, held and credit sales are left out
+          const { totalSales, transactionCount, tenderBreakdown } = summarizeTillTransactions(
+            mergeTillTransactions(null, tillTransactions)
+          );
+
           resolve({
-            transactionCount: tillTransactions.length,
+            transactionCount,
             totalSales,
             tenderBreakdown,
             unsyncedCount,
@@ -212,7 +201,21 @@ const getOfflineTillData = async (tillId) => {
     });
   } catch (err) {
     console.error('Error getting offline till data:', err);
-    return { transactionCount: 0, totalSales: 0, tenderBreakdown: {}, unsyncedCount: 0 };
+    return { transactionCount: 0, totalSales: 0, tenderBreakdown: {}, unsyncedCount: 0, transactions: [] };
+  }
+};
+
+// The cloud's list of this till's transactions (all terminals, with voids) — null when it can't be reached
+const getServerTillData = async (tillId) => {
+  if (!tillId || String(tillId).startsWith('offline-till-')) return null;
+  try {
+    const res = await fetch(`/api/till/${tillId}/transactions`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data?.success ? data : null;
+  } catch (err) {
+    console.warn('Could not load till transactions from the cloud:', err);
+    return null;
   }
 };
 
@@ -259,7 +262,7 @@ const getPendingTransactionsForTill = async (tillId) => {
 
 export default function CloseTillModal({ isOpen, onClose, onTillClosed }) {
   const router = useRouter();
-  const { till: contextTill, setCurrentTill, logout, location } = useStaff();
+  const { staff, till: contextTill, setCurrentTill, logout, location } = useStaff();
   const { orders: cartOrders } = useCart();
   const { tenders, loading: tendersLoading } = useLocationTenders(location?._id);
   const [till, setTill] = useState(null);
@@ -281,6 +284,26 @@ export default function CloseTillModal({ isOpen, onClose, onTillClosed }) {
   const [isMobile, setIsMobile] = useState(false);
   const [activeTab, setActiveTab] = useState('summary');
   const [tillTransactions, setTillTransactions] = useState([]);
+  const [handovers, setHandovers] = useState([]);
+  const [showHandoverConfirm, setShowHandoverConfirm] = useState(false);
+  const [handingOver, setHandingOver] = useState(false);
+  const [handoverStep, setHandoverStep] = useState("");
+  const [handoverProgress, setHandoverProgress] = useState(0);
+  const deviceId = getDeviceId();
+  const deviceName = getDeviceName();
+  const [reloadToken, setReloadToken] = useState(0);
+  const keepCountsOnReloadRef = useRef(false);
+
+  // Another terminal handed over while this screen is open: reload so its sales are included
+  useEffect(() => {
+    if (!isOpen) return undefined;
+    const handleHandoverReceived = () => {
+      keepCountsOnReloadRef.current = true;
+      setReloadToken((token) => token + 1);
+    };
+    window.addEventListener("pos:till-handover:received", handleHandoverReceived);
+    return () => window.removeEventListener("pos:till-handover:received", handleHandoverReceived);
+  }, [isOpen]);
 
   // Track online/offline status
   useEffect(() => {
@@ -349,7 +372,9 @@ export default function CloseTillModal({ isOpen, onClose, onTillClosed }) {
       setFetchingTill(true);
       setFetchingProgress(0);
       setFetchingStep("Initializing...");
-      setTenderCounts({});
+      // Keep amounts already counted when reloading for a hand-over
+      if (!keepCountsOnReloadRef.current) setTenderCounts({});
+      keepCountsOnReloadRef.current = false;
       
       const fetchTillData = async () => {
         try {
@@ -362,32 +387,31 @@ export default function CloseTillModal({ isOpen, onClose, onTillClosed }) {
               setFetchingProgress(40);
               setFetchingStep("Fetching from server...");
               
-              const res = await fetch(`/api/till/${contextTill._id}`);
+              const [res, serverData] = await Promise.all([
+                fetch(`/api/till/${contextTill._id}`),
+                getServerTillData(contextTill._id),
+              ]);
               const data = await res.json();
-              
+
               setFetchingProgress(60);
-              setFetchingStep("Loading offline data...");
-              
-              // Always get offline data (reliable source of tenderBreakdown from IndexedDB)
+              setFetchingStep("Loading this terminal's sales...");
+
               const offlineData = await getOfflineTillData(contextTill._id);
               setPendingLocalTransactions(offlineData.unsyncedCount || 0);
-              setTillTransactions(offlineData.transactions || []);
-              
-              if (data.till) {
-                // IndexedDB tenderBreakdown is always reliable (built from actual transactions).
-                // Server Mongoose Map serialization is fragile, so prefer offline when available.
-                const offlineBreakdown = offlineData.tenderBreakdown || {};
-                const hasOfflineBreakdown = Object.keys(offlineBreakdown).length > 0;
-                
-                if (hasOfflineBreakdown) {
-                  console.log('📊 Using IndexedDB tenderBreakdown (reliable):', offlineBreakdown);
-                  data.till.tenderBreakdown = offlineBreakdown;
-                }
-                
-                setTill(data.till);
-              } else {
-                setTill(contextTill);
-              }
+
+              // Cloud copies (every terminal, voids included) plus this terminal's unsynced sales.
+              // Without the cloud list, fall back to this terminal's own copies.
+              const merged = mergeTillTransactions(serverData?.transactions || null, offlineData.transactions || []);
+              const figures = summarizeTillTransactions(merged);
+              setTillTransactions(merged);
+              setHandovers(serverData?.till?.handovers || []);
+
+              setTill({
+                ...(data.till || contextTill),
+                totalSales: figures.totalSales,
+                transactionCount: figures.transactionCount,
+                tenderBreakdown: figures.tenderBreakdown,
+              });
             } catch (err) {
               console.error("Error fetching till:", err);
               setFetchingProgress(70);
@@ -395,12 +419,14 @@ export default function CloseTillModal({ isOpen, onClose, onTillClosed }) {
               
               // Fallback to offline data
               const offlineData = await getOfflineTillData(contextTill._id);
+              const { transactions: offlineTransactions, ...offlineFigures } = offlineData;
               setTill({
                 ...contextTill,
-                ...offlineData,
+                ...offlineFigures,
               });
               setPendingLocalTransactions(offlineData.unsyncedCount || 0);
-              setTillTransactions(offlineData.transactions || []);
+              setTillTransactions(mergeTillTransactions(null, offlineTransactions || []));
+              setHandovers([]);
             }
           } else {
             // Offline: Use context + IndexedDB data
@@ -408,14 +434,16 @@ export default function CloseTillModal({ isOpen, onClose, onTillClosed }) {
             setFetchingStep("Reading offline data...");
             
             const offlineData = await getOfflineTillData(contextTill._id);
+            const hasLocalTransactions = (offlineData.transactions || []).length > 0;
             setTill({
               ...contextTill,
-              transactionCount: offlineData.transactionCount || contextTill.transactionCount || 0,
-              totalSales: offlineData.totalSales || contextTill.totalSales || 0,
-              tenderBreakdown: offlineData.tenderBreakdown || contextTill.tenderBreakdown || {},
+              transactionCount: hasLocalTransactions ? offlineData.transactionCount : contextTill.transactionCount || 0,
+              totalSales: hasLocalTransactions ? offlineData.totalSales : contextTill.totalSales || 0,
+              tenderBreakdown: hasLocalTransactions ? offlineData.tenderBreakdown : contextTill.tenderBreakdown || {},
             });
             setPendingLocalTransactions(offlineData.unsyncedCount || 0);
-            setTillTransactions(offlineData.transactions || []);
+            setTillTransactions(mergeTillTransactions(null, offlineData.transactions || []));
+            setHandovers([]);
           }
           
           setFetchingProgress(90);
@@ -437,7 +465,7 @@ export default function CloseTillModal({ isOpen, onClose, onTillClosed }) {
       
       fetchTillData();
     }
-  }, [isOpen, contextTill, isOnline]);
+  }, [isOpen, contextTill, isOnline, reloadToken]);
 
   useEffect(() => {
     if (!isOpen || contextTill?._id) return;
@@ -552,6 +580,9 @@ export default function CloseTillModal({ isOpen, onClose, onTillClosed }) {
         tenderCounts: tenderCountsForAPI,
         closingNotes: closingNotes.trim(),
         summary: summary,
+        deviceId,
+        deviceName,
+        closedByStaffName: staff?.name || contextTill?.staffName || "",
       };
 
       if (isOnline) {
@@ -694,6 +725,69 @@ export default function CloseTillModal({ isOpen, onClose, onTillClosed }) {
     }
   };
 
+  // Send this terminal's sales to the cloud and log out, leaving the till open for another terminal to close
+  const handleConfirmHandover = async () => {
+    setShowHandoverConfirm(false);
+    setError(null);
+
+    if (!isOnline) {
+      setError("Handing over needs an internet connection so the other terminal can receive this terminal's sales.");
+      return;
+    }
+    if (!till?._id || String(till._id).startsWith('offline-till-')) {
+      setError("This till has not reached the cloud yet. Sync first, then hand over.");
+      return;
+    }
+
+    setHandingOver(true);
+    try {
+      setHandoverProgress(20);
+      setHandoverStep("Sending this terminal's sales to the cloud...");
+      const pendingAfterSync = await syncPendingForTill();
+      if (pendingAfterSync > 0) {
+        throw new Error("Some sales on this terminal have not synced yet. Open Help/Chat > Unsynced Data to sync them, then hand over again.");
+      }
+
+      setHandoverProgress(60);
+      setHandoverStep("Letting the other terminal know...");
+      const response = await fetch(`/api/till/${till._id}/handover`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          deviceId,
+          deviceName,
+          staffId: staff?._id,
+          staffName: staff?.name || "",
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || "Could not hand over the till. Please try again.");
+      }
+
+      setHandoverProgress(85);
+      setHandoverStep("Logging out of this terminal...");
+      setCurrentTill(null);
+      try {
+        localStorage.removeItem("till");
+      } catch (err) {
+        console.warn("Failed to clear local till:", err);
+      }
+      logout();
+      setHandoverProgress(100);
+      setHandoverStep("Handed over");
+      setTimeout(() => {
+        onClose();
+        router.push("/");
+      }, 400);
+    } catch (err) {
+      setError(err.message);
+      setHandingOver(false);
+      setHandoverProgress(0);
+      setHandoverStep("");
+    }
+  };
+
   if (!isOpen) return null;
 
   const progressOverlay = (title, step, progress) => (
@@ -749,6 +843,10 @@ export default function CloseTillModal({ isOpen, onClose, onTillClosed }) {
     return progressOverlay("Closing Till & Logging Out", loadingStep, loadingProgress);
   }
 
+  if (handingOver) {
+    return progressOverlay("Handing Over & Logging Out", handoverStep, handoverProgress);
+  }
+
   // Held orders are kept on this device; show the ones held today at this location
   const todayKey = new Date().toDateString();
   const heldToday = (cartOrders || [])
@@ -764,12 +862,23 @@ export default function CloseTillModal({ isOpen, onClose, onTillClosed }) {
       customerName: order.customer?.name || '',
     }));
 
+  // Same rules as the totals: voided sales move to VOID and stop counting as sales
+  const reconciled = summarizeTillTransactions(tillTransactions);
   const transactionTabs = {
-    sales: tillTransactions.filter(tx => tx.status !== 'held' && (!tx.subStatus || tx.subStatus === 'completed' || tx.subStatus === 'edited')),
-    refunds: tillTransactions.filter(tx => tx.subStatus === 'refund' || tx.subStatus === 'refunded'),
-    void: tillTransactions.filter(tx => tx.subStatus === 'void' || tx.subStatus === 'voided'),
+    sales: reconciled.sales,
+    refunds: reconciled.refunds,
+    void: reconciled.voids,
     held: heldToday,
   };
+
+  const terminals = describeTillTerminals({
+    transactions: tillTransactions,
+    handovers,
+    currentDeviceId: deviceId,
+    currentDeviceName: deviceName,
+  });
+  const otherTerminals = terminals.filter((terminal) => !terminal.isCurrent && terminal.deviceId);
+  const showTerminals = otherTerminals.length > 0;
 
   const TABS = [
     { id: 'summary', label: 'Summary' },
@@ -946,6 +1055,16 @@ export default function CloseTillModal({ isOpen, onClose, onTillClosed }) {
               </button>
               <button
                 type="button"
+                onClick={() => { setError(null); setShowHandoverConfirm(true); }}
+                disabled={!isOnline || syncing || showConfirmation}
+                title={!isOnline ? "Needs an internet connection" : "Send this terminal's sales to the cloud and let another terminal close the till"}
+                className="w-full py-2.5 bg-white hover:bg-primary-50 border border-primary-300 rounded-md text-sm font-semibold text-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+              >
+                <FontAwesomeIcon icon={faRightFromBracket} className="w-4 h-4" />
+                Hand Over to Another Terminal
+              </button>
+              <button
+                type="button"
                 onClick={onClose}
                 disabled={loading || showConfirmation}
                 className="w-full py-2.5 bg-neutral-100 hover:bg-neutral-200 border border-neutral-300 rounded-md text-sm font-semibold text-neutral-700 transition-colors"
@@ -1044,6 +1163,50 @@ export default function CloseTillModal({ isOpen, onClose, onTillClosed }) {
                     </tfoot>
                   </table>
                 </div>
+
+                {showTerminals && (
+                  <div className="bg-white rounded-md overflow-hidden mt-2">
+                    <div className="px-4 py-3 border-b border-neutral-200 flex items-center justify-between gap-3">
+                      <h3 className="text-sm font-bold text-neutral-800 flex items-center gap-2">
+                        <FontAwesomeIcon icon={faDesktop} className="w-3.5 h-3.5 text-primary-600" />
+                        Terminals on this till
+                      </h3>
+                      <span className="text-xs text-neutral-500">Count the cash and tenders from every terminal</span>
+                    </div>
+                    <div className="divide-y divide-neutral-100">
+                      {terminals.map((terminal) => {
+                        const handover = terminal.handover;
+                        const status = terminal.isCurrent
+                          ? { label: 'This terminal', className: 'bg-primary-50 text-primary-700 border-primary-200' }
+                          : handover?.status === 'pending'
+                            ? { label: 'Handed over', className: 'bg-green-50 text-green-700 border-green-200' }
+                            : handover?.status === 'resumed'
+                              ? { label: 'Back on sales', className: 'bg-amber-50 text-amber-800 border-amber-200' }
+                              : { label: 'Not handed over', className: 'bg-amber-50 text-amber-800 border-amber-200' };
+                        return (
+                          <div key={terminal.deviceId || terminal.deviceName} className="px-4 py-3 flex items-center justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="text-sm font-semibold text-neutral-800 truncate">{terminal.deviceName}</p>
+                              <p className="text-xs text-neutral-500">
+                                {terminal.salesCount} sale{terminal.salesCount === 1 ? '' : 's'} · {formatNaira(terminal.salesTotal)}
+                                {handover?.sentAt && !terminal.isCurrent && (
+                                  <> · sent {new Date(handover.sentAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true })}{handover.staffName ? ` by ${handover.staffName}` : ''}</>
+                                )}
+                              </p>
+                            </div>
+                            <span className={`text-[11px] font-bold px-2 py-1 rounded border whitespace-nowrap ${status.className}`}>{status.label}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {otherTerminals.some((terminal) => terminal.handover?.status !== 'pending') && (
+                      <p className="px-4 py-2.5 bg-amber-50 border-t border-amber-200 text-xs text-amber-800 flex gap-2">
+                        <FontAwesomeIcon icon={faTriangleExclamation} className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
+                        A terminal that has not handed over may still have sales it hasn&apos;t synced. Ask for a hand over from that terminal before closing, so its sales are included.
+                      </p>
+                    )}
+                  </div>
+                )}
               </>
             ) : (() => {
               const tab = TABS.find(t => t.id === activeTab);
@@ -1080,19 +1243,29 @@ export default function CloseTillModal({ isOpen, onClose, onTillClosed }) {
                           </div>
                           {Array.isArray(tx.items) && tx.items.length > 0 && (
                             <div className="space-y-1 mb-1.5">
-                              {tx.items.map((item, i) => (
-                                <div key={i} className="flex justify-between gap-3 text-xs">
-                                  <span className="text-neutral-600 min-w-0 break-words">{item.name} × {item.quantity}</span>
-                                  <span className="text-neutral-800 font-medium whitespace-nowrap">{formatNaira((Number(item.price) || 0) * (Number(item.quantity) || 0))}</span>
-                                </div>
-                              ))}
+                              {tx.items.map((item, i) => {
+                                const quantity = Number(item.quantity ?? item.qty) || 0;
+                                const price = Number(item.price ?? item.salePriceIncTax) || 0;
+                                return (
+                                  <div key={i} className="flex justify-between gap-3 text-xs">
+                                    <span className="text-neutral-600 min-w-0 break-words">{item.name} × {quantity}</span>
+                                    <span className="text-neutral-800 font-medium whitespace-nowrap">{formatNaira(price * quantity)}</span>
+                                  </div>
+                                );
+                              })}
                             </div>
                           )}
                           <div className="flex justify-between items-center gap-3 pt-1.5 border-t border-dashed border-neutral-200">
                             <span className="text-xs text-neutral-500">
                               {isHeld
                                 ? `Held by ${tx.staffName || 'staff'}`
-                                : (tx.tenderType || tx.tenderPayments?.[0]?.tenderName || '—')}
+                                : [
+                                    tx.tenderPayments?.length ? tx.tenderPayments.map((p) => p.tenderName).join(' + ') : (tx.tenderType || '—'),
+                                    activeTab === 'void' && tx.refundedAt
+                                      ? `voided ${new Date(tx.refundedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true })}`
+                                      : '',
+                                    showTerminals && tx.deviceName ? tx.deviceName : '',
+                                  ].filter(Boolean).join(' · ')}
                             </span>
                             <span className="text-sm font-bold text-neutral-900">{formatNaira(tx.total)}</span>
                           </div>
@@ -1208,6 +1381,63 @@ export default function CloseTillModal({ isOpen, onClose, onTillClosed }) {
           </div>
         </div>
       )}
+
+      {/* Hand-over Confirmation */}
+      {showHandoverConfirm && (() => {
+        const thisTerminal = terminals.find((terminal) => terminal.isCurrent);
+        return (
+          <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+            <div className="bg-white border border-neutral-200 rounded-lg shadow-2xl max-w-md w-full p-6 space-y-4">
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-full bg-primary-50 flex items-center justify-center flex-shrink-0">
+                  <FontAwesomeIcon icon={faRightFromBracket} className="w-5 h-5 text-primary-700" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-neutral-900">Hand over to another terminal?</h3>
+                  <p className="text-sm text-neutral-600 mt-1">
+                    This terminal&apos;s sales will be sent to the cloud and you will be logged out. The till stays open,
+                    and the other terminal at {location?.name || 'this location'} will be asked to close it with these sales included.
+                  </p>
+                </div>
+              </div>
+
+              <div className="bg-neutral-50 border border-neutral-200 rounded-md divide-y divide-neutral-200">
+                {[
+                  ['Terminal', deviceName],
+                  ['Sales on this terminal', String(thisTerminal?.salesCount || 0)],
+                  ['Value', formatNaira(thisTerminal?.salesTotal || 0)],
+                  ['Waiting to sync', String(pendingLocalTransactions || 0)],
+                ].map(([label, value]) => (
+                  <div key={label} className="flex justify-between gap-3 px-3 py-2 text-sm">
+                    <span className="text-neutral-600">{label}</span>
+                    <span className="font-bold text-neutral-900 text-right">{value}</span>
+                  </div>
+                ))}
+              </div>
+              <p className="text-xs text-neutral-500">
+                Take this terminal&apos;s cash and tender slips to the terminal that will close the till.
+              </p>
+
+              <div className="flex gap-3 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setShowHandoverConfirm(false)}
+                  className="flex-1 px-4 py-2.5 bg-neutral-100 hover:bg-neutral-200 border border-neutral-300 text-neutral-800 font-semibold rounded-md transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmHandover}
+                  className="flex-1 px-4 py-2.5 bg-primary-600 hover:bg-primary-700 text-white font-bold rounded-md transition-colors"
+                >
+                  Send &amp; log out
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </>
   );
 }

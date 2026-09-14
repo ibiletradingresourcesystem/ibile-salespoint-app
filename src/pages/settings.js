@@ -335,6 +335,7 @@ export default function SettingsPage() {
       `Payment scale: ${settings.payment?.scale || defaultUiSettings.payment.scale}`,
       `Payment content size: ${settings.payment?.contentSize || defaultUiSettings.payment.contentSize}`,
       `Keypad size: ${settings.payment?.keypadSize || defaultUiSettings.payment.keypadSize}`,
+      `Screen height: ${settings.payment?.fitScreen === true ? 'Fit to screen' : 'Scroll when needed'}`,
       `Quick amounts: ${Object.entries(settings.payment?.quickAmounts || defaultUiSettings.payment.quickAmounts)
         .filter(([, enabled]) => enabled)
         .map(([label]) => (label === 'exact' ? 'Exact' : `₦${label}`))
@@ -714,6 +715,24 @@ export default function SettingsPage() {
                         </option>
                       ))}
                     </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                      Screen Height
+                    </label>
+                    <label className="flex items-start gap-2 border border-gray-300 rounded p-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={settings.payment?.fitScreen === true}
+                        onChange={(e) => updatePaymentSetting('fitScreen', e.target.checked)}
+                        className="mt-1"
+                      />
+                      <span className="text-sm text-gray-700">
+                        Fit to screen — Complete Payment fills the available height and never scrolls; the keypad
+                        and quick amount buttons stretch to fit.
+                      </span>
+                    </label>
                   </div>
                 </div>
 

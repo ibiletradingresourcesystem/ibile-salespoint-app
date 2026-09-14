@@ -23,7 +23,7 @@ import {
 } from '@fortawesome/free-solid-svg-icons';
 import { useCart } from '../../context/CartContext';
 import { useStaff } from '../../context/StaffContext';
-import { getCompletedTransactions, cacheCompletedTransactions, getCachedCompletedTransactions } from '../../lib/offlineSync';
+import { getCompletedTransactions, cacheCompletedTransactions, getCachedCompletedTransactions, markLocalTransactionVoided } from '../../lib/offlineSync';
 import { getReceiptSettings, printTransactionReceipt } from '../../lib/receiptPrinting';
 import { hasPosPermission } from '@/src/lib/posPermissions';
 import { showToast } from '../common/Toast';
@@ -298,6 +298,11 @@ export default function OrdersScreen({ onNavigateToMenu }) {
         }
 
         const data = await response.json();
+        // Update this terminal's copy too, so Close Till no longer counts it as a sale
+        await markLocalTransactionVoided(
+          { id: order.id, externalId: order.externalId },
+          { subStatus: data.subStatus || 'void', refundedAt: data.transaction?.refundedAt }
+        );
         showToast(`Transaction marked as ${data.refundStatus}${data.subStatus ? ` (${data.subStatus})` : ''}`, 'success');
         
         // Refresh completed transactions
@@ -385,6 +390,7 @@ export default function OrdersScreen({ onNavigateToMenu }) {
 
         return {
           id: tx.id || tx._id,
+          externalId: tx.externalId || null,
           time: tx.createdAt ? new Date(tx.createdAt).toLocaleString() : 'N/A',
           createdAt: tx.createdAt || new Date().toISOString(),
           customer: tx.customerName || 'Walk-in',

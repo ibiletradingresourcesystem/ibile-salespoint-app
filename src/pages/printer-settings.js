@@ -201,8 +201,9 @@ export default function PrinterSettings() {
 
       <div className="bg-white rounded-lg shadow-lg">
         <div className="bg-gradient-to-r from-blue-600 to-blue-700 text-white p-6 rounded-t-lg">
-          <h1 className="text-3xl font-bold flex items-center gap-3">
-            <FontAwesomeIcon icon={faPrint} className="w-7 h-7" />
+          {/* text-white on the heading itself: the global h1 colour would otherwise win */}
+          <h1 className="text-3xl font-bold flex items-center gap-3 text-white">
+            <FontAwesomeIcon icon={faPrint} className="w-7 h-7 text-white" />
             Printer Settings
           </h1>
           <p className="text-blue-100 mt-2">

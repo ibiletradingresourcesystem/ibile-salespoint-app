@@ -304,6 +304,8 @@ export default function PaymentPanel() {
 
   const paymentScale = uiSettings.payment?.scale || "standard";
   const paymentContentSize = uiSettings.payment?.contentSize || "standard";
+  // Settings → Payment → Fit to screen: fill the available height with no scrolling
+  const fitScreen = uiSettings.payment?.fitScreen === true;
 
   const scaleClass = {
     compact: "scale-[0.98]",
@@ -340,7 +342,7 @@ export default function PaymentPanel() {
       </div>
 
       {/* Payment Body */}
-      <div className="flex-1 min-h-0 p-2 sm:p-4 overflow-y-auto">
+      <div className={`flex-1 min-h-0 ${fitScreen ? "p-2 overflow-hidden flex flex-col" : "p-2 sm:p-4 overflow-y-auto"}`}>
         {!till ? (
           <div className="h-full flex flex-col items-center justify-center text-center border-2 border-dashed border-cyan-300 bg-white/80 rounded-2xl p-4 sm:p-6">
             <div className="text-base sm:text-lg font-semibold text-neutral-900">Open a till to accept payment</div>
@@ -391,6 +393,7 @@ export default function PaymentPanel() {
         ) : (
           <PaymentModal
             inline
+            fitScreen={fitScreen}
             total={isOnlineOrderCheckout ? onlineOrderTotal : totals.total}
             onConfirm={handlePaymentConfirm}
             onCancel={() => setShowPaymentPanel(false)}
@@ -398,7 +401,7 @@ export default function PaymentPanel() {
         )}
 
         {isEmpty && (
-          <div className="mt-3 text-xs sm:text-sm text-red-600 font-semibold">
+          <div className={`${fitScreen ? "mt-1 flex-shrink-0" : "mt-3"} text-xs sm:text-sm text-red-600 font-semibold`}>
             Cart is empty. Add items to complete payment.
           </div>
         )}

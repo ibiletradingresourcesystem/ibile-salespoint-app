@@ -14,6 +14,7 @@ import TopBar from "../pos/TopBar";
 import TabNavigation from "../pos/TabNavigation";
 import Sidebar from "../pos/Sidebar";
 import CartPanel from "../pos/CartPanel";
+import TillHandoverWatcher from "../pos/TillHandoverWatcher";
 import { CartProvider } from "../../context/CartContext";
 import { useErrorHandler } from "../../hooks/useErrorHandler";
 import { saveUiSettings } from "@/src/lib/uiSettings";
@@ -366,6 +367,7 @@ export default function POSLayout({ children }) {
           )}
         </div>
       </div>
+      <TillHandoverWatcher />
     </CartProvider>
   );
 }

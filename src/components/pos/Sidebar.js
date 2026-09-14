@@ -108,6 +108,17 @@ export default function Sidebar({ isOpen, onToggle, widthClass = 'w-56', mobileW
     if (isOpen) setShowPaymentPanel(false);
   }, [isOpen, setShowPaymentPanel]);
 
+  // "Close till now" from the hand-over prompt (TillHandoverWatcher)
+  useEffect(() => {
+    const handleOpenCloseTill = () => {
+      if (!hasPosPermission(staff, 'closeTill')) return;
+      setShowPaymentPanel(false);
+      setShowCloseTillModal(true);
+    };
+    window.addEventListener('pos:close-till:open', handleOpenCloseTill);
+    return () => window.removeEventListener('pos:close-till:open', handleOpenCloseTill);
+  }, [staff, setShowPaymentPanel]);
+
   // Derive content scale classes from sidebar width setting
   const sidebarScale = uiSettings.layout?.sidebarWidth || 'standard';
   const scaleClasses = {
