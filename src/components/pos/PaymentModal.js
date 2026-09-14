@@ -94,9 +94,13 @@ export default function PaymentModal({ total, onConfirm, onCancel, inline = fals
   console.log('🏪 Available tenders:', availableTenders);
 
   // Calculate total paid and change
-  const totalPaid = Object.values(tenders).reduce((sum, val) => sum + val, 0);
-  const change = Math.max(0, totalPaid - total);
-  const isPaymentComplete = totalPaid >= total;
+  // Worked in kobo so amounts like 1,000.10 + 2,399.90 add up exactly
+  const toKobo = (amount) => Math.round(Number(amount || 0) * 100);
+  const totalPaid = Object.values(tenders).reduce((sum, val) => sum + toKobo(val), 0) / 100;
+  const change = Math.max(0, toKobo(totalPaid) - toKobo(total)) / 100;
+  const isPaymentComplete = toKobo(totalPaid) >= toKobo(total);
+  // Still owed after the tenders added so far
+  const balanceDue = Math.max(0, toKobo(total) - toKobo(totalPaid)) / 100;
   const [uiSettings, setUiSettings] = useState(getUiSettings());
 
   useEffect(() => {
@@ -465,14 +469,14 @@ export default function PaymentModal({ total, onConfirm, onCancel, inline = fals
                   <button
                     key={num}
                     onClick={() => handleNumberClick(num)}
-                    className={`bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-lg font-bold transition-all active:scale-95 active:bg-cyan-50 ${keyClass}`}
+                    className={`bg-gray-50 hover:bg-gray-100 border border-neutral-300 rounded-lg font-bold transition-all active:scale-95 active:bg-cyan-50 ${keyClass}`}
                   >
                     {num}
                   </button>
                 ))}
-                <button onClick={handleDecimal} className={`bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-lg font-bold transition-all active:scale-95 ${keyClass}`}>.</button>
-                <button onClick={() => handleNumberClick(0)} className={`bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-lg font-bold transition-all active:scale-95 ${keyClass}`}>0</button>
-                <button onClick={handleBackspace} className={`bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-lg font-bold transition-all active:scale-95 flex items-center justify-center ${keyClass}`}>
+                <button onClick={handleDecimal} className={`bg-gray-50 hover:bg-gray-100 border border-neutral-300 rounded-lg font-bold transition-all active:scale-95 ${keyClass}`}>.</button>
+                <button onClick={() => handleNumberClick(0)} className={`bg-gray-50 hover:bg-gray-100 border border-neutral-300 rounded-lg font-bold transition-all active:scale-95 ${keyClass}`}>0</button>
+                <button onClick={handleBackspace} className={`bg-gray-50 hover:bg-gray-100 border border-neutral-300 rounded-lg font-bold transition-all active:scale-95 flex items-center justify-center ${keyClass}`}>
                   <FontAwesomeIcon icon={faBackspace} className="w-5 h-5 text-gray-500" />
                 </button>
               </div>
@@ -481,10 +485,19 @@ export default function PaymentModal({ total, onConfirm, onCancel, inline = fals
               <div className="flex flex-col gap-1 min-w-[60px] h-full min-h-0">
                 {quickAmountSettings.exact !== false && (
                   <button
-                    onClick={() => { setCurrentAmount(String(total)); setDisplayAmount(String(total)); }}
-                    className={`flex-1 ${quickAmountHeightClass} bg-green-50 hover:bg-green-100 border-2 border-green-300 hover:border-green-400 rounded-lg text-xs sm:text-sm font-bold text-green-700 transition-all active:scale-95`}
+                    onClick={() => {
+                      // Enter what is still owed: the full total at first, the balance once a tender has been added
+                      if (balanceDue <= 0) return;
+                      setCurrentAmount(String(balanceDue));
+                      setDisplayAmount(String(balanceDue));
+                    }}
+                    disabled={balanceDue <= 0}
+                    className={`flex-1 ${quickAmountHeightClass} bg-green-50 hover:bg-green-100 border-2 border-green-300 hover:border-green-400 rounded-lg text-xs sm:text-sm font-bold text-green-700 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex flex-col items-center justify-center leading-tight`}
                   >
-                    Exact
+                    <span>{totalPaid > 0 ? 'Balance' : 'Exact'}</span>
+                    {totalPaid > 0 && balanceDue > 0 && (
+                      <span className="text-[10px] sm:text-xs font-semibold text-green-600">{formatNaira(balanceDue)}</span>
+                    )}
                   </button>
                 )}
                 {[500, 1000, 2000, 5000, 10000, 20000, 50000]
