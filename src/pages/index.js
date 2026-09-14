@@ -30,7 +30,9 @@ export default function POSPage({ activeTab, onTabChange }) {
   };
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden bg-gray-50">
+    // h-full, not flex-1: the layout's screen area isn't a flex container, so flex-1 left this sized to its
+    // content and screens couldn't fill the height (e.g. Complete Payment "Fit to screen")
+    <div className="h-full min-h-0 flex flex-col overflow-hidden bg-gray-50">
       {renderScreen()}
     </div>
   );

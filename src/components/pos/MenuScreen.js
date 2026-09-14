@@ -972,7 +972,7 @@ export default function MenuScreen() {
   }, [showPaymentPanel, showSearchKeyboard]);
 
   return (
-    <div className="flex flex-col h-full bg-neutral-50 overflow-hidden text-sm sm:text-base">
+    <div className="flex flex-col h-full min-h-0 flex-1 bg-neutral-50 overflow-hidden text-sm sm:text-base">
       {/* Error Display */}
       {error && (
         <div className="bg-red-50 border-b border-red-200 px-2 py-1.5 sm:px-3 sm:py-2 flex items-center justify-between flex-shrink-0">
