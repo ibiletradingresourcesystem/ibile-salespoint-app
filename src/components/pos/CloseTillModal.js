@@ -697,7 +697,7 @@ export default function CloseTillModal({ isOpen, onClose, onTillClosed }) {
   if (!isOpen) return null;
 
   const progressOverlay = (title, step, progress) => (
-    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+    <div className="fixed inset-0 bg-primary-900 flex items-center justify-center z-50 p-4">
       <div className="bg-white border border-neutral-200 rounded-lg shadow-2xl p-8 text-center w-full max-w-md">
         <div className="w-20 h-20 bg-primary-50 border border-primary-100 rounded-full flex items-center justify-center mx-auto mb-5 overflow-hidden">
           <Image
@@ -802,7 +802,8 @@ export default function CloseTillModal({ isOpen, onClose, onTillClosed }) {
 
   return (
     <>
-      <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-2 sm:p-3">
+      {/* Solid backdrop so the sales screen is hidden while closing the till */}
+      <div className="fixed inset-0 bg-primary-900 flex items-center justify-center z-50 p-2 sm:p-3">
         <div className="bg-primary-700 border border-primary-800 rounded-lg shadow-2xl w-full max-w-[1400px] h-[calc(100vh-1rem)] flex flex-col overflow-hidden">
 
         {/* Header + tabs */}

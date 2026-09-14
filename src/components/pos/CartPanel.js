@@ -65,6 +65,13 @@ import {
   isRoomProduct,
 } from "../../lib/roomReservations";
 
+// "1,500" for whole amounts, "1,350.50" when there are kobo
+const formatCartAmount = (value) => {
+  const amount = Math.round((Number(value) || 0) * 100) / 100;
+  const decimals = Number.isInteger(amount) ? 0 : 2;
+  return amount.toLocaleString("en-NG", { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+};
+
 const formatRoomPhone = (value) => {
   const digits = String(value || "").replace(/[^0-9]/g, "");
   if (!digits) return "";
@@ -955,7 +962,7 @@ export default function CartPanel() {
                             {item.discount > 0 && (
                               <span className={`${hasPromoAdjustment ? "ml-1" : ""} text-green-700`} title={describeItemDiscount(item.discountDetails)}>
                                 {item.discountDetails?.reason ? `${item.discountDetails.reason} ` : "Discount "}
-                                -₦{Math.round(item.discount).toLocaleString()}
+                                -₦{formatCartAmount(item.discount)}
                               </span>
                             )}
                           </div>
@@ -973,24 +980,24 @@ export default function CartPanel() {
                         {hasPromoAdjustment ? (
                           <div>
                             <div className="text-xs text-gray-400 line-through">
-                              ₦{Math.round(item.price).toLocaleString()}
+                              ₦{formatCartAmount(item.price)}
                             </div>
                             <div
                               className={`text-sm font-semibold ${activeCart.appliedPromotion.valueType === "INCREMENT" ? "text-blue-600" : "text-green-600"}`}
                             >
-                              ₦{Math.round(adjustedPrice).toLocaleString()}
+                              ₦{formatCartAmount(adjustedPrice)}
                             </div>
                           </div>
                         ) : (
                             <div className="text-sm sm:text-base text-neutral-600">
-                              ₦{Math.round(item.price).toLocaleString()}
+                              ₦{formatCartAmount(item.price)}
                             </div>
                           )}
                       </div>
                       <div
                       className={`col-span-3 text-right text-sm sm:text-base font-semibold ${hasPromoAdjustment ? (activeCart.appliedPromotion.valueType === "INCREMENT" ? "text-blue-700" : "text-green-700") : "text-neutral-900"}`}
                     >
-                        ₦{Math.round(itemTotal).toLocaleString()}
+                        ₦{formatCartAmount(itemTotal)}
                       </div>
                     </div>
                   ) : (
@@ -1015,22 +1022,22 @@ export default function CartPanel() {
                             {hasPromoAdjustment ? (
                               <div>
                                 <div className="text-xs line-through opacity-70">
-                                  ₦{Math.round(item.price).toLocaleString()}
+                                  ₦{formatCartAmount(item.price)}
                                 </div>
                                 <div className="font-bold text-sm">
-                                  ₦{Math.round(adjustedPrice).toLocaleString()}
+                                  ₦{formatCartAmount(adjustedPrice)}
                                 </div>
                               </div>
                             ) : (
                               <div className="font-bold text-sm">
-                                ₦{Math.round(item.price).toLocaleString()}
+                                ₦{formatCartAmount(item.price)}
                               </div>
                             )}
                           </div>
                           <div className="col-span-1 text-right">
                             <div className="opacity-80 text-xs">TOTAL</div>
                             <div className="font-bold text-sm">
-                              ₦{Math.round(itemTotal).toLocaleString()}
+                              ₦{formatCartAmount(itemTotal)}
                             </div>
                           </div>
                         </div>
@@ -1227,14 +1234,14 @@ export default function CartPanel() {
               <div className="flex justify-between">
                 <span className="text-neutral-700 font-semibold">SUBTOTAL</span>
                 <span className="text-neutral-700 font-bold text-base">
-                  ₦{Math.round(totals.subtotal).toLocaleString()}
+                  ₦{formatCartAmount(totals.subtotal)}
                 </span>
               </div>
               {totals.discountAmount > 0 && (
                 <div className="flex justify-between col-span-2">
                   <span className="font-semibold text-green-600">SAVINGS</span>
                   <span className="font-bold text-base text-green-600">
-                    -₦{Math.round(totals.discountAmount).toLocaleString()}
+                    -₦{formatCartAmount(totals.discountAmount)}
                   </span>
                 </div>
               )}
@@ -1242,7 +1249,7 @@ export default function CartPanel() {
                 <div className="flex justify-between col-span-2">
                   <span className="font-semibold text-blue-600">INCREMENT</span>
                   <span className="font-bold text-base text-blue-600">
-                    +₦{Math.round(totals.incrementAmount).toLocaleString()}
+                    +₦{formatCartAmount(totals.incrementAmount)}
                   </span>
                 </div>
               )}
@@ -1251,7 +1258,7 @@ export default function CartPanel() {
                   TOTAL DUE
                 </span>
                 <span className="text-cyan-700 font-black text-lg">
-                  ₦{Math.round(totals.total).toLocaleString()}
+                  ₦{formatCartAmount(totals.total)}
                 </span>
               </div>
             </div>
