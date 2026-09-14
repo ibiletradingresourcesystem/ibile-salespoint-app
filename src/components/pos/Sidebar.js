@@ -274,7 +274,8 @@ export default function Sidebar({ isOpen, onToggle, widthClass = 'w-56', mobileW
 
     window.dispatchEvent(new CustomEvent('pos:pending-transactions:open'));
 
-    if (window.innerWidth < 768 && typeof onToggle === 'function') {
+    // The list opens in the cart panel; close the sidebar so it has the room
+    if (isOpen && typeof onToggle === 'function') {
       onToggle();
     }
   };

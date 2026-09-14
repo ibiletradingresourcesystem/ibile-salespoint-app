@@ -228,6 +228,10 @@ export default function PaymentPanel() {
           name: item.name,
           quantity: item.quantity,
           price: item.price,
+          ...(Number(item.discount) > 0 && {
+            discount: item.discount,
+            discountDetails: item.discountDetails || null,
+          }),
         })),
         ...(editTransactionId ? {} : { externalId: clientId, clientId }),
         ...(editTransactionId ? { editTransactionId, subStatus: "edited" } : {}),
@@ -236,6 +240,7 @@ export default function PaymentPanel() {
         tax: totals.tax,
         discount: totals.discountAmount || 0,
         discountName: totals.discountName || 'Discount',
+        discountReason: totals.discountReason || '',
         incrementAmount: totals.incrementAmount || 0,
         incrementName: totals.incrementName || 'Additional Charge',
         promotionValueType: totals.promotionValueType || null,

@@ -9,12 +9,17 @@ import { syncPendingTillOpens, syncPendingTillCloses, syncPendingTransactions } 
 import { getStoreLogo, setStoreLogo } from "../../lib/logoCache";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
+  faArrowLeft,
+  faBackspace,
   faClock,
+  faCloud,
+  faFileAlt,
+  faLocationDot,
   faQuestionCircle,
   faPowerOff,
-  faX,
   faRedo,
   faSync,
+  faTriangleExclamation,
 } from "@fortawesome/free-solid-svg-icons";
 import { normalizeStaffList, normalizeStaffMember } from "@/src/lib/posPermissions";
 import { getUiSettings } from "@/src/lib/uiSettings";
@@ -1170,7 +1175,7 @@ export default function StaffLogin() {
       {!isOnline && (
         <div className="bg-red-600 text-white py-1 px-4 flex items-center justify-between flex-shrink-0">
           <div className="flex items-center gap-2">
-            <FontAwesomeIcon icon={faX} className="w-3 h-3" />
+            <FontAwesomeIcon icon={faCloud} className="w-3.5 h-3.5" />
             <span className="font-semibold text-sm">Offline mode</span>
           </div>
           <button
@@ -1261,7 +1266,8 @@ export default function StaffLogin() {
           {activeTills && activeTills.length > 0 && (
             <div className="mb-4 bg-yellow-400 bg-opacity-90 border-l-4 border-yellow-600 p-3 rounded-lg">
               <p className="text-yellow-900 font-bold mb-2 flex items-center gap-2 text-sm">
-                ⏱️ ACTIVE OPEN TILL{activeTills.length > 1 ? 'S' : ''}
+                <FontAwesomeIcon icon={faClock} className="w-3.5 h-3.5" />
+                ACTIVE OPEN TILL{activeTills.length > 1 ? 'S' : ''}
               </p>
               <div className="space-y-2">
                 {activeTills.map((till) => (
@@ -1276,13 +1282,14 @@ export default function StaffLogin() {
                     <button
                       onClick={() => handleResumeRequest(till)}
                       disabled={loading}
-                      className={`ml-2 px-3 py-1.5 font-bold text-xs rounded whitespace-nowrap transition disabled:opacity-50 ${
+                      className={`ml-2 px-3 py-1.5 font-bold text-xs rounded whitespace-nowrap transition disabled:opacity-50 flex items-center gap-1.5 ${
                         resumeTill?._id === till._id
                           ? 'bg-yellow-600 text-white ring-2 ring-yellow-300'
                           : 'bg-green-600 hover:bg-green-700 text-white'
                       }`}
                     >
-                      {resumeTill?._id === till._id ? '⬅ ENTER PIN' : 'RESUME'}
+                      {resumeTill?._id === till._id && <FontAwesomeIcon icon={faArrowLeft} className="w-3 h-3" />}
+                      {resumeTill?._id === till._id ? 'ENTER PIN' : 'RESUME'}
                     </button>
                   </div>
                 ))}
@@ -1294,7 +1301,8 @@ export default function StaffLogin() {
           {hasPendingTransactions && (
             <div className="mb-4">
               <p className="text-white font-bold text-sm flex items-center gap-2">
-                📋 HAS PENDING TRANSACTIONS
+                <FontAwesomeIcon icon={faFileAlt} className="w-3.5 h-3.5" />
+                HAS PENDING TRANSACTIONS
               </p>
             </div>
           )}
@@ -1339,8 +1347,9 @@ export default function StaffLogin() {
               {/* Sync Data Button - Always Visible */}
               <div className="mb-4 p-3 bg-cyan-800 rounded-lg border-2 border-cyan-600">
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-white font-semibold text-xs">
-                    {isOnline ? '🌐 ONLINE' : '📴 OFFLINE MODE'}
+                  <span className="text-white font-semibold text-xs flex items-center gap-1.5">
+                    <FontAwesomeIcon icon={faCloud} className={`w-3.5 h-3.5 ${isOnline ? 'text-green-300' : 'text-red-300'}`} />
+                    {isOnline ? 'ONLINE' : 'OFFLINE MODE'}
                   </span>
                   <span className="text-cyan-300 text-xs">
                     {locations.length} location{locations.length !== 1 ? 's' : ''} cached
@@ -1367,7 +1376,12 @@ export default function StaffLogin() {
                         </p>
                       );
                     }
-                    return <p className="text-xs text-yellow-300 mt-2 text-center">⚠️ Never synced - click to sync</p>;
+                    return (
+                      <p className="text-xs text-yellow-300 mt-2 flex items-center justify-center gap-1.5">
+                        <FontAwesomeIcon icon={faTriangleExclamation} className="w-3 h-3" />
+                        Never synced - click to sync
+                      </p>
+                    );
                   } catch (e) {
                     return null;
                   }
@@ -1407,7 +1421,8 @@ export default function StaffLogin() {
                 <div className="mb-4 bg-cyan-800/80 rounded-xl p-3 border border-cyan-600 shadow-lg">
                   <div className="flex items-center justify-between mb-2">
                     <label className="text-white font-bold text-xs flex items-center gap-2">
-                      📍 SELECT LOCATION {!isOnline && <span className="text-yellow-300 font-normal">(Cached)</span>}
+                      <FontAwesomeIcon icon={faLocationDot} className="w-3 h-3" />
+                      SELECT LOCATION {!isOnline && <span className="text-yellow-300 font-normal">(Cached)</span>}
                     </label>
                     <button
                       onClick={handleRefreshData}
@@ -1442,8 +1457,9 @@ export default function StaffLogin() {
                     })()}
                   </div>
                   {locations.length === 0 && (
-                    <p className="text-yellow-300 text-xs mt-2 text-center">
-                      ⚠️ No locations cached. Please sync when online.
+                    <p className="text-yellow-300 text-xs mt-2 flex items-center justify-center gap-1.5">
+                      <FontAwesomeIcon icon={faTriangleExclamation} className="w-3 h-3" />
+                      No locations cached. Please sync when online.
                     </p>
                   )}
                 </div>
@@ -1517,14 +1533,12 @@ export default function StaffLogin() {
 
           {/* PIN Display */}
           <div className="mb-4">
-            <div className="text-4xl tracking-widest text-white font-bold text-center">
-              {pin.split("").map((_, i) => (
-                <span key={i}>●</span>
-              ))}
-              {[...Array(4 - pin.length)].map((_, i) => (
-                <span key={`empty-${i}`} className="opacity-50">
-                  ●
-                </span>
+            <div className="flex items-center justify-center gap-4 h-10" aria-label={`${pin.length} of 4 digits entered`}>
+              {[0, 1, 2, 3].map((i) => (
+                <span
+                  key={i}
+                  className={`w-4 h-4 rounded-full border-2 border-white transition-colors ${i < pin.length ? 'bg-white' : 'bg-transparent opacity-50'}`}
+                />
               ))}
             </div>
           </div>
@@ -1553,9 +1567,10 @@ export default function StaffLogin() {
             </button>
             <button
               onClick={handleBackspace}
-              className="h-12 bg-cyan-800 border border-cyan-500/60 shadow-md backdrop-blur-sm hover:bg-cyan-600 text-white font-bold text-lg rounded-lg transition active:scale-95"
+              aria-label="Backspace"
+              className="h-12 bg-cyan-800 border border-cyan-500/60 shadow-md backdrop-blur-sm hover:bg-cyan-600 text-white font-bold text-lg rounded-lg transition active:scale-95 flex items-center justify-center"
             >
-              ⌫
+              <FontAwesomeIcon icon={faBackspace} className="w-5 h-5" />
             </button>
           </div>
 

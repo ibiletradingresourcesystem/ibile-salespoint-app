@@ -49,6 +49,8 @@ import {
   syncPendingTransactions,
 } from "../../lib/offlineSync";
 import { hasPosPermission } from "../../lib/posPermissions";
+import { canStaffApplyDiscount, describeItemDiscount } from "../../lib/itemDiscount";
+import ItemDiscountModal from "./ItemDiscountModal";
 import {
   printTransactionReceipt,
   getReceiptSettings,
@@ -82,6 +84,7 @@ export default function CartPanel() {
   const [totalsCollapsed, setTotalsCollapsed] = useState(false);
   const [qtyEditorItemId, setQtyEditorItemId] = useState(null);
   const [qtyDraft, setQtyDraft] = useState("");
+  const [discountItemId, setDiscountItemId] = useState(null);
   const [showPendingTransactions, setShowPendingTransactions] = useState(false);
   const [pendingTransactions, setPendingTransactions] = useState([]);
   const [resolvedTransactions, setResolvedTransactions] = useState([]);
@@ -112,7 +115,8 @@ export default function CartPanel() {
     activeCart.customer?.isCreditCustomer || activeCart.customer?.type === "CREDIT"
   );
   const canViewResolvedHistory = hasPosPermission(staff, "viewAdvancedOrders");
-  const canApplyDiscount = hasPosPermission(staff, "applyDiscount");
+  // Discounts are for admins and managers only
+  const canApplyDiscount = canStaffApplyDiscount(staff);
 
   const loadPendingTransactions = useCallback(async () => {
     setPendingTransactionsLoading(true);
@@ -393,6 +397,7 @@ export default function CartPanel() {
           qty: isRoomProduct(item) ? 1 : item.quantity,
           salePriceIncTax: item.price,
           discount: item.discount || 0,
+          discountDetails: item.discountDetails || null,
           notes: item.notes || "",
           reservationDetails: isRoomProduct(item) ? getRoomReservationDetails(item) : undefined,
         })),
@@ -403,6 +408,7 @@ export default function CartPanel() {
         tax: totals.tax,
         discount: totals.discountAmount || 0,
         discountName: totals.discountName || "Discount",
+        discountReason: totals.discountReason || "",
         incrementAmount: totals.incrementAmount || 0,
         incrementName: totals.incrementName || "Additional Charge",
         promotionValueType: totals.promotionValueType || null,
@@ -475,6 +481,9 @@ export default function CartPanel() {
         total: totals.total,
         subtotal: totals.subtotal,
         discountAmount: totals.discountAmount,
+        discountName: totals.discountName || "Discount",
+        incrementAmount: totals.incrementAmount || 0,
+        incrementName: totals.incrementName || "",
         tax: totals.tax,
         payment: {
           method: "CASH",
@@ -524,6 +533,9 @@ export default function CartPanel() {
   };
 
   const qtyEditItem = activeCart.items.find((item) => item.id === qtyEditorItemId) || null;
+  const discountItem = canApplyDiscount
+    ? activeCart.items.find((item) => item.id === discountItemId) || null
+    : null;
   const activeOverlayCount = pendingOverlayTab === "resolved" ? resolvedTransactions.length : pendingTransactions.length;
 
   return (
@@ -941,8 +953,9 @@ export default function CartPanel() {
                               </span>
                             )}
                             {item.discount > 0 && (
-                              <span className="ml-1">
-                                -₦{item.discount.toLocaleString()}
+                              <span className={`${hasPromoAdjustment ? "ml-1" : ""} text-green-700`} title={describeItemDiscount(item.discountDetails)}>
+                                {item.discountDetails?.reason ? `${item.discountDetails.reason} ` : "Discount "}
+                                -₦{Math.round(item.discount).toLocaleString()}
                               </span>
                             )}
                           </div>
@@ -1130,10 +1143,7 @@ export default function CartPanel() {
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
-                              setItemDiscount(
-                                item.id,
-                                (item.discount || 0) + 100,
-                              );
+                              setDiscountItemId(item.id);
                             }}
                             className="flex flex-col items-center gap-0.5 px-2 py-1.5 bg-white text-primary-600 font-bold hover:opacity-80 transition-opacity rounded-lg text-xs"
                           >
@@ -1222,20 +1232,17 @@ export default function CartPanel() {
               </div>
               {totals.discountAmount > 0 && (
                 <div className="flex justify-between col-span-2">
-                  <span
-                    className={`font-semibold ${activeCart.appliedPromotion?.valueType === "INCREMENT" ? "text-blue-600" : "text-green-600"}`}
-                  >
-                    {activeCart.appliedPromotion?.valueType === "INCREMENT"
-                      ? "INCREMENT"
-                      : "SAVINGS"}
+                  <span className="font-semibold text-green-600">SAVINGS</span>
+                  <span className="font-bold text-base text-green-600">
+                    -₦{Math.round(totals.discountAmount).toLocaleString()}
                   </span>
-                  <span
-                    className={`font-bold text-base ${activeCart.appliedPromotion?.valueType === "INCREMENT" ? "text-blue-600" : "text-green-600"}`}
-                  >
-                    {activeCart.appliedPromotion?.valueType === "INCREMENT"
-                      ? "+"
-                      : "-"}
-                    ₦{Math.round(totals.discountAmount).toLocaleString()}
+                </div>
+              )}
+              {totals.incrementAmount > 0 && (
+                <div className="flex justify-between col-span-2">
+                  <span className="font-semibold text-blue-600">INCREMENT</span>
+                  <span className="font-bold text-base text-blue-600">
+                    +₦{Math.round(totals.incrementAmount).toLocaleString()}
                   </span>
                 </div>
               )}
@@ -1330,6 +1337,24 @@ export default function CartPanel() {
         isOpen={showAdjustFloatModal}
         onClose={() => setShowAdjustFloatModal(false)}
       />
+
+      {discountItem && (
+        <ItemDiscountModal
+          key={discountItem.id}
+          item={discountItem}
+          staff={staff}
+          onClose={() => setDiscountItemId(null)}
+          onApply={(details) => {
+            setItemDiscount(discountItem.id, details);
+            setDiscountItemId(null);
+            showToast(`Discount applied to ${discountItem.name}`, "success");
+          }}
+          onRemove={() => {
+            setItemDiscount(discountItem.id, null);
+            setDiscountItemId(null);
+          }}
+        />
+      )}
 
       {qtyEditItem && (
         <div className="absolute inset-0 z-40 bg-black/35 flex items-end" onClick={closeQtyEditor}>

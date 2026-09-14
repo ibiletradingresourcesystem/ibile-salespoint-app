@@ -2,6 +2,8 @@
 import { useState, useEffect } from "react";
 import { useStaff } from "../../context/StaffContext";
 import NumKeypad from "../common/NumKeypad";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { faCloud, faTriangleExclamation } from "@fortawesome/free-solid-svg-icons";
 import { getUiSettings } from "@/src/lib/uiSettings";
 import { saveTillOpenOffline } from "../../lib/offlineSync";
 import { hasPosPermission } from "@/src/lib/posPermissions";
@@ -271,7 +273,10 @@ export default function OpenTillModal({ isOpen, onClose, onTillOpened, staffData
         {/* Offline Notice */}
         {!isOnline && (
           <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 px-3 py-2 rounded mb-3 text-xs">
-            <p className="font-semibold">📴 Offline Mode</p>
+            <p className="font-semibold flex items-center gap-1.5">
+              <FontAwesomeIcon icon={faCloud} className="w-3.5 h-3.5" />
+              Offline Mode
+            </p>
             <p className="mt-0.5">Till will be created locally and synced when back online.</p>
           </div>
         )}
@@ -316,7 +321,7 @@ export default function OpenTillModal({ isOpen, onClose, onTillOpened, staffData
         {/* Error Message */}
         {error && (
           <div className="bg-red-50 border border-red-200 text-red-700 px-2 py-1.5 rounded mb-2 flex items-start gap-1.5 text-xs">
-            <span className="text-base mt-0.5">⚠️</span>
+            <FontAwesomeIcon icon={faTriangleExclamation} className="w-4 h-4 mt-0.5 flex-shrink-0" />
             <div>
               <p className="font-semibold text-sm">{error}</p>
               {error.includes("already open") && (

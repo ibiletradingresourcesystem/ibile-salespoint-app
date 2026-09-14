@@ -56,7 +56,7 @@ export function getDefaultPosPermissions(role) {
     settingsAccess: true,
     printerSettingsAccess: false,
     refundAccess: false,
-    applyDiscount: true,
+    applyDiscount: false,
     adjustFloat: false,
     closeTill: false,
     viewAdvancedOrders: false,

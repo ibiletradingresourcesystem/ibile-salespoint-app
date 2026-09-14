@@ -24,6 +24,13 @@ import {
 } from '../lib/offlineSync';
 import { getSyncMeta } from '../lib/indexedDB';
 import { getRoomReservationDetails, isRoomProduct } from '../lib/roomReservations';
+import { applyDiscountDetails, summarizeItemDiscounts } from '../lib/itemDiscount';
+
+// Keep a line discount in step with the item's quantity
+const withQuantity = (item, quantity) => {
+  const next = { ...item, quantity };
+  return item.discountDetails ? applyDiscountDetails(next, item.discountDetails) : next;
+};
 
 // ============================================================================
 // CONTEXT DEFINITION
@@ -293,7 +300,7 @@ export function CartProvider({ children }) {
       } else if (existing) {
         newItems = prev.activeCart.items.map(item =>
           item.id === product.id
-            ? { ...item, quantity: item.quantity + 1 }
+            ? withQuantity(item, item.quantity + 1)
             : item
         );
       } else {
@@ -354,7 +361,7 @@ export function CartProvider({ children }) {
         activeCart: {
           ...prev.activeCart,
           items: prev.activeCart.items.map(item =>
-            item.id === itemId ? { ...item, quantity } : item
+            item.id === itemId ? withQuantity(item, quantity) : item
           ),
         },
       };
@@ -371,13 +378,14 @@ export function CartProvider({ children }) {
     }));
   }, []);
 
-  const setItemDiscount = useCallback((itemId, discountAmount) => {
+  // details: { mode, value, reason, note, appliedBy, appliedById, appliedAt }, or null to remove the discount
+  const setItemDiscount = useCallback((itemId, details) => {
     setState(prev => ({
       ...prev,
       activeCart: {
         ...prev.activeCart,
         items: prev.activeCart.items.map(item =>
-          item.id === itemId ? { ...item, discount: discountAmount } : item
+          item.id === itemId ? applyDiscountDetails(item, details) : item
         ),
       },
     }));
@@ -544,6 +552,7 @@ export function CartProvider({ children }) {
     
     // If this cart was recalled from an existing held transaction, update it instead of creating a new one
     const existingHeldId = state.activeCart.recallSourceTransactionId || null;
+    const heldItemDiscounts = summarizeItemDiscounts(items);
 
     const heldTransaction = {
       id: holdReferenceId,
@@ -554,7 +563,11 @@ export function CartProvider({ children }) {
       total: subtotal,
       subtotal: subtotal,
       tax: 0,
-      discount: state.activeCart.discountAmount || 0,
+      discount: (state.activeCart.discountAmount || 0) + heldItemDiscounts.total,
+      ...(heldItemDiscounts.total > 0 && {
+        discountName: heldItemDiscounts.label,
+        discountReason: heldItemDiscounts.reasonText,
+      }),
       staffName: staffInfo?.name || staffInfo || 'POS Staff',
       staffId: staffInfo?._id || staffInfo?.id || null,
       location: locationString,
@@ -643,6 +656,7 @@ export function CartProvider({ children }) {
       price: item.salePriceIncTax || item.price || 0,
       quantity: item.qty || item.quantity || 1,
       discount: item.discount || 0,
+      discountDetails: item.discountDetails || null,
       notes: item.note || item.notes || '',
       productType: item.productType || 'standard',
       roomStatus: item.roomStatus || 'available',
@@ -831,16 +845,20 @@ export function CartProvider({ children }) {
     const total = discountedSubtotal + tax;
 
     // Calculate the discount amount for display
-    const rawSubtotal = items.reduce(
-      (sum, item) => sum + item.price * item.quantity - (item.discount || 0),
-      0
-    );
+    // Subtotal is the full price of the items; line discounts count towards the discount shown and saved
+    const grossSubtotal = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
+    const itemDiscounts = summarizeItemDiscounts(items);
+    const rawSubtotal = grossSubtotal - itemDiscounts.total;
     const priceDifference = rawSubtotal - subtotal + fixedDiscountAmount;
     const isIncrement = appliedPromotion?.active && appliedPromotion?.valueType === 'INCREMENT';
     // For increments, the "discount" is actually negative (price went up), so discountAmount should be 0
     // For discounts, it's positive (price went down)
-    const discountAmount = isIncrement ? fixedDiscountAmount : Math.max(0, priceDifference);
+    const promotionDiscount = isIncrement ? fixedDiscountAmount : Math.max(0, priceDifference);
+    const discountAmount = promotionDiscount + itemDiscounts.total;
     const incrementAmount = isIncrement ? Math.abs(rawSubtotal - subtotal) : 0;
+    const promotionDiscountName = appliedPromotion?.active && appliedPromotion.valueType === 'DISCOUNT'
+      ? (appliedPromotion.name || 'Discount')
+      : (fixedDiscountAmount > 0 ? 'Discount' : '');
 
     // Debug: Log final totals
     if (appliedPromotion) {
@@ -856,12 +874,14 @@ export function CartProvider({ children }) {
     }
 
     return {
-      subtotal: rawSubtotal,
+      subtotal: grossSubtotal,
       discountAmount,
+      itemDiscountAmount: itemDiscounts.total,
       incrementAmount,
-      discountName: appliedPromotion?.active && appliedPromotion.valueType === 'DISCOUNT'
-        ? (appliedPromotion.name || 'Discount')
-        : (fixedDiscountAmount > 0 ? 'Discount' : ''),
+      discountName: itemDiscounts.total > 0
+        ? (promotionDiscount > 0 ? 'Discount' : itemDiscounts.label)
+        : promotionDiscountName,
+      discountReason: itemDiscounts.reasonText,
       incrementName: appliedPromotion?.active && appliedPromotion.valueType === 'INCREMENT'
         ? (appliedPromotion.name || 'Additional Charge')
         : '',

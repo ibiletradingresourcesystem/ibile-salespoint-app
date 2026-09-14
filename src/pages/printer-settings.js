@@ -10,7 +10,17 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/router';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faArrowLeft } from '@fortawesome/free-solid-svg-icons';
+import {
+  faArrowLeft,
+  faCircleCheck,
+  faFloppyDisk,
+  faNetworkWired,
+  faPlug,
+  faPrint,
+  faReceipt,
+  faRotateLeft,
+  faTriangleExclamation,
+} from '@fortawesome/free-solid-svg-icons';
 import { useStaff } from '@/src/context/StaffContext';
 import { hasPosPermission } from '@/src/lib/posPermissions';
 import { showConfirm } from '@/src/components/common/ConfirmDialog';
@@ -191,7 +201,10 @@ export default function PrinterSettings() {
 
       <div className="bg-white rounded-lg shadow-lg">
         <div className="bg-gradient-to-r from-blue-600 to-blue-700 text-white p-6 rounded-t-lg">
-          <h1 className="text-3xl font-bold">🖨️ Printer Settings</h1>
+          <h1 className="text-3xl font-bold flex items-center gap-3">
+            <FontAwesomeIcon icon={faPrint} className="w-7 h-7" />
+            Printer Settings
+          </h1>
           <p className="text-blue-100 mt-2">
             How this till prints receipts. The receipt design (logo, company details, font, QR code and messages)
             is set in the management app under Setup → Receipt Settings.
@@ -298,8 +311,8 @@ export default function PrinterSettings() {
 
               <div className="flex gap-6">
                 {[
-                  { value: 'usb', label: '🔌 USB (installed on this computer)' },
-                  { value: 'network', label: '🌐 Network (IP address)' },
+                  { value: 'usb', label: 'USB (installed on this computer)', icon: faPlug },
+                  { value: 'network', label: 'Network (IP address)', icon: faNetworkWired },
                 ].map((mode) => (
                   <label key={mode.value} className="flex items-center cursor-pointer">
                     <input
@@ -310,7 +323,10 @@ export default function PrinterSettings() {
                       onChange={() => { update({ connectionMode: mode.value }); setStatus(null); }}
                       className="w-4 h-4"
                     />
-                    <span className="ml-2 font-medium text-gray-700">{mode.label}</span>
+                    <span className="ml-2 font-medium text-gray-700 flex items-center gap-2">
+                      <FontAwesomeIcon icon={mode.icon} className="w-4 h-4 text-gray-500" />
+                      {mode.label}
+                    </span>
                   </label>
                 ))}
               </div>
@@ -377,12 +393,13 @@ export default function PrinterSettings() {
                   {checking ? 'Checking…' : 'Check printer'}
                 </button>
                 {status && (
-                  <span className={`text-sm px-3 py-1.5 rounded border ${
+                  <span className={`text-sm px-3 py-1.5 rounded border flex items-center gap-2 ${
                     status.available
                       ? 'bg-green-50 border-green-200 text-green-800'
                       : 'bg-amber-50 border-amber-200 text-amber-800'
                   }`}>
-                    {status.available ? '✅ ' : '⚠️ '}{status.message}
+                    <FontAwesomeIcon icon={status.available ? faCircleCheck : faTriangleExclamation} className="w-4 h-4 flex-shrink-0" />
+                    {status.message}
                   </span>
                 )}
               </div>
@@ -398,22 +415,25 @@ export default function PrinterSettings() {
             <button
               onClick={handleSave}
               disabled={saving}
-              className="flex-1 min-w-[10rem] px-6 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition disabled:opacity-50 font-semibold"
+              className="flex-1 min-w-[10rem] px-6 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition disabled:opacity-50 font-semibold flex items-center justify-center gap-2"
             >
-              {saving ? 'Saving…' : '💾 Save Settings'}
+              <FontAwesomeIcon icon={faFloppyDisk} className="w-4 h-4" />
+              {saving ? 'Saving…' : 'Save Settings'}
             </button>
             <button
               onClick={handleTestPrint}
               disabled={testPrinting}
-              className="px-6 py-2 bg-emerald-600 text-white rounded hover:bg-emerald-700 transition disabled:opacity-50 font-semibold"
+              className="px-6 py-2 bg-emerald-600 text-white rounded hover:bg-emerald-700 transition disabled:opacity-50 font-semibold flex items-center gap-2"
             >
-              {testPrinting ? 'Printing…' : '🧾 Print test receipt'}
+              <FontAwesomeIcon icon={faReceipt} className="w-4 h-4" />
+              {testPrinting ? 'Printing…' : 'Print test receipt'}
             </button>
             <button
               onClick={handleResetDefaults}
-              className="px-6 py-2 bg-gray-300 text-gray-700 rounded hover:bg-gray-400 transition"
+              className="px-6 py-2 bg-gray-300 text-gray-700 rounded hover:bg-gray-400 transition flex items-center gap-2"
             >
-              ↻ Reset Defaults
+              <FontAwesomeIcon icon={faRotateLeft} className="w-4 h-4" />
+              Reset Defaults
             </button>
           </div>
           <p className="text-xs text-gray-500 -mt-4">

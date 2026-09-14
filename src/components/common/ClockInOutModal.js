@@ -14,6 +14,7 @@ import {
   faSignOutAlt,
   faHistory,
   faSpinner,
+  faCircleCheck,
 } from '@fortawesome/free-solid-svg-icons';
 
 export default function ClockInOutModal({ isOpen, onClose, staff, locations, selectedLocation }) {
@@ -241,8 +242,9 @@ export default function ClockInOutModal({ isOpen, onClose, staff, locations, sel
 
           {/* Messages */}
           {message && (
-            <div className="bg-green-50 border border-green-200 text-green-800 px-4 py-3 rounded-lg text-sm font-semibold">
-              ✅ {message}
+            <div className="bg-green-50 border border-green-200 text-green-800 px-4 py-3 rounded-lg text-sm font-semibold flex items-center gap-2">
+              <FontAwesomeIcon icon={faCircleCheck} className="w-4 h-4 flex-shrink-0" />
+              {message}
             </div>
           )}
           {error && (
@@ -273,8 +275,9 @@ export default function ClockInOutModal({ isOpen, onClose, staff, locations, sel
                           : 'bg-red-50 text-red-800'
                       }`}
                     >
-                      <span className="font-semibold">
-                        {record.type === 'in' ? '➡️ Clock In' : '⬅️ Clock Out'}
+                      <span className="font-semibold flex items-center gap-1.5">
+                        <FontAwesomeIcon icon={record.type === 'in' ? faSignInAlt : faSignOutAlt} className="w-3 h-3" />
+                        {record.type === 'in' ? 'Clock In' : 'Clock Out'}
                       </span>
                       <span>{formatTime(record.timestamp)}</span>
                       {record.locationName && (

@@ -803,10 +803,10 @@ export default function CloseTillModal({ isOpen, onClose, onTillClosed }) {
   return (
     <>
       <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-2 sm:p-3">
-        <div className="bg-neutral-50 border border-neutral-200 rounded-lg shadow-2xl w-full max-w-6xl h-[calc(100vh-1rem)] flex flex-col overflow-hidden">
+        <div className="bg-primary-700 border border-primary-800 rounded-lg shadow-2xl w-full max-w-[1400px] h-[calc(100vh-1rem)] flex flex-col overflow-hidden">
 
         {/* Header + tabs */}
-        <div className="bg-primary-700 text-white flex items-stretch flex-shrink-0">
+        <div className="bg-primary-700 text-white flex items-stretch flex-shrink-0 border-b border-white/10">
           <div className="flex items-center gap-2.5 px-4 border-r border-white/15">
             <FontAwesomeIcon icon={faCashRegister} className="w-4 h-4" />
             <span className="text-sm font-bold uppercase tracking-wide whitespace-nowrap">Close Till</span>
@@ -850,11 +850,11 @@ export default function CloseTillModal({ isOpen, onClose, onTillClosed }) {
           </div>
         </div>
 
-        {/* Main Content — 3 columns */}
-        <div className="flex-1 grid grid-cols-[260px_1fr_360px] overflow-hidden">
+        {/* Main Content — 3 white panels on the system colour */}
+        <div className="flex-1 grid grid-cols-[260px_1fr_360px] gap-2 p-2 min-h-0 overflow-hidden">
 
           {/* LEFT: Till info + actions */}
-          <aside className="bg-white border-r border-neutral-200 p-4 flex flex-col gap-4 overflow-y-auto">
+          <aside className="bg-white rounded-md p-4 flex flex-col gap-4 overflow-y-auto">
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500">Till</p>
               <h3 className="text-base font-bold text-neutral-900 mt-0.5">{till?.tillNumber || till?.tillName || 'Till'}</h3>
@@ -955,19 +955,20 @@ export default function CloseTillModal({ isOpen, onClose, onTillClosed }) {
           </aside>
 
           {/* CENTER: Tab content */}
-          <main className="overflow-y-auto p-4">
+          <main className="overflow-y-auto min-w-0">
             {activeTab === 'summary' ? (
               <>
-                <div className="grid grid-cols-5 gap-2 mb-4">
+                {/* Summary strip: one panel, values kept on one line */}
+                <div className="bg-white rounded-md mb-2 px-2 py-3 flex flex-wrap gap-y-3">
                   {summaryCards.map(card => (
-                    <div key={card.label} className="bg-white border border-neutral-200 rounded-md px-3 py-3">
-                      <p className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500">{card.label}</p>
-                      <p className={`text-base font-bold mt-1 break-all ${card.className || 'text-neutral-900'}`}>{card.value}</p>
+                    <div key={card.label} className="flex-1 min-w-fit px-3">
+                      <p className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500 whitespace-nowrap">{card.label}</p>
+                      <p className={`text-lg font-semibold mt-1.5 whitespace-nowrap tabular-nums ${card.className || 'text-neutral-900'}`}>{card.value}</p>
                     </div>
                   ))}
                 </div>
 
-                <div className="bg-white border border-neutral-200 rounded-md overflow-hidden">
+                <div className="bg-white rounded-md overflow-hidden">
                   <div className="px-4 py-3 border-b border-neutral-200 flex items-center justify-between">
                     <h3 className="text-sm font-bold text-neutral-800">Cash up</h3>
                     <span className="text-xs text-neutral-500">Tap a tender, then enter the amount counted</span>
@@ -1104,7 +1105,7 @@ export default function CloseTillModal({ isOpen, onClose, onTillClosed }) {
           </main>
 
           {/* RIGHT: Count keypad */}
-          <aside className="hidden sm:flex flex-col border-l border-neutral-200 bg-white p-4 gap-3 overflow-y-auto">
+          <aside className="hidden sm:flex flex-col bg-white rounded-md p-4 gap-3 overflow-y-auto">
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500">Count</p>
               <h3 className="text-base font-bold text-neutral-900">{activeTender?.name || 'Select a tender'}</h3>

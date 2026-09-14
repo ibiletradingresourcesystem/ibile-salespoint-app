@@ -125,6 +125,8 @@ export default async function handler(req, res) {
       staffName: rawStaffName = 'Unknown',
       staffId,
       discount = 0,
+      discountName = '',
+      discountReason = '',
       location = 'Default Location',
       locationId,
       device,
@@ -276,6 +278,8 @@ export default async function handler(req, res) {
       existingTransaction.subtotal = subtotal || (newTotal - Number(tax || 0));
       existingTransaction.tax = Number(tax || 0);
       existingTransaction.discount = Number(discount || 0);
+      existingTransaction.discountName = discountName || '';
+      existingTransaction.discountReason = discountReason || '';
       existingTransaction.amountPaid = amountPaid || newTotal;
       existingTransaction.change = Number(change || 0);
       existingTransaction.staff = staffId || existingTransaction.staff || null;
@@ -494,6 +498,8 @@ export default async function handler(req, res) {
       device: device,
       tableName: tableName,
       discount: discount || 0,
+      ...(discountName && { discountName }),
+      ...(discountReason && { discountReason }),
       customerId: mongoose.Types.ObjectId.isValid(String(customerId || ''))
         ? new mongoose.Types.ObjectId(String(customerId))
         : null,
