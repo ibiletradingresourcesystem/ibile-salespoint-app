@@ -47,13 +47,13 @@ const getBotReply = (question) => {
 
   if (q.includes("print") && (q.includes("receipt") || q.includes("transaction"))) {
     return {
-      text: "To print a receipt:\n\u2022 From cart: Click the PRINT button at the bottom of the cart panel\n\u2022 From orders: Go to ORDERS > COMPLETE, select a transaction, then click \u2018Print\u2019\n\u2022 Receipts auto-print after payment if thermal printer is configured\n\nConfigure printer in Settings > Printer Settings.",
+      text: "To print a receipt:\n\u2022 From cart: Click the PRINT button at the bottom of the cart panel\n\u2022 From orders: Go to ORDERS > COMPLETE, select a transaction, then click \u2018Print\u2019\n\u2022 After payment the receipt prints automatically (a preview opens first if \u2018Show receipt preview\u2019 is on)\n\nSet up printing in Settings > Printer Settings.",
     };
   }
 
-  if (q.includes("print")) {
+  if (q.includes("print") && !q.includes("printer")) {
     return {
-      text: "Printing options:\n\u2022 PRINT button in cart panel prints current order\n\u2022 After payment, receipt auto-prints if configured\n\u2022 Go to ORDERS > COMPLETE to reprint past receipts\n\u2022 Configure your thermal printer in Settings > Printer Settings",
+      text: "Printing options:\n\u2022 PRINT button in cart panel prints current order\n\u2022 After payment, the receipt prints automatically\n\u2022 Go to ORDERS > COMPLETE to reprint past receipts\n\u2022 Choose browser or direct thermal printing in Settings > Printer Settings",
     };
   }
 
@@ -137,13 +137,13 @@ const getBotReply = (question) => {
 
   if (q.includes("setting")) {
     return {
-      text: "Settings options:\n\u2022 Sidebar sections: Show/hide Print, Stock, Apps menus\n\u2022 Till controls: Enable/disable cash entry and float adjustment\n\u2022 Layout: Adjust sidebar, cart panel, content density\n\u2022 Cart panel buttons: Control which action buttons are visible\n\u2022 Content scale: Scale the UI for different screen sizes\n\u2022 Printer: Configure thermal printer (USB or Network)",
+      text: "Settings options:\n\u2022 Sidebar sections: Show/hide Print, Stock, Apps menus\n\u2022 Till controls: Enable/disable cash entry and float adjustment\n\u2022 Layout: Adjust sidebar, cart panel, content density\n\u2022 Cart panel buttons: Control which action buttons are visible\n\u2022 Content scale: Scale the UI for different screen sizes\n\u2022 Printer: Open Printer Settings to choose browser or direct printing",
     };
   }
 
   if (q.includes("printer") || q.includes("thermal")) {
     return {
-      text: "Printer setup:\n1. Go to Settings > Open Printer Settings\n2. Enable thermal printer\n3. Choose connection: USB or Network\n4. For network: Enter printer IP and port (default 9100)\n5. Click \u2018Test Connection\u2019 to verify\n\nThe printer icon in the sidebar shows connection status.",
+      text: "Printer setup:\n1. Go to Settings > Open Printer Settings\n2. Choose how receipts print: Browser, Direct, or Direct with browser fallback (direct needs the POS running on the till computer)\n3. Pick the paper roll (80mm or 58mm)\n4. For direct printing: choose the USB printer, or enter the network printer IP and port (default 9100), then click \u2018Check printer\u2019\n5. Click \u2018Print test receipt\u2019. If the right edge is cut off, lower the print area width by 1\u20132mm\n\nThe receipt design itself is set in the management app under Receipt Settings.",
     };
   }
 

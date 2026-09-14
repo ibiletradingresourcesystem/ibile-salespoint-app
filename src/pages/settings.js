@@ -24,7 +24,6 @@ import {
   faMapMarkerAlt,
   faSignOutAlt,
   faUserClock,
-  faEye,
   faSync,
   faPiggyBank,
 } from '@fortawesome/free-solid-svg-icons';
@@ -810,26 +809,8 @@ export default function SettingsPage() {
             </button>
             {expanded.systemPrint && (
               <div className="p-5 space-y-6 bg-white">
-                {/* Print Preview Toggle */}
-                <div>
-                  <label className="flex items-center gap-3">
-                    <input
-                      type="checkbox"
-                      checked={settings.system?.showPrintPreview !== false}
-                      onChange={(e) => updateSystemSetting('showPrintPreview', e.target.checked)}
-                    />
-                    <FontAwesomeIcon icon={faEye} className="text-cyan-600 w-4 h-4" />
-                    <div>
-                      <span className="font-semibold text-gray-700">Show Print Preview Modal</span>
-                      <span className="block text-xs text-gray-500">
-                        When enabled, a branded preview is shown before printing. When disabled, receipts print silently without any dialog.
-                      </span>
-                    </div>
-                  </label>
-                </div>
-
                 {/* Auto Refresh Products Toggle */}
-                <div className="border-t border-gray-100 pt-4">
+                <div>
                   <label className="flex items-center gap-3">
                     <input
                       type="checkbox"
@@ -855,7 +836,7 @@ export default function SettingsPage() {
                     <FontAwesomeIcon icon={faPrint} className="w-4 h-4" />
                     Open Printer Settings
                   </button>
-                  <p className="text-xs text-gray-500 mt-1">Configure thermal printer connection, print method, paper size, and more.</p>
+                  <p className="text-xs text-gray-500 mt-1">How receipts print on this till: browser or direct thermal printing, paper size, print area and receipt preview.</p>
                 </div>
               </div>
             )}

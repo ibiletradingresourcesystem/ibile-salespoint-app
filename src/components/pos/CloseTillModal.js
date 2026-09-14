@@ -12,15 +12,14 @@ import NumKeypad from "../common/NumKeypad";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faSpinner } from "@fortawesome/free-solid-svg-icons";
 
-import { getPrinterSettings } from "../../lib/printerConfig";
+import { getPrintLayout } from "../../lib/printerConfig";
+import { buildPrintPageCss, printHtmlDocument } from "../../lib/printDocument";
 
 // Generate and print End-of-Day report
 const printEndOfDayReport = (tillData, summaryData, tenderCounts, tenders, closingNotes, locationName) => {
   const formatNaira = (amount) =>
     `₦${(amount || 0).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-  const printerCfg = getPrinterSettings();
-  const paperW = `${printerCfg.paperWidth || 80}mm`;
   const now = new Date();
   const dateStr = now.toLocaleDateString('en-NG', { year: 'numeric', month: '2-digit', day: '2-digit' });
   const timeStr = now.toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
@@ -57,33 +56,14 @@ const printEndOfDayReport = (tillData, summaryData, tenderCounts, tenders, closi
   <meta charset="UTF-8">
   <title>End of Day Report</title>
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body {
-      margin: 0;
-      padding: 0;
-      background: white;
-    }
+    ${buildPrintPageCss(getPrintLayout())}
     body {
       font-family: 'Arial', 'Helvetica Neue', sans-serif;
       font-size: 7.5pt;
       line-height: 1.1;
-      overflow-x: hidden;
-    }
-    .report-page {
-      width: ${paperW};
-      min-width: ${paperW};
-      max-width: ${paperW};
-      margin: 0 auto;
-      padding: 0;
-      background: white;
-      display: flex;
-      justify-content: center;
     }
     .report {
-      width: 100%;
-      margin: 0;
-      padding: 2mm 1.5mm 1.5mm;
-      color: #000;
+      padding: 2mm 0 1.5mm;
     }
     .header { text-align: center; border-bottom: 2px solid #000; padding-bottom: 2mm; margin-bottom: 2mm; }
     .logo { max-width: 35mm; max-height: 20mm; display: block; margin: 0 auto 2mm auto; filter: grayscale(100%); }
@@ -97,31 +77,10 @@ const printEndOfDayReport = (tillData, summaryData, tenderCounts, tenders, closi
     th { text-align: left; font-weight: bold; padding: 1px 0; border-bottom: 1px solid #000; font-size: 7pt; }
     .notes { font-size: 7pt; font-style: italic; margin: 1mm 0; padding: 1mm; background: #f5f5f5; }
     .footer { text-align: center; font-size: 6.5pt; margin-top: 3mm; padding-top: 2mm; border-top: 2px solid #000; }
-    @media print {
-      html, body {
-        margin: 0 !important;
-        padding: 0 !important;
-        background: white;
-        overflow-x: hidden;
-      }
-      .report-page {
-        width: ${paperW};
-        min-width: ${paperW};
-        max-width: ${paperW};
-        margin: 0 auto !important;
-        padding: 0 !important;
-      }
-      .report {
-        width: 100%;
-        margin: 0;
-        padding: 2mm 1.5mm 1.5mm;
-      }
-      @page { size: ${paperW} auto; margin: 0; }
-    }
   </style>
 </head>
 <body>
-  <div class="report-page">
+  <div class="print-page">
   <div class="report">
     <div class="header">
       ${logoAbsolute ? `<img src="${escapeHtml(logoAbsolute)}" class="logo" alt="Logo" onerror="this.style.display='none'">` : ''}
@@ -178,36 +137,8 @@ const printEndOfDayReport = (tillData, summaryData, tenderCounts, tenders, closi
 </body>
 </html>`;
 
-  // Print via iframe
   try {
-    const iframe = document.createElement('iframe');
-    iframe.style.position = 'absolute';
-    iframe.style.width = '0';
-    iframe.style.height = '0';
-    iframe.style.border = 'none';
-    iframe.style.visibility = 'hidden';
-    document.body.appendChild(iframe);
-
-    iframe.contentDocument.write(html);
-    iframe.contentDocument.close();
-
-    let printed = false;
-    const doPrint = () => {
-      if (printed) return;
-      printed = true;
-      try {
-        iframe.contentWindow.focus();
-        iframe.contentWindow.print();
-      } catch (e) {
-        console.error('EOD print error:', e);
-      }
-      setTimeout(() => {
-        try { document.body.removeChild(iframe); } catch (e) { /* ignore */ }
-      }, 5000);
-    };
-
-    iframe.contentWindow.addEventListener('load', doPrint, { once: true });
-    setTimeout(doPrint, 1000);
+    printHtmlDocument(html);
   } catch (err) {
     console.error('Failed to print end-of-day report:', err);
   }

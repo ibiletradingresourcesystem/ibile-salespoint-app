@@ -36,6 +36,21 @@ export function formatReceiptNaira(amount) {
   })}`;
 }
 
+/** Item-row amounts: whole naira without ".00" so the item columns fit narrow rolls. */
+export function formatReceiptNairaCompact(amount) {
+  const value = toNumber(amount);
+  const whole = Number.isInteger(Math.round(value * 100) / 100);
+  return `₦${value.toLocaleString('en-NG', {
+    minimumFractionDigits: whole ? 0 : 2,
+    maximumFractionDigits: 2,
+  })}`;
+}
+
+export function normalizeReceiptFontWeight(value) {
+  const weight = cleanString(value).toLowerCase();
+  return weight === 'light' || weight === 'bold' ? weight : 'normal';
+}
+
 export function formatReceiptDateTime(value) {
   const date = value ? new Date(value) : new Date();
   if (Number.isNaN(date.getTime())) return '';
@@ -195,7 +210,7 @@ export function buildReceiptViewModel(transaction = {}, settings = {}) {
   const storePhone = cleanString(settings.storePhone || transaction.locationPhone);
   const website = cleanString(settings.website);
   const email = cleanString(settings.email);
-  const contactLine = [storePhone ? `Tel: ${storePhone}` : '', website, email].filter(Boolean).join(' | ');
+  const contactLine = [storePhone ? `Tel: ${storePhone}` : '', website, email].filter(Boolean).join(' • ');
   const receiptId = cleanString(transaction._id || transaction.id || transaction.externalId || transaction.clientId).slice(0, 12).toUpperCase();
   const tenderPayments = Array.isArray(transaction.tenderPayments) && transaction.tenderPayments.length > 0
     ? transaction.tenderPayments
@@ -212,10 +227,10 @@ export function buildReceiptViewModel(transaction = {}, settings = {}) {
     dateTime: formatReceiptDateTime(transaction.createdAt || transaction.timestamp || transaction.completedAt),
     receiptId,
     staffName: cleanString(transaction.staffName || transaction.staff?.name || 'POS Staff'),
-    tillLabel: cleanString(transaction.tillNumber || transaction.tillId) || 'Till',
     status: paymentStatus,
     fontSize: normalizeReceiptFontSize(settings.fontSize),
     fontFamily: cleanString(settings.fontFamily) || 'Arial',
+    fontWeight: normalizeReceiptFontWeight(settings.fontWeight),
     items,
     totalQuantity: items.reduce((sum, item) => sum + item.quantity, 0),
     subtotal,

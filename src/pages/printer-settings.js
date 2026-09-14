@@ -1,15 +1,16 @@
 /**
  * Printer Settings Page
- * 
- * Configure thermal printer (Xprinter XP-D200N) connection and print settings
+ *
+ * This till's receipt printer: how receipts print, paper size / print area, and the direct
+ * (thermal) printer connection. Receipt design comes from the management app's Receipt Settings.
  */
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/router';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faArrowLeft, faEye } from '@fortawesome/free-solid-svg-icons';
+import { faArrowLeft } from '@fortawesome/free-solid-svg-icons';
 import { useStaff } from '@/src/context/StaffContext';
 import { hasPosPermission } from '@/src/lib/posPermissions';
 import { showConfirm } from '@/src/components/common/ConfirmDialog';
@@ -18,153 +19,164 @@ import {
   getPrinterSettings,
   setPrinterSettings,
   getDefaultPrinterSettings,
-  testPrinterConnection,
   getPrinterStatus,
+  normalizePrinterSettings,
 } from '@/src/lib/printerConfig';
+import { printTransactionReceipt } from '@/src/lib/receiptPrinting';
 import { getUiSettings, saveUiSettings } from '@/src/lib/uiSettings';
+
+const PRINT_METHOD_OPTIONS = [
+  {
+    value: 'browser',
+    label: 'Browser printing',
+    description: 'Prints through the browser print dialog. Works when the POS is opened online or run on the till computer.',
+  },
+  {
+    value: 'direct',
+    label: 'Direct to thermal printer',
+    description: 'Sends the receipt straight to the printer with no dialog. The POS must be running on the till computer.',
+  },
+  {
+    value: 'both',
+    label: 'Direct, with browser fallback',
+    description: 'Tries direct printing first and uses browser printing if the printer can\'t be reached (e.g. when opened online).',
+  },
+];
+
+const PAPER_OPTIONS = [
+  { value: 80, label: '80 mm roll', printWidth: 72 },
+  { value: 58, label: '58 mm roll', printWidth: 48 },
+];
+
+function buildTestTransaction(staff, location) {
+  const items = [
+    { name: 'Test item with a long product name to check wrapping', quantity: 2, price: 1500 },
+    { name: 'Second item', quantity: 1, price: 12500 },
+  ];
+  const subtotal = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
+  return {
+    _id: `TEST${Date.now().toString().slice(-8)}`,
+    createdAt: new Date().toISOString(),
+    staffName: staff?.name || 'Test',
+    locationName: location?.name || '',
+    locationAddress: location?.address || '',
+    items,
+    subtotal,
+    total: subtotal,
+    amountPaid: 20000,
+    change: 20000 - subtotal,
+    tenderPayments: [{ tenderName: 'CASH', amount: 20000 }],
+    status: 'completed',
+  };
+}
 
 export default function PrinterSettings() {
   const router = useRouter();
-  const { staff } = useStaff();
+  const { staff, location } = useStaff();
   const [settings, setSettings] = useState(getDefaultPrinterSettings());
-  const [uiSettings, setUiSettings] = useState(() => getUiSettings());
-  const [loading, setLoading] = useState(false);
-  const [testingConnection, setTestingConnection] = useState(false);
-  const [connectionStatus, setConnectionStatus] = useState(null);
-  const [printerAvailable, setPrinterAvailable] = useState(null);
-  const [checkingStatus, setCheckingStatus] = useState(false);
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
+  const [showPreview, setShowPreview] = useState(true);
+  const [status, setStatus] = useState(null);
+  const [checking, setChecking] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [testPrinting, setTestPrinting] = useState(false);
   const canAccessPrinterSettings = hasPosPermission(staff, 'printerSettingsAccess');
+
+  const usesDirect = settings.printMethod !== 'browser';
+  const usesBrowser = settings.printMethod !== 'direct';
+
+  const checkPrinter = useCallback(async (printerSettings) => {
+    setChecking(true);
+    try {
+      setStatus(await getPrinterStatus(printerSettings));
+    } finally {
+      setChecking(false);
+    }
+  }, []);
 
   useEffect(() => {
     if (staff && !canAccessPrinterSettings) {
       router.replace('/');
       return;
     }
-
-    // Load saved settings on mount
     const saved = getPrinterSettings();
     setSettings(saved);
-    
-    // Check printer availability on mount
-    checkPrinterAvailability(saved);
-  }, [canAccessPrinterSettings, router, staff]);
+    setShowPreview(getUiSettings().system?.showPrintPreview !== false);
+    if (saved.printMethod !== 'browser') checkPrinter(saved);
+  }, [canAccessPrinterSettings, checkPrinter, router, staff]);
 
-  // Check if printer is available
-  const checkPrinterAvailability = async (printerSettings) => {
+  const update = (changes) => {
+    setSettings((prev) => ({ ...prev, ...changes }));
+  };
+
+  const handlePaperChange = (paperWidth) => {
+    const paper = PAPER_OPTIONS.find((option) => option.value === paperWidth) || PAPER_OPTIONS[0];
+    update({ paperWidth: paper.value, printWidth: paper.printWidth, leftMargin: 0 });
+  };
+
+  const handleMethodChange = (printMethod) => {
+    update({ printMethod });
+    if (printMethod !== 'browser' && !status) checkPrinter({ ...settings, printMethod });
+  };
+
+  const saveSettings = () => {
+    const normalized = normalizePrinterSettings(settings);
+    const saved = setPrinterSettings(normalized);
+    const ui = getUiSettings();
+    saveUiSettings({ ...ui, system: { ...ui.system, showPrintPreview: showPreview } });
+    setSettings(normalized);
+    return saved;
+  };
+
+  const handleSave = () => {
+    setSaving(true);
     try {
-      setCheckingStatus(true);
-      const result = await getPrinterStatus(printerSettings);
-      setPrinterAvailable(result);
-    } catch (error) {
-      console.warn('Failed to check printer availability:', error);
-      setPrinterAvailable({
-        available: false,
-        status: 'error',
-        message: 'Could not check printer status',
+      if (saveSettings()) showToast('Printer settings saved', 'success');
+      else showToast('Could not save printer settings', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleTestPrint = async () => {
+    setTestPrinting(true);
+    try {
+      const result = await printTransactionReceipt(buildTestTransaction(staff, location), null, {
+        printerSettings: normalizePrinterSettings(settings),
+        showPreview,
       });
-    } finally {
-      setCheckingStatus(false);
-    }
-  };
-
-  const handleChange = (field, value) => {
-    setSettings(prev => ({
-      ...prev,
-      [field]: value,
-    }));
-  };
-
-  const handleSave = async () => {
-    try {
-      setLoading(true);
-      setError('');
-      setSuccess('');
-
-      const saved = setPrinterSettings(settings);
-      // Also persist the print preview toggle
-      saveUiSettings(uiSettings);
-
-      if (saved) {
-        setSuccess('✅ Printer settings saved successfully!');
-        setTimeout(() => setSuccess(''), 3000);
-      } else {
-        setError('Failed to save printer settings');
-      }
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleUiSettingChange = (key, value) => {
-    setUiSettings(prev => ({
-      ...prev,
-      system: { ...prev.system, [key]: value },
-    }));
-  };
-
-  const handleTestConnection = async () => {
-    try {
-      setTestingConnection(true);
-      setConnectionStatus(null);
-      setError('');
-      let result;
-
-      if (settings.connectionMode === 'network') {
-        result = await testPrinterConnection(settings);
-        setConnectionStatus(result);
-      } else {
-        // USB mode: check printer status via status API
-        result = await getPrinterStatus(settings);
-        setConnectionStatus({
-          success: result.available === true,
-          message: result.available
-            ? result.message || 'USB printer detected and ready'
-            : result.message || 'USB printer not detected. Check connection and driver.',
-        });
-        result = {
-          success: result.available === true,
-          message: result.message || 'USB printer status checked',
-        };
-      }
-
       if (result.success) {
-        setSuccess('✅ Printer connected successfully!');
-        setTimeout(() => setSuccess(''), 3000);
-      } else {
-        setError(`❌ Connection failed: ${result.message}`);
+        showToast(result.method === 'direct' ? 'Test receipt sent to the printer' : 'Test receipt ready to print', 'success');
+      } else if (result.method !== 'direct') {
+        showToast(result.message || 'Test print failed', 'error');
       }
-    } catch (err) {
-      setError(err.message);
     } finally {
-      setTestingConnection(false);
+      setTestPrinting(false);
     }
   };
 
   const handleResetDefaults = async () => {
-    const ok = await showConfirm('Reset to default settings?', {
+    const ok = await showConfirm('Reset this till\'s printer settings to the defaults?', {
       title: 'Reset Printer Settings',
       confirmLabel: 'Reset',
       variant: 'danger',
     });
-    if (ok) {
-      const defaults = getDefaultPrinterSettings();
-      setSettings(defaults);
-      setPrinterSettings(defaults);
-      showToast('Reset to default settings', 'success');
-    }
+    if (!ok) return;
+    const defaults = getDefaultPrinterSettings();
+    setSettings(defaults);
+    setPrinterSettings(defaults);
+    setStatus(null);
+    showToast('Printer settings reset', 'success');
   };
 
   if (staff && !canAccessPrinterSettings) {
     return <div className="max-w-3xl mx-auto p-6 text-center text-gray-600">You do not have permission to access printer settings.</div>;
   }
 
+  const inputClass = 'w-full border border-gray-300 rounded p-2 focus:ring-2 focus:ring-blue-500';
+  const printerOptions = status?.printers || [];
+
   return (
     <div className="max-w-4xl mx-auto p-6 space-y-4">
-      {/* Sticky Back Button + Save Confirmation */}
       <div className="sticky top-0 z-30 bg-white/90 backdrop-blur-sm py-2 -mx-6 px-6 flex items-center gap-3">
         <button
           onClick={() => router.back()}
@@ -173,319 +185,234 @@ export default function PrinterSettings() {
           <FontAwesomeIcon icon={faArrowLeft} className="w-4 h-4" />
           <span>Back</span>
         </button>
-        {success && (
-          <span className="text-sm text-green-700 bg-green-50 border border-green-200 px-3 py-1.5 rounded-lg">{success}</span>
-        )}
-        {error && (
-          <span className="text-sm text-red-700 bg-red-50 border border-red-200 px-3 py-1.5 rounded-lg">{error}</span>
-        )}
       </div>
 
       <div className="bg-white rounded-lg shadow-lg">
-        {/* Header */}
         <div className="bg-gradient-to-r from-blue-600 to-blue-700 text-white p-6 rounded-t-lg">
           <h1 className="text-3xl font-bold">🖨️ Printer Settings</h1>
-          <p className="text-blue-100 mt-2">Configure Xprinter XP-D200N thermal printer</p>
+          <p className="text-blue-100 mt-2">
+            How this till prints receipts. The receipt design (logo, company details, font, QR code and messages)
+            is set in the management app under Setup → Receipt Settings.
+          </p>
         </div>
 
-        {/* Content */}
-        <div className="p-6 space-y-6">
-          {/* USB Setup Guide */}
-          <div className="p-4 bg-purple-50 border border-purple-200 rounded-lg">
-            <h3 className="font-bold text-purple-900 mb-2">📖 USB Printer Setup</h3>
-            <p className="text-sm text-purple-900 mb-3">For USB (Direct) Connection:</p>
-            <ol className="text-sm text-purple-900 space-y-1 list-decimal list-inside mb-3">
-              <li>Connect Xprinter to USB port</li>
-              <li>Install Xprinter driver and ensure it&apos;s running</li>
-              <li>Select <strong>🔌 USB</strong> mode below</li>
-              <li>Click <strong>Refresh</strong> to check if printer is detected</li>
-            </ol>
-            
-            <div className="bg-white p-3 rounded border border-purple-200 text-sm">
-              <p className="font-semibold text-purple-900 mb-2">❌ If printer still not detected:</p>
-              <ul className="text-purple-800 space-y-1 list-disc list-inside">
-                <li>Restart Xprinter driver application</li>
-                <li>Check Windows Devices for &quot;Xprinter&quot; (right-click &gt; Printers)</li>
-                <li>Ensure Print Spooler service is running (Services app)</li>
-                <li>Try disconnecting and reconnecting the USB cable</li>
-                <li>Check Device Manager for any yellow warning icons</li>
-              </ul>
+        <div className="p-6 space-y-8">
+          {/* Print method */}
+          <section>
+            <h2 className="text-lg font-bold text-gray-800 mb-3">How receipts print</h2>
+            <div className="space-y-2">
+              {PRINT_METHOD_OPTIONS.map((option) => (
+                <label key={option.value} className={`flex items-start cursor-pointer p-3 border rounded-lg hover:bg-gray-50 ${
+                  settings.printMethod === option.value ? 'border-blue-500 bg-blue-50/50' : 'border-gray-200'
+                }`}>
+                  <input
+                    type="radio"
+                    name="printMethod"
+                    value={option.value}
+                    checked={settings.printMethod === option.value}
+                    onChange={() => handleMethodChange(option.value)}
+                    className="w-4 h-4 mt-1"
+                  />
+                  <div className="ml-3">
+                    <p className="font-semibold text-gray-800">{option.label}</p>
+                    <p className="text-sm text-gray-500">{option.description}</p>
+                  </div>
+                </label>
+              ))}
             </div>
-            <p className="text-xs text-purple-800 mt-2 italic">Detection checks Windows printer queue and USB devices</p>
-          </div>
+          </section>
 
-
-
-          {/* Printer Availability Status */}
-          {printerAvailable && (
-            <div className={`rounded-lg border-l-4 p-4 ${
-              printerAvailable.available
-                ? 'bg-green-50 border-green-500'
-                : 'bg-yellow-50 border-yellow-500'
-            }`}>
-              <div className="flex items-center justify-between">
-                <div className={printerAvailable.available ? 'text-green-800' : 'text-yellow-800'}>
-                  <p className="font-bold flex items-center gap-2">
-                    {printerAvailable.available ? (
-                      <>
-                        <span className="text-xl">✅</span>
-                        Printer Available
-                      </>
-                    ) : (
-                      <>
-                        <span className="text-xl">⚠️</span>
-                        Printer Unavailable
-                      </>
-                    )}
-                  </p>
-                  <p className="text-sm mt-1">{printerAvailable.message}</p>
-                  {printerAvailable.details && (
-                    <p className="text-xs mt-2 opacity-75">{printerAvailable.details}</p>
-                  )}
-                </div>
-                <button
-                  onClick={() => checkPrinterAvailability(settings)}
-                  disabled={checkingStatus}
-                  className="ml-4 px-3 py-2 bg-blue-500 text-white rounded text-sm hover:bg-blue-600 disabled:bg-gray-400 transition"
+          {/* Paper */}
+          <section>
+            <h2 className="text-lg font-bold text-gray-800 mb-3">Paper</h2>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1">Paper roll</label>
+                <select
+                  value={settings.paperWidth}
+                  onChange={(e) => handlePaperChange(Number(e.target.value))}
+                  className={inputClass}
                 >
-                  {checkingStatus ? 'Checking...' : 'Refresh'}
-                </button>
+                  {PAPER_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
               </div>
+              {usesBrowser && (
+                <>
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-1">Print area width (mm)</label>
+                    <input
+                      type="number"
+                      min={30}
+                      max={settings.paperWidth}
+                      step={0.5}
+                      value={settings.printWidth}
+                      onChange={(e) => update({ printWidth: e.target.value })}
+                      className={inputClass}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-1">Left margin (mm)</label>
+                    <input
+                      type="number"
+                      min={0}
+                      max={10}
+                      step={0.5}
+                      value={settings.leftMargin}
+                      onChange={(e) => update({ leftMargin: e.target.value })}
+                      className={inputClass}
+                    />
+                  </div>
+                </>
+              )}
             </div>
-          )}
+            {usesBrowser && (
+              <p className="text-sm text-gray-500 mt-2">
+                Thermal printers can&apos;t print right to the paper edge: an 80 mm roll prints about 72 mm, a 58 mm roll about 48 mm.
+                If the right side is still cut off, lower the print area width by 1–2 mm. If the left side is cut off, add a left margin.
+              </p>
+            )}
+          </section>
 
-          {/* Printer Status from Test Connection */}
-          {connectionStatus && (
-            <div className={`border-l-4 p-4 ${connectionStatus.success ? 'bg-green-50 border-green-500' : 'bg-red-50 border-red-500'}`}>
-              <div className={connectionStatus.success ? 'text-green-800' : 'text-red-800'}>
-                <p className="font-bold">
-                  {connectionStatus.success ? '✅ Connected' : '❌ Disconnected'}
-                </p>
-                <p className="text-sm mt-1">{connectionStatus.message}</p>
-              </div>
-            </div>
-          )}
-
-          {/* Settings Form */}
-          <div className="space-y-6">
-            {/* Printer Enabled */}
-            <div className="flex items-center gap-4">
-              <label className="flex items-center cursor-pointer">
+          {/* Browser printing */}
+          {usesBrowser && (
+            <section className="p-4 bg-gray-50 border border-gray-200 rounded-lg space-y-3">
+              <h2 className="text-lg font-bold text-gray-800">Browser printing</h2>
+              <label className="flex items-center gap-3 cursor-pointer">
                 <input
                   type="checkbox"
-                  checked={settings.enabled}
-                  onChange={(e) => handleChange('enabled', e.target.checked)}
+                  checked={showPreview}
+                  onChange={(e) => setShowPreview(e.target.checked)}
                   className="w-5 h-5 rounded border-gray-300"
                 />
-                <span className="ml-3 font-semibold text-gray-700">Enable Thermal Printer</span>
+                <span className="font-semibold text-gray-700">Show receipt preview before printing</span>
               </label>
-              <span className="text-sm text-gray-500">Uncheck to use only browser printing</span>
-            </div>
+              <p className="text-sm text-gray-500">
+                Browsers always show their print dialog. In it, choose the receipt printer and leave Margins and Scale on Default;
+                the browser remembers these for next time.
+              </p>
+            </section>
+          )}
 
-            {/* Printer Type */}
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                Printer Type
-              </label>
-              <select
-                value={settings.type}
-                onChange={(e) => handleChange('type', e.target.value)}
-                className="w-full border border-gray-300 rounded p-2 focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="xprinter">Xprinter XP-D200N</option>
-                <option value="generic">Generic ESC/POS</option>
-                <option value="network">Network Printer</option>
-              </select>
-            </div>
+          {/* Direct printer */}
+          {usesDirect && (
+            <section className="p-4 border border-gray-200 rounded-lg space-y-4">
+              <h2 className="text-lg font-bold text-gray-800">Thermal printer connection</h2>
 
-            {/* Connection Mode */}
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                Connection Mode
-              </label>
-              <div className="flex gap-4">
-                {['usb', 'network'].map((mode) => (
-                  <label key={mode} className="flex items-center cursor-pointer">
+              <div className="flex gap-6">
+                {[
+                  { value: 'usb', label: '🔌 USB (installed on this computer)' },
+                  { value: 'network', label: '🌐 Network (IP address)' },
+                ].map((mode) => (
+                  <label key={mode.value} className="flex items-center cursor-pointer">
                     <input
                       type="radio"
                       name="connectionMode"
-                      value={mode}
-                      checked={settings.connectionMode === mode}
-                      onChange={(e) => handleChange('connectionMode', e.target.value)}
+                      value={mode.value}
+                      checked={settings.connectionMode === mode.value}
+                      onChange={() => { update({ connectionMode: mode.value }); setStatus(null); }}
                       className="w-4 h-4"
                     />
-                    <span className="ml-2 capitalize font-medium text-gray-700">
-                      {mode === 'usb' ? '🔌 USB' : '🌐 Network'}
-                    </span>
+                    <span className="ml-2 font-medium text-gray-700">{mode.label}</span>
                   </label>
                 ))}
               </div>
-              {settings.connectionMode === 'usb' && (
-                <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded text-blue-800 text-sm">
-                  <p className="font-semibold">✅ USB Mode</p>
-                  <p className="mt-1">Printer will be detected via USB connection. Make sure printer is connected and Xprinter driver is installed.</p>
-                </div>
-              )}
-            </div>
 
-            {/* Network Settings - Only for Network mode */}
-            {settings.connectionMode === 'network' && (
-              <>
+              {settings.connectionMode === 'usb' ? (
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Printer IP Address
-                  </label>
-                  <input
-                    type="text"
-                    value={settings.ip}
-                    onChange={(e) => handleChange('ip', e.target.value)}
-                    placeholder="192.168.1.100"
-                    className="w-full border border-gray-300 rounded p-2 focus:ring-2 focus:ring-blue-500"
-                  />
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">Windows printer</label>
+                  {printerOptions.length > 0 ? (
+                    <select
+                      value={printerOptions.includes(settings.printerName) ? settings.printerName : ''}
+                      onChange={(e) => update({ printerName: e.target.value })}
+                      className={inputClass}
+                    >
+                      <option value="" disabled>Select the receipt printer</option>
+                      {printerOptions.map((name) => (
+                        <option key={name} value={name}>{name}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      type="text"
+                      value={settings.printerName}
+                      onChange={(e) => update({ printerName: e.target.value })}
+                      placeholder="XP-80C"
+                      className={inputClass}
+                    />
+                  )}
                   <p className="text-xs text-gray-500 mt-1">
-                    Find IP in printer settings or network device list
+                    The printer&apos;s name as shown in Windows Settings → Printers &amp; scanners. Install the printer&apos;s driver first.
                   </p>
                 </div>
-
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Printer Port
-                  </label>
-                  <input
-                    type="number"
-                    value={settings.port}
-                    onChange={(e) => handleChange('port', parseInt(e.target.value))}
-                    placeholder="9100"
-                    className="w-full border border-gray-300 rounded p-2 focus:ring-2 focus:ring-blue-500"
-                  />
-                  <p className="text-xs text-gray-500 mt-1">Default: 9100</p>
-                </div>
-              </>
-            )}
-
-            {/* Print Method */}
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                Print Method
-              </label>
-              <div className="space-y-2">
-                {[
-                  { value: 'direct', label: '⚡ Direct (Fast, no dialog)', desc: 'Sends directly to printer' },
-                  { value: 'browser', label: '🖱️ Browser (Manual dialog)', desc: 'Shows print dialog' },
-                  { value: 'both', label: '🔄 Both (Try direct, fallback to browser)', desc: 'Best compatibility' },
-                ].map((option) => (
-                  <label key={option.value} className="flex items-start cursor-pointer p-3 border rounded hover:bg-gray-50">
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div className="sm:col-span-2">
+                    <label className="block text-sm font-semibold text-gray-700 mb-1">Printer IP address</label>
                     <input
-                      type="radio"
-                      name="printMethod"
-                      value={option.value}
-                      checked={settings.printMethod === option.value}
-                      onChange={(e) => handleChange('printMethod', e.target.value)}
-                      className="w-4 h-4 mt-1"
+                      type="text"
+                      value={settings.ip}
+                      onChange={(e) => update({ ip: e.target.value })}
+                      placeholder="192.168.1.100"
+                      className={inputClass}
                     />
-                    <div className="ml-3">
-                      <p className="font-medium text-gray-700">{option.label}</p>
-                      <p className="text-xs text-gray-500">{option.desc}</p>
-                    </div>
-                  </label>
-                ))}
-              </div>
-            </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-1">Port</label>
+                    <input
+                      type="number"
+                      value={settings.port}
+                      onChange={(e) => update({ port: e.target.value })}
+                      placeholder="9100"
+                      className={inputClass}
+                    />
+                  </div>
+                </div>
+              )}
 
-            {/* Paper Settings */}
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Paper Width (mm)
-                </label>
-                <input
-                  type="number"
-                  value={settings.paperWidth}
-                  onChange={(e) => handleChange('paperWidth', parseInt(e.target.value))}
-                  className="w-full border border-gray-300 rounded p-2 focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Paper Type
-                </label>
-                <select
-                  value={settings.paperSize}
-                  onChange={(e) => handleChange('paperSize', e.target.value)}
-                  className="w-full border border-gray-300 rounded p-2 focus:ring-2 focus:ring-blue-500"
+              <div className="flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => checkPrinter(settings)}
+                  disabled={checking}
+                  className="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 transition disabled:opacity-50"
                 >
-                  <option value="receipt">Receipt</option>
-                  <option value="label">Label</option>
-                  <option value="custom">Custom</option>
-                </select>
-              </div>
-            </div>
-
-            {/* Auto Print */}
-            <div className="flex items-center gap-4">
-              <label className="flex items-center cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={settings.autoPrint}
-                  onChange={(e) => handleChange('autoPrint', e.target.checked)}
-                  className="w-5 h-5 rounded border-gray-300"
-                />
-                <span className="ml-3 font-semibold text-gray-700">Auto Print without dialog</span>
-              </label>
-              <span className="text-sm text-gray-500">(For thermal printer only — skips all dialogs when direct print succeeds)</span>
-            </div>
-
-            {/* Browser Print Behavior */}
-            <div className="p-4 bg-gray-50 border border-gray-200 rounded-lg space-y-4">
-              <h3 className="font-bold text-gray-800">🖥️ Browser Print Behavior</h3>
-              <p className="text-sm text-gray-600">Controls how receipts print when using browser-based printing (no thermal printer or fallback mode).</p>
-
-              {/* Show Print Preview */}
-              <div className="flex items-center gap-4">
-                <label className="flex items-center cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={uiSettings.system?.showPrintPreview !== false}
-                    onChange={(e) => handleUiSettingChange('showPrintPreview', e.target.checked)}
-                    className="w-5 h-5 rounded border-gray-300"
-                  />
-                  <span className="ml-3 font-semibold text-gray-700 flex items-center gap-2">
-                    <FontAwesomeIcon icon={faEye} className="w-4 h-4 text-cyan-600" />
-                    Show Print Preview Modal
+                  {checking ? 'Checking…' : 'Check printer'}
+                </button>
+                {status && (
+                  <span className={`text-sm px-3 py-1.5 rounded border ${
+                    status.available
+                      ? 'bg-green-50 border-green-200 text-green-800'
+                      : 'bg-amber-50 border-amber-200 text-amber-800'
+                  }`}>
+                    {status.available ? '✅ ' : '⚠️ '}{status.message}
                   </span>
-                </label>
+                )}
               </div>
-              <p className="text-xs text-gray-500 ml-8">
-                {uiSettings.system?.showPrintPreview !== false
-                  ? '✅ Enabled — A branded preview modal is shown before printing. You can review the receipt and click Print.'
-                  : '⚡ Disabled — Receipts are sent directly to the printer. The OS print dialog will still appear (browsers require it for security).'}
+
+              <p className="text-sm text-gray-500">
+                Direct printing uses the printer&apos;s built-in font. The logo and the font family chosen in Receipt Settings
+                appear on browser printouts only; font size and bold text are applied on direct printouts too.
               </p>
-              <div className="ml-8 p-3 bg-amber-50 border border-amber-200 rounded text-xs text-amber-800">
-                <p className="font-semibold">💡 Note about silent printing:</p>
-                <p className="mt-1">Browsers always show the OS print dialog for security reasons. To print completely silently (no dialog at all), use <strong>Direct</strong> print method with a thermal printer connected via USB or Network.</p>
-              </div>
-            </div>
-          </div>
+            </section>
+          )}
 
-          {/* Buttons */}
-          <div className="flex gap-4 pt-6 border-t border-gray-200">
-            <button
-              onClick={handleTestConnection}
-              disabled={testingConnection || !settings.enabled}
-              className="px-6 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 transition disabled:opacity-50"
-            >
-              {testingConnection ? '⏳ Testing...' : '🔗 Test Connection'}
-            </button>
-
+          <div className="flex flex-wrap gap-3 pt-6 border-t border-gray-200">
             <button
               onClick={handleSave}
-              disabled={loading}
-              className="flex-1 px-6 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition disabled:opacity-50 font-semibold"
+              disabled={saving}
+              className="flex-1 min-w-[10rem] px-6 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition disabled:opacity-50 font-semibold"
             >
-              {loading ? '⏳ Saving...' : '💾 Save Settings'}
+              {saving ? 'Saving…' : '💾 Save Settings'}
             </button>
-
+            <button
+              onClick={handleTestPrint}
+              disabled={testPrinting}
+              className="px-6 py-2 bg-emerald-600 text-white rounded hover:bg-emerald-700 transition disabled:opacity-50 font-semibold"
+            >
+              {testPrinting ? 'Printing…' : '🧾 Print test receipt'}
+            </button>
             <button
               onClick={handleResetDefaults}
               className="px-6 py-2 bg-gray-300 text-gray-700 rounded hover:bg-gray-400 transition"
@@ -493,18 +420,9 @@ export default function PrinterSettings() {
               ↻ Reset Defaults
             </button>
           </div>
-
-          {/* Info Box */}
-          <div className="bg-blue-50 border border-blue-200 rounded p-4 text-sm text-blue-800">
-            <p className="font-semibold mb-2">💡 Printer Setup Guide:</p>
-            <ul className="list-disc list-inside space-y-1">
-              <li>Find printer IP: Check printer display or router</li>
-              <li>Default port: 9100 (for Xprinter)</li>
-              <li>Test connection to verify setup</li>
-              <li>After saving, receipts will print automatically</li>
-              <li>Browser print will be used as fallback if direct print fails</li>
-            </ul>
-          </div>
+          <p className="text-xs text-gray-500 -mt-4">
+            The test receipt uses the settings on this page, even before you save them.
+          </p>
         </div>
       </div>
     </div>
