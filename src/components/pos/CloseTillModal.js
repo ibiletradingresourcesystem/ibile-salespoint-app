@@ -880,6 +880,19 @@ export default function CloseTillModal({ isOpen, onClose, onTillClosed }) {
   const otherTerminals = terminals.filter((terminal) => !terminal.isCurrent && terminal.deviceId);
   const showTerminals = otherTerminals.length > 0;
 
+  const handoverButton = (extraClass = "") => (
+    <button
+      type="button"
+      onClick={() => { setError(null); setShowHandoverConfirm(true); }}
+      disabled={!isOnline || syncing || showConfirmation}
+      title={!isOnline ? "Needs an internet connection" : "Send this terminal's sales to the cloud and let another terminal close the till"}
+      className={`w-full py-2.5 bg-white hover:bg-primary-50 border border-primary-300 rounded-md text-sm font-semibold text-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2 ${extraClass}`}
+    >
+      <FontAwesomeIcon icon={faRightFromBracket} className="w-4 h-4" />
+      Hand Over to Another Terminal
+    </button>
+  );
+
   const TABS = [
     { id: 'summary', label: 'Summary' },
     { id: 'sales', label: 'Sales', count: transactionTabs.sales.length },
@@ -1053,16 +1066,8 @@ export default function CloseTillModal({ isOpen, onClose, onTillClosed }) {
                 <FontAwesomeIcon icon={faPrint} className="w-4 h-4" />
                 Print Report
               </button>
-              <button
-                type="button"
-                onClick={() => { setError(null); setShowHandoverConfirm(true); }}
-                disabled={!isOnline || syncing || showConfirmation}
-                title={!isOnline ? "Needs an internet connection" : "Send this terminal's sales to the cloud and let another terminal close the till"}
-                className="w-full py-2.5 bg-white hover:bg-primary-50 border border-primary-300 rounded-md text-sm font-semibold text-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
-              >
-                <FontAwesomeIcon icon={faRightFromBracket} className="w-4 h-4" />
-                Hand Over to Another Terminal
-              </button>
+              {/* The Count column is hidden on small screens, so the hand-over button lives here instead */}
+              {handoverButton("sm:hidden")}
               <button
                 type="button"
                 onClick={onClose}
@@ -1321,6 +1326,11 @@ export default function CloseTillModal({ isOpen, onClose, onTillClosed }) {
             ) : (
               <div className="text-sm text-neutral-500">No payment methods available.</div>
             )}
+
+            {/* Bottom of the Count column, level with Cancel in the left column */}
+            <div className="mt-auto pt-4 border-t border-neutral-200">
+              {handoverButton()}
+            </div>
           </aside>
         </div>
       </div>
