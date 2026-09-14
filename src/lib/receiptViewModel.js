@@ -212,9 +212,15 @@ export function buildReceiptViewModel(transaction = {}, settings = {}) {
   const email = cleanString(settings.email);
   const contactLine = [storePhone ? `Tel: ${storePhone}` : '', website, email].filter(Boolean).join(' • ');
   const receiptId = cleanString(transaction._id || transaction.id || transaction.externalId || transaction.clientId).slice(0, 12).toUpperCase();
-  const tenderPayments = Array.isArray(transaction.tenderPayments) && transaction.tenderPayments.length > 0
-    ? transaction.tenderPayments
-    : [{ tenderName: transaction.tenderType || 'CASH', amount: amountPaid || total }];
+  const isUnpaid = paymentStatus === 'UNPAID';
+  // A receipt printed before payment (e.g. PRINT from the cart) has no payment to show
+  const tenderPayments = isUnpaid
+    ? []
+    : Array.isArray(transaction.tenderPayments) && transaction.tenderPayments.length > 0
+      ? transaction.tenderPayments
+      : [{ tenderName: transaction.tenderType || 'CASH', amount: amountPaid || total }];
+  // Subtotal only adds information when discounts, promotions, fees or tax change it
+  const showSubtotal = tax > 0 || adjustmentLines.length > 0 || Math.abs(subtotal - total) >= 0.01;
 
   return {
     companyName,
@@ -234,11 +240,12 @@ export function buildReceiptViewModel(transaction = {}, settings = {}) {
     items,
     totalQuantity: items.reduce((sum, item) => sum + item.quantity, 0),
     subtotal,
+    showSubtotal,
     tax,
     adjustmentLines,
     total,
     amountPaid,
-    change,
+    change: isUnpaid ? 0 : change,
     tenderPayments: tenderPayments.map((payment) => ({
       name: cleanString(payment?.tenderName || payment?.name || transaction.tenderType || 'CASH'),
       amount: toNumber(payment?.amount, total),

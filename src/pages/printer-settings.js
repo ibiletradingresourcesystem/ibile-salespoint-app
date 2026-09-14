@@ -16,6 +16,8 @@ import { hasPosPermission } from '@/src/lib/posPermissions';
 import { showConfirm } from '@/src/components/common/ConfirmDialog';
 import { showToast } from '@/src/components/common/Toast';
 import {
+  AUTO_PRINT_WIDTH,
+  PAPER_PROFILES,
   getPrinterSettings,
   setPrinterSettings,
   getDefaultPrinterSettings,
@@ -44,8 +46,8 @@ const PRINT_METHOD_OPTIONS = [
 ];
 
 const PAPER_OPTIONS = [
-  { value: 80, label: '80 mm roll', printWidth: 72 },
-  { value: 58, label: '58 mm roll', printWidth: 48 },
+  { value: 80, label: '80 mm roll' },
+  { value: 58, label: '58 mm roll' },
 ];
 
 function buildTestTransaction(staff, location) {
@@ -109,9 +111,10 @@ export default function PrinterSettings() {
   };
 
   const handlePaperChange = (paperWidth) => {
-    const paper = PAPER_OPTIONS.find((option) => option.value === paperWidth) || PAPER_OPTIONS[0];
-    update({ paperWidth: paper.value, printWidth: paper.printWidth, leftMargin: 0 });
+    update({ paperWidth, printWidth: AUTO_PRINT_WIDTH, leftMargin: 0 });
   };
+
+  const fitsPaper = settings.printWidth === AUTO_PRINT_WIDTH;
 
   const handleMethodChange = (printMethod) => {
     update({ printMethod });
@@ -241,16 +244,33 @@ export default function PrinterSettings() {
               {usesBrowser && (
                 <>
                   <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-1">Print area width (mm)</label>
-                    <input
-                      type="number"
-                      min={30}
-                      max={settings.paperWidth}
-                      step={0.5}
-                      value={settings.printWidth}
-                      onChange={(e) => update({ printWidth: e.target.value })}
+                    <label className="block text-sm font-semibold text-gray-700 mb-1">Receipt width</label>
+                    <select
+                      value={fitsPaper ? AUTO_PRINT_WIDTH : 'custom'}
+                      onChange={(e) => update({
+                        printWidth: e.target.value === AUTO_PRINT_WIDTH
+                          ? AUTO_PRINT_WIDTH
+                          : PAPER_PROFILES[settings.paperWidth].printWidth,
+                      })}
                       className={inputClass}
-                    />
+                    >
+                      <option value={AUTO_PRINT_WIDTH}>Fit to paper (no side gaps)</option>
+                      <option value="custom">Custom width</option>
+                    </select>
+                    {!fitsPaper && (
+                      <div className="mt-2 flex items-center gap-2">
+                        <input
+                          type="number"
+                          min={30}
+                          max={settings.paperWidth}
+                          step={0.5}
+                          value={settings.printWidth}
+                          onChange={(e) => update({ printWidth: e.target.value })}
+                          className={inputClass}
+                        />
+                        <span className="text-sm text-gray-500">mm</span>
+                      </div>
+                    )}
                   </div>
                   <div>
                     <label className="block text-sm font-semibold text-gray-700 mb-1">Left margin (mm)</label>
@@ -269,8 +289,9 @@ export default function PrinterSettings() {
             </div>
             {usesBrowser && (
               <p className="text-sm text-gray-500 mt-2">
-                Thermal printers can&apos;t print right to the paper edge: an 80 mm roll prints about 72 mm, a 58 mm roll about 48 mm.
-                If the right side is still cut off, lower the print area width by 1–2 mm. If the left side is cut off, add a left margin.
+                &quot;Fit to paper&quot; uses the full width the printer offers, so there is no blank strip at the sides. If a printer cuts off
+                the right-hand side, choose Custom width and start at {PAPER_PROFILES[settings.paperWidth].printWidth} mm, lowering it by 1–2 mm
+                if needed. If the left side is cut off, add a left margin. A thin unprinted edge (about 1–4 mm) is the printer&apos;s own limit.
               </p>
             )}
           </section>

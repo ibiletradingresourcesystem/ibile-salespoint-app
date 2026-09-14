@@ -63,7 +63,7 @@ const printEndOfDayReport = (tillData, summaryData, tenderCounts, tenders, closi
       line-height: 1.1;
     }
     .report {
-      padding: 2mm 0 1.5mm;
+      padding: 4mm 0 6mm;
     }
     .header { text-align: center; border-bottom: 2px solid #000; padding-bottom: 2mm; margin-bottom: 2mm; }
     .logo { max-width: 35mm; max-height: 20mm; display: block; margin: 0 auto 2mm auto; filter: grayscale(100%); }

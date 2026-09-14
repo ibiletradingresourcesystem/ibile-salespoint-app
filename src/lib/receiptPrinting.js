@@ -132,9 +132,8 @@ export function buildReceiptHtml(transaction, settings = {}, printerSettings = g
   const companyLogo = toAbsoluteAssetUrl(model.companyLogo);
   const qrImageSrc = toAbsoluteAssetUrl(model.qrImageSrc);
   const isUnpaid = model.status === 'UNPAID';
-
   // Narrow rolls (58mm): the item name gets its own line so the amount columns never squeeze it
-  const stackItems = layout.printWidth < 60;
+  const stackItems = layout.previewWidth < 60;
   const itemRows = model.items.map((item) => {
     const amounts = `
             <td class="num">${formatReceiptNairaCompact(item.unitPrice)}</td>
@@ -170,7 +169,8 @@ export function buildReceiptHtml(transaction, settings = {}, printerSettings = g
       font-weight: ${fontWeight};
       line-height: 1.18;
     }
-    .receipt { padding: 1mm 0 3mm; text-align: center; }
+    /* Space above and below so the printout doesn't start or end right at the tear edge */
+    .receipt { padding: 4mm 0 6mm; text-align: center; }
     .section { border-top: 0.5px dashed #444; padding: 1mm 0; margin: 1mm 0; text-align: left; }
     .header { padding-bottom: 1.5mm; }
     .logo { display: block; max-width: 30mm; max-height: 12mm; margin: 0 auto 1mm; filter: grayscale(100%) contrast(1.05); }
@@ -189,7 +189,8 @@ export function buildReceiptHtml(transaction, settings = {}, printerSettings = g
     .items .num { text-align: right; }
     .items .qty { text-align: center; }
     .total-qty { border-top: 0.5px dotted #888; margin-top: 0.5mm; padding-top: 0.5mm; font-size: 0.84em; }
-    .grand-total { font-weight: 700; font-size: 1.08em; border-top: 0.5px dashed #444; padding-top: 0.8mm; margin-top: 0.8mm; }
+    .grand-total { font-weight: 700; font-size: 1.08em; }
+    .grand-total.after-breakdown { border-top: 0.5px dashed #444; padding-top: 0.8mm; margin-top: 0.8mm; }
     .change { font-weight: 700; }
     .footer { border-top: 0.5px dashed #444; padding-top: 1mm; margin-top: 1mm; text-align: center; font-size: 0.84em; }
     .message { white-space: pre-wrap; margin: 1mm 0; }
@@ -232,15 +233,15 @@ export function buildReceiptHtml(transaction, settings = {}, printerSettings = g
       </div>
 
       <div class="section">
-        <div class="row"><span>Subtotal</span><span class="amount">${formatReceiptNaira(model.subtotal)}</span></div>
+        ${model.showSubtotal ? `<div class="row"><span>Subtotal</span><span class="amount">${formatReceiptNaira(model.subtotal)}</span></div>` : ''}
         ${model.tax > 0 ? `<div class="row"><span>Tax</span><span class="amount">${formatReceiptNaira(model.tax)}</span></div>` : ''}${adjustmentRows}
-        <div class="row grand-total"><span>TOTAL</span><span class="amount">${formatReceiptNaira(model.total)}</span></div>
+        <div class="row grand-total${model.showSubtotal ? ' after-breakdown' : ''}"><span>TOTAL</span><span class="amount">${formatReceiptNaira(model.total)}</span></div>
       </div>
-
+${model.tenderPayments.length > 0 ? `
       <div class="section">
         <div class="title">Payment</div>${paymentRows}
         ${model.change > 0 ? `<div class="row change"><span>Change</span><span class="amount">${formatReceiptNaira(model.change)}</span></div>` : ''}
-      </div>
+      </div>` : ''}
 
       <div class="footer">
         ${model.refundDays > 0 ? `<div class="message">Refund within ${escapeHtml(String(model.refundDays))} days with receipt</div>` : ''}

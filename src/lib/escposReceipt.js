@@ -49,8 +49,8 @@ export function buildEscposReceipt(transaction, settings = {}, { paperWidth = 80
   const lines = (list) => list.forEach((line) => p.text(line));
   const heading = (text) => p.bold(true).text(text).bold(bodyBold);
 
-  // Header
-  p.align(1).bold(true).size(1, 2);
+  // Header, after a little space at the top
+  p.feed(1).align(1).bold(true).size(1, 2);
   lines(wrap(model.companyName.toUpperCase(), width));
   p.size(1, 1).bold(bodyBold);
   lines(wrap(model.locationName, width));
@@ -94,7 +94,7 @@ export function buildEscposReceipt(transaction, settings = {}, { paperWidth = 80
 
   // Totals
   p.text(rule);
-  lines(pair('Subtotal', formatReceiptNaira(model.subtotal), width));
+  if (model.showSubtotal) lines(pair('Subtotal', formatReceiptNaira(model.subtotal), width));
   if (model.tax > 0) lines(pair('Tax', formatReceiptNaira(model.tax), width));
   model.adjustmentLines.forEach((line) => {
     lines(pair(line.label, `${line.type === 'subtract' ? '-' : ''}${formatReceiptNaira(line.amount)}`, width));
@@ -103,14 +103,16 @@ export function buildEscposReceipt(transaction, settings = {}, { paperWidth = 80
   lines(pair('TOTAL', formatReceiptNaira(model.total), width));
   p.bold(bodyBold);
 
-  // Payment
-  p.text(rule);
-  heading('PAYMENT');
-  model.tenderPayments.forEach((payment) => lines(pair(payment.name, formatReceiptNaira(payment.amount), width)));
-  if (model.change > 0) {
-    p.bold(true);
-    lines(pair('Change', formatReceiptNaira(model.change), width));
-    p.bold(bodyBold);
+  // Payment (none on a receipt printed before payment)
+  if (model.tenderPayments.length > 0) {
+    p.text(rule);
+    heading('PAYMENT');
+    model.tenderPayments.forEach((payment) => lines(pair(payment.name, formatReceiptNaira(payment.amount), width)));
+    if (model.change > 0) {
+      p.bold(true);
+      lines(pair('Change', formatReceiptNaira(model.change), width));
+      p.bold(bodyBold);
+    }
   }
 
   // Footer

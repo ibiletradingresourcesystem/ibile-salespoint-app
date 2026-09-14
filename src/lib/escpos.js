@@ -81,9 +81,9 @@ export default class EscPosBuilder {
     return this.bytes(GS, 0x28, 0x6b, 3, 0, 0x31, 0x51, 0x30); // print
   }
 
-  /** Feed past the tear bar and partially cut */
+  /** Feed past the tear bar, leaving a little space below the text, and partially cut */
   cut() {
-    return this.feed(4).bytes(GS, 0x56, 1);
+    return this.feed(5).bytes(GS, 0x56, 1);
   }
 
   toBytes() {

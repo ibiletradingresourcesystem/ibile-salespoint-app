@@ -9,7 +9,8 @@
  *                  'both'    – try direct first, fall back to browser printing
  *   connectionMode 'usb' (Windows printer queue named `printerName`) | 'network' (ip:port)
  *   paperWidth     80 | 58 (mm roll)
- *   printWidth     width the printer can actually print, in mm (80mm rolls print ~72mm)
+ *   printWidth     'auto' – the receipt fills the page width the printer driver reports (no side gaps)
+ *                  number – a fixed width in mm, for printers whose driver page is wider than they can print
  *   leftMargin     shift the receipt right, in mm, if the printer's print area is offset
  */
 
@@ -18,21 +19,25 @@ const STORAGE_KEY = 'printerSettings';
 export const PRINT_METHODS = ['browser', 'direct', 'both'];
 export const PAPER_WIDTHS = [80, 58];
 
-// Printable width and ESC/POS characters per line (Font A) for each roll width
-const PAPER_PROFILES = {
+export const AUTO_PRINT_WIDTH = 'auto';
+const MAX_LEFT_MARGIN = 10;
+
+// Typical printable width and ESC/POS characters per line (Font A) for each roll width
+export const PAPER_PROFILES = {
   80: { printWidth: 72, columns: 48 },
   58: { printWidth: 48, columns: 32 },
 };
 
 export function getDefaultPrinterSettings() {
   return {
+    settingsVersion: 2,
     printMethod: 'browser',
     connectionMode: 'usb',
     printerName: 'XP-80C',
     ip: '192.168.1.100',
     port: 9100,
     paperWidth: 80,
-    printWidth: PAPER_PROFILES[80].printWidth,
+    printWidth: AUTO_PRINT_WIDTH,
     leftMargin: 0,
   };
 }
@@ -54,13 +59,17 @@ export function normalizePrinterSettings(raw = {}) {
   const printMethod = source.enabled === false
     ? 'browser'
     : PRINT_METHODS.includes(source.printMethod) ? source.printMethod : defaults.printMethod;
-  // Older versions laid receipts out at the full paper width, which cut off the right-hand side
+  // The previous version always saved the fixed default width (72mm / 48mm); treat that as "fit the paper"
   const savedPrintWidth = Number(source.printWidth);
-  const printWidth = Number.isFinite(savedPrintWidth) && savedPrintWidth > 0
+  const isOldDefaultWidth = !source.settingsVersion && savedPrintWidth === profile.printWidth;
+  const printWidth = source.printWidth !== AUTO_PRINT_WIDTH && Number.isFinite(savedPrintWidth)
+    && savedPrintWidth > 0 && !isOldDefaultWidth
     ? clampNumber(savedPrintWidth, 30, paperWidth, profile.printWidth)
-    : profile.printWidth;
+    : AUTO_PRINT_WIDTH;
+  const maxLeftMargin = printWidth === AUTO_PRINT_WIDTH ? MAX_LEFT_MARGIN : Math.min(MAX_LEFT_MARGIN, paperWidth - printWidth);
 
   return {
+    settingsVersion: 2,
     printMethod,
     connectionMode: source.connectionMode === 'network' ? 'network' : 'usb',
     printerName: String(source.printerName || defaults.printerName).trim(),
@@ -68,7 +77,7 @@ export function normalizePrinterSettings(raw = {}) {
     port: Math.round(clampNumber(source.port, 1, 65535, defaults.port)),
     paperWidth,
     printWidth,
-    leftMargin: clampNumber(source.leftMargin, 0, paperWidth - printWidth, 0),
+    leftMargin: clampNumber(source.leftMargin, 0, maxLeftMargin, 0),
   };
 }
 
@@ -94,11 +103,15 @@ export function setPrinterSettings(settings) {
 /** Page geometry shared by every printout (receipts and end-of-day report). */
 export function getPrintLayout(settings = getPrinterSettings()) {
   const normalized = normalizePrinterSettings(settings);
+  const profile = PAPER_PROFILES[normalized.paperWidth];
+  const fitsPaper = normalized.printWidth === AUTO_PRINT_WIDTH;
   return {
     paperWidth: normalized.paperWidth,
     printWidth: normalized.printWidth,
     leftMargin: normalized.leftMargin,
-    columns: PAPER_PROFILES[normalized.paperWidth].columns,
+    // Width to show on screen (the preview has no printer page to fit)
+    previewWidth: fitsPaper ? profile.printWidth : normalized.printWidth,
+    columns: profile.columns,
   };
 }
 

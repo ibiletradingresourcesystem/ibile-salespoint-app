@@ -3,24 +3,29 @@
  */
 
 /**
- * Page CSS for thermal rolls. Content is laid out at the printer's printable width (not the paper
- * width), starting `leftMargin` mm from the left edge, so nothing runs past the right-hand side.
- * Wrap the printout in <div class="print-page">.
+ * Page CSS for thermal rolls. With printWidth 'auto' the printout fills the page width the printer
+ * driver gives the browser, edge to edge; a number fixes the width in mm for printers whose driver
+ * page is wider than they can print. `leftMargin` shifts it right. On screen (the preview) it is
+ * shown at `previewWidth` mm. Wrap the printout in <div class="print-page">.
  */
-export function buildPrintPageCss({ printWidth, leftMargin }) {
+export function buildPrintPageCss({ printWidth, leftMargin, previewWidth }) {
+  const fixedWidth = printWidth !== 'auto';
   return `
     @page { margin: 0; }
     * { box-sizing: border-box; }
     html, body { margin: 0; padding: 0; background: #fff; }
     .print-page {
-      width: ${printWidth}mm;
-      max-width: ${printWidth}mm;
+      width: ${fixedWidth ? `${printWidth}mm` : 'auto'};
+      max-width: ${fixedWidth ? `${printWidth}mm` : 'none'};
       margin: 0 0 0 ${leftMargin}mm;
       padding: 0;
       color: #000;
       overflow-wrap: anywhere;
       -webkit-print-color-adjust: exact;
       print-color-adjust: exact;
+    }
+    @media screen {
+      .print-page { width: ${previewWidth}mm; max-width: ${previewWidth}mm; margin: 0 auto; }
     }
     img { max-width: 100%; }
   `;
