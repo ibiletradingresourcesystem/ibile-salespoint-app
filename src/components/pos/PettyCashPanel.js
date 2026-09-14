@@ -278,7 +278,7 @@ function PettyCashPanel({ isOpen, onClose, staffName, location }) {
         throw new Error(data.error || `HTTP ${res.status}`);
       }
 
-      setMessage({ type: "success", text: "✓ Payment recorded! Order marked as paid." });
+      setMessage({ type: "success", text: "✓ Payment recorded! Order marked as paid and added to expenses." });
       // Small delay to show message then refresh data
       await new Promise(r => setTimeout(r, 800));
       await fetchData();

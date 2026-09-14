@@ -7,6 +7,7 @@
  */
 import { mongooseConnect } from "@/src/lib/mongoose";
 import mongoose from "mongoose";
+import { recordPettyCashExpense } from "@/src/lib/pettyCashExpense";
 
 const PettyCashTransactionSchema = new mongoose.Schema({}, { strict: false, collection: "pettycashtransactions" });
 const PettyCashTransaction = mongoose.models.PettyCashTransaction || mongoose.model("PettyCashTransaction", PettyCashTransactionSchema);
@@ -107,28 +108,44 @@ export default async function handler(req, res) {
           return res.status(400).json({ error: "Only received orders can be marked as paid" });
         }
 
+        const paidAt = new Date();
+        const paidBy = { name: staffName || "POS Staff" };
+
+        // Record the expense first: if it fails, the order stays Received and Mark Paid can be retried
+        let expenseId;
+        try {
+          expenseId = await recordPettyCashExpense({ ...transaction.toObject(), status: "Paid", paidAt, paidBy });
+        } catch (expenseErr) {
+          console.error("Petty cash expense could not be recorded:", expenseErr);
+          return res.status(500).json({ error: `Could not record the expense: ${expenseErr.message}` });
+        }
+
         const paidHistoryEntry = {
           action: "marked-paid",
           fromStatus: "Received",
           toStatus: "Paid",
           note: "Payment completed for received items",
-          actedAt: new Date(),
-          actedBy: { name: staffName || "POS Staff" },
+          actedAt: paidAt,
+          actedBy: paidBy,
           amount: transaction.amount,
         };
 
-        await PettyCashTransaction.findByIdAndUpdate(orderId, {
-          $set: {
-            status: "Paid",
-            paidAt: new Date(),
-            paidBy: { name: staffName || "POS Staff" },
+        const updated = await PettyCashTransaction.findOneAndUpdate(
+          { _id: orderId, status: "Received" },
+          {
+            $set: { status: "Paid", paidAt, paidBy, expense: expenseId },
+            $push: { approvalHistory: paidHistoryEntry },
           },
-          $push: { approvalHistory: paidHistoryEntry },
-        });
+          { new: true }
+        );
+
+        if (!updated) {
+          return res.status(409).json({ error: "This order was already marked as paid" });
+        }
 
         return res.status(200).json({
           success: true,
-          transaction: { _id: transaction._id, status: "Paid" },
+          transaction: { _id: transaction._id, status: "Paid", expense: expenseId },
         });
       }
 
