@@ -60,8 +60,11 @@ export default async function handler(req, res) {
       quantity: quantity || 0,
       description: description || "",
       barcode: barcode || "",
-      taxRate: 5,
-      margin: (salePriceIncTax - (costPrice || 0)) || 0,
+      // 7.5% VAT is the only rate; margin is % on cost, before VAT (same as the inventory app)
+      taxRate: 7.5,
+      margin: Number(costPrice) > 0
+        ? Math.round(((Number(salePriceIncTax) / 1.075 - Number(costPrice)) / Number(costPrice)) * 10000) / 100
+        : 0,
       minStock: 5,
       maxStock: 1000,
       images: [],

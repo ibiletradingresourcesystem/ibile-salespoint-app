@@ -1,45 +1,44 @@
 /**
  * Parent-child product quantity management.
- * 
- * RULE: Child qty is ALWAYS derived from parent: child.qty = parent.qty * qtyPerPack.
+ *
+ * RULE: Child qty is ALWAYS derived from parent. A parent can have many children:
+ *   child.qty = parent.qty × parent.qtyPerPack ÷ child.unitsPerChild
  * Child qty must NEVER be decremented/incremented directly.
  *
  * updateInventoryForSale(items):
  *   Replaces the naive for-loop in transaction endpoints.
  *   - For normal products: decrement quantity directly
- *   - For child products: redirect decrement to parent, then derive child qty
- *   - For parent products: decrement parent, then derive child qty
+ *   - For child products: redirect decrement to parent (by the child's share of a pack), then derive children
+ *   - For parent products: decrement parent, then derive children
  *
  * reverseInventoryForRefund(items):
  *   Reverses a sale (restock). Same logic but increments instead.
  *
  * deriveChildQty(productId):
- *   Recalculates child qty from parent. Use after any non-sale qty change.
+ *   Recalculates children qty from the parent. Use after any non-sale qty change.
  */
 
 import Product from "@/src/models/Product";
 import { isRoomProduct } from "@/src/lib/roomReservations";
+import { childQtyToParentQty, deriveChildQuantity, isDerivedChild } from "@/src/lib/packUnits";
 
-/**
- * Smart inventory update for a sale. Replaces the old for-loop + syncParentChildQty pattern.
- * items = [{ productId, qty, name? }]
- */
-export async function updateInventoryForSale(items) {
+const CHILD_FILTER = { isChildProduct: true, packType: { $ne: "pack" } };
+
+async function applyInventoryChange(items, sign) {
   if (!items || items.length === 0) return;
 
-  const validItems = items.filter(i => i.productId && i.qty && !isRoomProduct(i));
+  const validItems = items.filter(i => i.productId && Number(i.qty) && !isRoomProduct(i));
   if (validItems.length === 0) return;
 
-  // Pre-fetch all sold products to know which are children/parents
+  // Pre-fetch all products to know which are children/parents
   const productIds = validItems.map(i => i.productId);
-  const soldProducts = await Product.find({ _id: { $in: productIds } })
-    .select("_id isChildProduct parentProduct packType qtyPerPack productType")
+  const products = await Product.find({ _id: { $in: productIds } })
+    .select("_id isChildProduct parentProduct packType qtyPerPack unitsPerChild productType")
     .lean();
-  const productMap = new Map(soldProducts.map(p => [String(p._id), p]));
+  const productMap = new Map(products.map(p => [String(p._id), p]));
 
-  // Separate: normal/parent decrements vs child-to-parent redirects
-  const directDecrements = [];          // normal + parent products
-  const childToParent = new Map();      // parentId -> total child units sold
+  const directChanges = [];            // normal + parent products
+  const childItemsByParent = new Map(); // parentId -> [{ child, qty, name }]
 
   for (const item of validItems) {
     const product = productMap.get(String(item.productId));
@@ -48,71 +47,66 @@ export async function updateInventoryForSale(items) {
       continue;
     }
 
-    if (product && product.isChildProduct && product.parentProduct && product.packType !== "pack") {
-      // CHILD sold -> DO NOT touch child qty. Redirect to parent.
+    if (isDerivedChild(product)) {
+      // CHILD -> DO NOT touch child qty. Redirect to parent.
       const parentId = String(product.parentProduct);
-      const current = childToParent.get(parentId) || 0;
-      childToParent.set(parentId, current + item.qty);
-      console.log(`📦 Child "${item.name || item.productId}" sold ${item.qty} units → redirecting to parent ${parentId}`);
+      const childItems = childItemsByParent.get(parentId) || [];
+      childItems.push({ child: product, qty: Number(item.qty), name: item.name });
+      childItemsByParent.set(parentId, childItems);
     } else {
-      // Normal or parent product -> decrement directly
-      directDecrements.push(item);
+      directChanges.push({ productId: item.productId, qty: Number(item.qty), name: item.name });
     }
   }
 
-  // 1. Decrement normal/parent products
-  for (const item of directDecrements) {
+  // 1. Normal/parent products change directly
+  for (const item of directChanges) {
     const result = await Product.findByIdAndUpdate(
       item.productId,
-      { $inc: { quantity: -item.qty } },
+      { $inc: { quantity: sign * item.qty } },
       { new: true }
     );
     if (result) {
-      console.log(`✅ ${item.name || item.productId}: sold ${item.qty}, remaining ${result.quantity}`);
+      console.log(`✅ ${item.name || item.productId}: ${sign < 0 ? "sold" : "restocked"} ${item.qty}, now ${result.quantity}`);
     }
   }
 
-  // 2. Decrement parents for child sales (convert units to packs)
-  for (const [parentId, totalUnitsSold] of childToParent.entries()) {
-    const parent = await Product.findById(parentId).select("qtyPerPack").lean();
-    if (parent && parent.qtyPerPack > 0) {
-      const packDecrement = totalUnitsSold / parent.qtyPerPack;
+  // 2. Parents change by each child's share of a pack
+  if (childItemsByParent.size > 0) {
+    const parents = await Product.find({ _id: { $in: [...childItemsByParent.keys()] } })
+      .select("_id qtyPerPack")
+      .lean();
+    for (const parent of parents) {
+      const childItems = childItemsByParent.get(String(parent._id));
+      const packs = childItems.reduce((sum, { child, qty }) => sum + childQtyToParentQty(qty, child, parent), 0);
+      if (!packs) continue;
       const updated = await Product.findByIdAndUpdate(
-        parentId,
-        { $inc: { quantity: -packDecrement } },
+        parent._id,
+        { $inc: { quantity: sign * packs } },
         { new: true }
       );
-      console.log(`📦 Parent ${parentId}: -${packDecrement} packs (${totalUnitsSold} units sold), remaining ${updated.quantity}`);
+      console.log(`📦 Parent ${parent._id}: ${sign < 0 ? "-" : "+"}${packs} packs from child items, now ${updated?.quantity}`);
     }
   }
 
   // 3. Derive child qty for ALL affected parents
-  const affectedParentIds = new Set([
-    ...childToParent.keys(),
-    ...directDecrements
-      .filter(item => {
-        const p = productMap.get(String(item.productId));
-        return p && p.packType === "pack" && p.qtyPerPack > 0;
-      })
-      .map(item => String(item.productId)),
-  ]);
-
-  for (const parentId of affectedParentIds) {
-    const parent = await Product.findById(parentId).select("quantity qtyPerPack").lean();
-    if (!parent || !parent.qtyPerPack) continue;
-
-    const child = await Product.findOne({
-      parentProduct: parentId,
-      isChildProduct: true,
-      packType: { $ne: "pack" },
-    }).select("_id").lean();
-
-    if (child) {
-      const newChildQty = parent.quantity * parent.qtyPerPack;
-      await Product.findByIdAndUpdate(child._id, { $set: { quantity: newChildQty } });
-      console.log(`🔗 Child ${child._id} qty derived = ${parent.quantity} × ${parent.qtyPerPack} = ${newChildQty}`);
+  const affectedParentIds = new Set(childItemsByParent.keys());
+  for (const { productId } of directChanges) {
+    if (productMap.get(String(productId))?.packType === "pack") {
+      affectedParentIds.add(String(productId));
     }
   }
+
+  for (const parentId of affectedParentIds) {
+    await deriveChildrenForParent(parentId);
+  }
+}
+
+/**
+ * Smart inventory update for a sale. Replaces the old for-loop + syncParentChildQty pattern.
+ * items = [{ productId, qty, name? }]
+ */
+export async function updateInventoryForSale(items) {
+  await applyInventoryChange(items, -1);
 }
 
 /**
@@ -120,56 +114,28 @@ export async function updateInventoryForSale(items) {
  * items = [{ productId, qty }]
  */
 export async function reverseInventoryForRefund(items) {
-  if (!items || items.length === 0) return;
+  await applyInventoryChange(items, 1);
+}
 
-  const validItems = items.filter(i => i.productId && i.qty && !isRoomProduct(i));
-  if (validItems.length === 0) return;
-
-  const productIds = validItems.map(i => i.productId);
-  const products = await Product.find({ _id: { $in: productIds } })
-    .select("_id isChildProduct parentProduct packType qtyPerPack productType")
-    .lean();
-  const productMap = new Map(products.map(p => [String(p._id), p]));
-
-  const directIncrements = [];
-  const childToParent = new Map();
-
-  for (const item of validItems) {
-    const product = productMap.get(String(item.productId));
-    if (isRoomProduct(product)) continue;
-    if (product && product.isChildProduct && product.parentProduct && product.packType !== "pack") {
-      const parentId = String(product.parentProduct);
-      const current = childToParent.get(parentId) || 0;
-      childToParent.set(parentId, current + Number(item.qty));
-    } else {
-      directIncrements.push(item);
-    }
-  }
-
-  for (const item of directIncrements) {
-    await Product.findByIdAndUpdate(item.productId, { $inc: { quantity: Number(item.qty) } });
-  }
-
-  for (const [parentId, totalUnits] of childToParent.entries()) {
-    const parent = await Product.findById(parentId).select("qtyPerPack").lean();
-    if (parent && parent.qtyPerPack > 0) {
-      await Product.findByIdAndUpdate(parentId, { $inc: { quantity: totalUnits / parent.qtyPerPack } });
-    }
-  }
-
-  // Derive child qty for all affected parents
-  const allParentIds = new Set([
-    ...childToParent.keys(),
-    ...directIncrements
-      .filter(item => {
-        const p = productMap.get(String(item.productId));
-        return p && p.packType === "pack" && p.qtyPerPack > 0;
-      })
-      .map(item => String(item.productId)),
+/**
+ * Set every child's qty from its parent's current stock.
+ */
+export async function deriveChildrenForParent(parentId) {
+  const [parent, children] = await Promise.all([
+    Product.findById(parentId).select("_id quantity qtyPerPack").lean(),
+    Product.find({ parentProduct: parentId, ...CHILD_FILTER }).select("_id quantity unitsPerChild").lean(),
   ]);
+  if (!parent || children.length === 0) return;
 
-  for (const parentId of allParentIds) {
-    await deriveChildQty(parentId);
+  const bulkOps = children
+    .map((child) => ({ child, quantity: deriveChildQuantity(parent.quantity, parent, child) }))
+    .filter(({ child, quantity }) => child.quantity !== quantity)
+    .map(({ child, quantity }) => ({
+      updateOne: { filter: { _id: child._id }, update: { $set: { quantity } } },
+    }));
+
+  if (bulkOps.length > 0) {
+    await Product.bulkWrite(bulkOps);
   }
 }
 
@@ -180,28 +146,14 @@ export async function reverseInventoryForRefund(items) {
 export async function deriveChildQty(productId) {
   try {
     const product = await Product.findById(productId)
-      .select("isChildProduct parentProduct packType qtyPerPack quantity")
+      .select("_id isChildProduct parentProduct packType")
       .lean();
     if (!product) return;
 
-    if (product.isChildProduct && product.parentProduct && product.packType !== "pack") {
-      const parent = await Product.findById(product.parentProduct)
-        .select("quantity qtyPerPack")
-        .lean();
-      if (parent && parent.qtyPerPack > 0) {
-        const newChildQty = parent.quantity * parent.qtyPerPack;
-        await Product.findByIdAndUpdate(productId, { $set: { quantity: newChildQty } });
-      }
-    } else if (product.packType === "pack" && product.qtyPerPack > 0) {
-      const child = await Product.findOne({
-        parentProduct: productId,
-        isChildProduct: true,
-        packType: { $ne: "pack" },
-      }).select("_id").lean();
-      if (child) {
-        const newChildQty = product.quantity * product.qtyPerPack;
-        await Product.findByIdAndUpdate(child._id, { $set: { quantity: newChildQty } });
-      }
+    if (isDerivedChild(product)) {
+      await deriveChildrenForParent(product.parentProduct);
+    } else if (product.packType === "pack") {
+      await deriveChildrenForParent(product._id);
     }
   } catch (err) {
     console.warn("⚠️ deriveChildQty error:", err.message);

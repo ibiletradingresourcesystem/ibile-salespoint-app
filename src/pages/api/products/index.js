@@ -12,6 +12,7 @@ import { mongooseConnect } from "@/src/lib/mongoose";
 import Product from "@/src/models/Product";
 import Store from "@/src/models/Store";
 import { releaseExpiredRoomBookings } from "@/src/lib/roomAvailability";
+import { deriveChildQuantity, isDerivedChild } from "@/src/lib/packUnits";
 
 const normalizeLocationToken = (value) => String(value || "").trim().toLowerCase();
 
@@ -40,7 +41,7 @@ export default async function handler(req, res) {
 
     const requestLimit = req.query.sync === 'true' ? 10000 : 2000;
     let products = await Product.find(query)
-      .select("_id name category salePriceIncTax quantity images description locations isChildProduct parentProduct packType qtyPerPack childSalePrice productType roomStatus currentBooking barcode")
+      .select("_id name category salePriceIncTax quantity images description locations isChildProduct parentProduct packType qtyPerPack unitsPerChild childSalePrice productType roomStatus currentBooking barcode")
       .limit(requestLimit)
       .lean();
 
@@ -87,8 +88,8 @@ export default async function handler(req, res) {
     }
 
     // Derive child product quantities from their parent
-    // Child qty = parent.qty × qtyPerPack (always computed, never stored independently)
-    const childProducts = products.filter((p) => p.isChildProduct && p.parentProduct);
+    // Child qty = parent.qty × qtyPerPack ÷ unitsPerChild (always computed, never stored independently)
+    const childProducts = products.filter(isDerivedChild);
     if (childProducts.length > 0) {
       // Collect all parent IDs needed
       const parentIds = [...new Set(childProducts.map((p) => String(p.parentProduct)))];
@@ -99,8 +100,8 @@ export default async function handler(req, res) {
 
       for (const child of childProducts) {
         const parent = parentMap.get(String(child.parentProduct));
-        if (parent && parent.qtyPerPack > 0) {
-          child.quantity = parent.quantity * parent.qtyPerPack;
+        if (parent) {
+          child.quantity = deriveChildQuantity(parent.quantity, parent, child);
         }
       }
     }
