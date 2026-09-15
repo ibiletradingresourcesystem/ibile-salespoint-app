@@ -1,6 +1,7 @@
 // models/Transactions.js - Merged from inventory & current app
 
 import mongoose from "mongoose";
+import { syncTracking } from "@/src/lib/desktop/syncTracking";
 
 const itemSchema = new mongoose.Schema(
   {
@@ -142,7 +143,14 @@ const TransactionSchema = new mongoose.Schema({
   
   // Track which till this transaction belongs to
   tillId: { type: mongoose.Schema.Types.ObjectId, ref: "Till" },
-  
+
+  // Desktop sync: the installation that recorded the sale and the last revision the cloud applied
+  installationId: { type: String, default: null },
+  syncRev: { type: Number },
+  syncedFrom: { type: String },
+  syncedAt: { type: Date },
+  syncFingerprint: { type: String },
+
   // Timestamps
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now },
@@ -168,6 +176,10 @@ TransactionSchema.index({ salesChannel: 1, createdAt: -1 });
 TransactionSchema.index({ sourceOrderId: 1 }, { sparse: true });
 TransactionSchema.index({ status: 1, creditStatus: 1, createdAt: -1 });
 TransactionSchema.index({ creditCustomerId: 1, creditStatus: 1 });
+TransactionSchema.index({ installationId: 1, createdAt: -1 }, { sparse: true });
+
+// Desktop runtime: queue local sales for cloud sync (no-op on the cloud deployment)
+TransactionSchema.plugin(syncTracking, { entity: "transactions" });
 
 // Avoid re-registering the model in development
 delete mongoose.models.Transaction;

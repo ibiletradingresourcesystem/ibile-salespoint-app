@@ -23,6 +23,7 @@ import {
 } from "@fortawesome/free-solid-svg-icons";
 import { normalizeStaffList, normalizeStaffMember } from "@/src/lib/posPermissions";
 import { getUiSettings } from "@/src/lib/uiSettings";
+import { isDesktopApp } from "@/src/lib/desktopClient";
 import { primePosBootstrapFromCache, primePosBootstrapFromLiveData } from "@/src/lib/posBootstrap";
 
 const normalizeLocationToken = (value) => String(value || "").trim().toLowerCase();
@@ -711,6 +712,14 @@ export default function StaffLogin() {
   }, [isOnline]);
 
   const attemptOfflineLogin = useCallback(async (reason) => {
+    // The desktop app checks every passcode against its local database, which works without
+    // internet. Never fall back to the cached login below, which does not check the passcode.
+    if (isDesktopApp()) {
+      console.warn(`Desktop login could not reach the local POS service (${reason})`);
+      setError("The POS service on this computer is not responding. Close and reopen Ibile POS.");
+      return false;
+    }
+
     console.log(`📱 OFFLINE LOGIN - ${reason}`);
     console.log(`   Available locations from cache: ${locations.map(l => l.name).join(', ')}`);
     console.log(`   Available staff from cache: ${staff.map(s => s.name).join(', ')}`);

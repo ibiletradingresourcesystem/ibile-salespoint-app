@@ -33,6 +33,12 @@ const PUBLIC_GET_PATHS = [
   '/api/till/active',
 ];
 
+// Routes that authenticate callers themselves instead of with the staff session cookie:
+// /api/sync/*    desktop installations (installation token, src/lib/sync/installationAuth.js)
+// /api/desktop/* the desktop app's local server only (internal token or session, 404 on the cloud)
+const SELF_AUTHENTICATED_PREFIXES = ['/api/sync/', '/api/desktop/'];
+const RATE_LIMIT_MAX_ENROLL = 5;
+
 function isPublicGetPath(pathname) {
   return PUBLIC_GET_PATHS.some((path) => pathname === path || pathname.startsWith(`${path}/`));
 }
@@ -162,6 +168,34 @@ export async function middleware(request) {
         { status: 429, headers: { 'Retry-After': String(retryAfter) } }
       );
     }
+  }
+
+  // Enrolment checks a manager passcode, so it gets the same brute-force protection as login
+  if (pathname === '/api/sync/enroll' && request.method === 'POST') {
+    const ip = getClientIp(request);
+    const { allowed, retryAfter } = checkRateLimit(
+      `enroll:${ip}`,
+      RATE_LIMIT_MAX_ENROLL,
+      RATE_LIMIT_WINDOW
+    );
+
+    if (!allowed) {
+      return NextResponse.json(
+        {
+          success: false,
+          code: 'RATE_LIMITED',
+          message: `Too many attempts. Try again in ${retryAfter}s.`,
+        },
+        { status: 429, headers: { 'Retry-After': String(retryAfter) } }
+      );
+    }
+  }
+
+  if (SELF_AUTHENTICATED_PREFIXES.some((prefix) => pathname.startsWith(prefix))) {
+    // Never trust a caller-supplied staff id on routes that skip the session check
+    const requestHeaders = new Headers(request.headers);
+    requestHeaders.delete('x-auth-staff-id');
+    return NextResponse.next({ request: { headers: requestHeaders } });
   }
 
   // Public GETs are limited to login/offline bootstrap data only.

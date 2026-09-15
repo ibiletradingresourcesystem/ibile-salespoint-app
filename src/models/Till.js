@@ -1,5 +1,6 @@
 // models/Till.js - Merged from inventory & current app
 import mongoose from "mongoose";
+import { syncTracking } from "@/src/lib/desktop/syncTracking";
 
 // A terminal that sent its sales to the cloud so another terminal at the location can close the till
 const HandoverSchema = new mongoose.Schema(
@@ -132,7 +133,13 @@ const TillSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
-    
+
+    // Desktop sync: tills opened on a desktop installation are owned by it (see webTillScope)
+    installationId: { type: String, default: null },
+    syncRev: { type: Number },
+    syncedFrom: { type: String },
+    syncedAt: { type: Date },
+
     // Daily summary
     date: {
       type: Date,
@@ -151,5 +158,9 @@ TillSchema.index({ storeId: 1, locationId: 1, status: 1, openedAt: -1 });
 TillSchema.index({ staffId: 1, status: 1 });
 TillSchema.index({ openedAt: -1 });
 TillSchema.index({ date: 1, locationId: 1 });
+TillSchema.index({ installationId: 1, status: 1 });
+
+// Desktop runtime: queue till changes for cloud sync (no-op on the cloud deployment)
+TillSchema.plugin(syncTracking, { entity: "tills" });
 
 export default mongoose.models.Till || mongoose.model("Till", TillSchema);

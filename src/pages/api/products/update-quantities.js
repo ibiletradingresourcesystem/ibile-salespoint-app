@@ -9,11 +9,15 @@ import { mongooseConnect } from '@/src/lib/mongoose';
 import { default as Product } from '@/src/models/Product';
 import { updateInventoryForSale } from '@/src/lib/syncPackQty';
 import { sanitizeBody } from '@/src/lib/apiValidation';
+import { isDesktopServer, rejectCloudManagedWrite } from '@/src/lib/runtime';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
+
+  // On the desktop, stock changes reach the cloud through the sales that caused them
+  if (isDesktopServer()) return rejectCloudManagedWrite(res, 'Stock');
 
   req.body = sanitizeBody(req.body);
 

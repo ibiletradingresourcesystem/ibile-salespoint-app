@@ -1,0 +1,22 @@
+{
+  "name": "ibile-pos-desktop",
+  "productName": "Ibile POS",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Ibile System POS for Windows: works offline with a local database and syncs with the cloud",
+  "author": "Ibile Mart Systems",
+  "main": "main.js",
+  "scripts": {
+    "dev": "electron .",
+    "dist": "electron-builder --config electron-builder.config.js --win --x64",
+    "dist:dir": "electron-builder --config electron-builder.config.js --win --x64 --dir"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9",
+    "mongodb": "^6.21.0"
+  },
+  "devDependencies": {
+    "electron": "^44.3.0",
+    "electron-builder": "^26.15.3"
+  }
+}

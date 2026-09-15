@@ -1,6 +1,7 @@
 // pages/api/till/current.js
 import { mongooseConnect } from "@/src/lib/mongoose";
 import Till from "@/src/models/Till";
+import { webTillScope } from "@/src/lib/runtime";
 
 export default async function handler(req, res) {
   if (req.method !== "GET") {
@@ -20,6 +21,7 @@ export default async function handler(req, res) {
     const currentTill = await Till.findOne({
       locationId,
       status: "OPEN",
+      ...webTillScope(),
     })
       .sort({ openedAt: -1 })
       .populate({

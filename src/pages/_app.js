@@ -1,6 +1,7 @@
 import "../styles/globals.css";
 import Head from "next/head";
 import { useEffect } from "react";
+import { useRouter } from "next/router";
 import Layout from "@/src/components/layout/Layout";
 import { StaffProvider } from "@/src/context/StaffContext";
 import POSErrorBoundary from "@/src/components/common/POSErrorBoundary";
@@ -11,9 +12,12 @@ import { ConfirmDialogContainer } from "@/src/components/common/ConfirmDialog";
 import PrintPreview from "@/src/components/common/PrintPreview";
 
 export default function App({ Component, pageProps }) {
-  // Register service worker for offline support
+  const router = useRouter();
+
+  // Register service worker for offline support. The desktop app serves pages from this computer,
+  // so it needs no page cache (which could also keep old pages after an app update).
   useEffect(() => {
-    if ('serviceWorker' in navigator && process.env.NODE_ENV === 'production') {
+    if ('serviceWorker' in navigator && process.env.NODE_ENV === 'production' && !window.posDesktop) {
       navigator.serviceWorker
         .register('/sw.js')
         .then((registration) => {
@@ -61,6 +65,19 @@ export default function App({ Component, pageProps }) {
       }
     };
   }, []);
+
+  // Desktop first-run setup runs before any staff exist on this computer, so it skips the login layout
+  if (router.pathname === "/desktop-setup") {
+    return (
+      <>
+        <Head>
+          <meta name="viewport" content="width=device-width, initial-scale=1" />
+          <title>Set up Ibile POS</title>
+        </Head>
+        <Component {...pageProps} />
+      </>
+    );
+  }
 
   return (
     <StaffProvider>

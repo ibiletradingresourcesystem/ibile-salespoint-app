@@ -3,6 +3,7 @@ import { mongooseConnect } from "@/src/lib/mongoose";
 import Till from "@/src/models/Till";
 import Store from "@/src/models/Store";
 import { sanitizeBody } from '@/src/lib/apiValidation';
+import { webTillScope } from "@/src/lib/runtime";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -45,6 +46,7 @@ export default async function handler(req, res) {
     const existingOpenTill = await Till.findOne({
       locationId,
       status: "OPEN",
+      ...webTillScope(),
     });
 
     if (existingOpenTill) {

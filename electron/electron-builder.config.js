@@ -1,0 +1,40 @@
+'use strict';
+
+/**
+ * Installer configuration (electron-builder).
+ *
+ * Automatic updates are enabled only when IBILE_POS_UPDATE_URL is set at build time: the address of
+ * the folder where released installers and latest.yml are uploaded. Without it the app still builds
+ * and runs, with updates turned off.
+ */
+
+const updateUrl = process.env.IBILE_POS_UPDATE_URL;
+
+module.exports = {
+  appId: 'com.ibilemart.pos',
+  productName: 'Ibile POS',
+  copyright: 'Ibile Mart Systems',
+  directories: {
+    output: '../dist-desktop',
+  },
+  files: ['main.js', 'preload.js', 'splash.html', 'app-config.json', 'lib/**/*', 'package.json'],
+  extraResources: [
+    { from: '../build/desktop/app-server', to: 'app-server', filter: ['**/*'] },
+    { from: '../build/desktop/mongodb', to: 'mongodb', filter: ['**/*'] },
+  ],
+  afterPack: './scripts/after-pack.js',
+  asar: true,
+  win: {
+    target: [{ target: 'nsis', arch: ['x64'] }],
+  },
+  nsis: {
+    oneClick: false,
+    perMachine: false,
+    allowToChangeInstallationDirectory: false,
+    deleteAppDataOnUninstall: false,
+    createDesktopShortcut: true,
+    createStartMenuShortcut: true,
+    shortcutName: 'Ibile POS',
+  },
+  publish: updateUrl ? [{ provider: 'generic', url: updateUrl }] : null,
+};

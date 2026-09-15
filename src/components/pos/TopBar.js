@@ -19,6 +19,7 @@ import {
   faSync,
 } from '@fortawesome/free-solid-svg-icons';
 import { useCart } from '../../context/CartContext';
+import DesktopSyncStatus from '../common/DesktopSyncStatus';
 
 export default function TopBar({ activeTab, onTabChange, onLogout, storeData, staffData, onToggleSidebar }) {
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -146,6 +147,9 @@ export default function TopBar({ activeTab, onTabChange, onLogout, storeData, st
 
         {/* Right: Search & Logout */}
         <div className="flex items-center gap-2">
+          {/* Desktop app: cloud sync state (renders nothing in the web version) */}
+          <DesktopSyncStatus />
+
           {/* Online/Offline Status Indicator */}
           <div className="text-xs flex items-center gap-1.5">
             <FontAwesomeIcon 

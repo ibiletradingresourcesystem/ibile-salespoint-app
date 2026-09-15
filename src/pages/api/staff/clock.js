@@ -1,6 +1,7 @@
 import dbConnect from '@/src/lib/mongoose';
 import Staff from '@/src/models/Staff';
 import { sanitizeBody } from '@/src/lib/apiValidation';
+import { recordLocalChange } from '@/src/lib/desktop/outbox';
 
 export default async function handler(req, res) {
   await dbConnect();
@@ -54,10 +55,17 @@ export default async function handler(req, res) {
       staff.clockRecords.push(record);
       await staff.save();
 
+      const savedRecord = staff.clockRecords[staff.clockRecords.length - 1];
+
+      // Desktop: send the clock record to the cloud (no-op on the cloud deployment)
+      await recordLocalChange('staff_clock', String(savedRecord._id), {
+        payload: { staffId: String(staff._id), record: savedRecord.toObject() },
+      });
+
       return res.status(200).json({
         success: true,
         message: `Successfully clocked ${type}`,
-        record: staff.clockRecords[staff.clockRecords.length - 1],
+        record: savedRecord,
         staffName: staff.name,
       });
     } catch (error) {

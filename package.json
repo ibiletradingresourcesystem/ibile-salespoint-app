@@ -6,7 +6,12 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "desktop:install": "npm --prefix electron install",
+    "desktop:fetch-mongodb": "node scripts/desktop/fetch-mongodb.js",
+    "desktop:dev": "npm --prefix electron run dev",
+    "desktop:build-server": "node scripts/desktop/build-server.js",
+    "desktop:dist": "npm run desktop:build-server && npm --prefix electron run dist"
   },
   "dependencies": {
     "@auth/mongodb-adapter": "^3.9.1",

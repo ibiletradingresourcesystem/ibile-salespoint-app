@@ -8,6 +8,8 @@
 import { mongooseConnect } from "@/src/lib/mongoose";
 import mongoose from "mongoose";
 import { recordPettyCashExpense } from "@/src/lib/pettyCashExpense";
+import { isDesktopServer } from "@/src/lib/runtime";
+import { proxyToCloud } from "@/src/lib/desktop/cloudProxy";
 
 const PettyCashTransactionSchema = new mongoose.Schema({}, { strict: false, collection: "pettycashtransactions" });
 const PettyCashTransaction = mongoose.models.PettyCashTransaction || mongoose.model("PettyCashTransaction", PettyCashTransactionSchema);
@@ -16,6 +18,9 @@ const VendorSchema = new mongoose.Schema({}, { strict: false, collection: "vendo
 const Vendor = mongoose.models.Vendor || mongoose.model("Vendor", VendorSchema);
 
 export default async function handler(req, res) {
+  // Petty cash is approved and paid through the management app, so it stays in the cloud
+  if (isDesktopServer()) return proxyToCloud(req, res);
+
   await mongooseConnect();
 
   if (req.method === "GET") {

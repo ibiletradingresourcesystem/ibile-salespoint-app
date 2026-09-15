@@ -8,6 +8,7 @@
 import { mongooseConnect } from '@/src/lib/mongoose';
 import Promotion from '@/src/models/Promotion';
 import { sanitizeBody } from '@/src/lib/apiValidation';
+import { isDesktopServer, rejectCloudManagedWrite } from '@/src/lib/runtime';
 
 export default async function handler(req, res) {
   await mongooseConnect();
@@ -42,6 +43,7 @@ export default async function handler(req, res) {
   }
 
   if (req.method === 'POST') {
+    if (isDesktopServer()) return rejectCloudManagedWrite(res, 'Promotion data');
     req.body = sanitizeBody(req.body);
     try {
       const promotionData = req.body;

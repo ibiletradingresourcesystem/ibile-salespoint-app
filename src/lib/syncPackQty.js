@@ -16,6 +16,9 @@
  *
  * deriveChildQty(productId):
  *   Recalculates children qty from the parent. Use after any non-sale qty change.
+ *
+ * Each function accepts an optional { session } so cloud sync can apply stock changes inside
+ * the same MongoDB transaction as the synced sale (src/lib/sync/cloudApply.js).
  */
 
 import Product from "@/src/models/Product";
@@ -24,7 +27,7 @@ import { childQtyToParentQty, deriveChildQuantity, isDerivedChild } from "@/src/
 
 const CHILD_FILTER = { isChildProduct: true, packType: { $ne: "pack" } };
 
-async function applyInventoryChange(items, sign) {
+async function applyInventoryChange(items, sign, { session = null } = {}) {
   if (!items || items.length === 0) return;
 
   const validItems = items.filter(i => i.productId && Number(i.qty) && !isRoomProduct(i));
@@ -34,6 +37,7 @@ async function applyInventoryChange(items, sign) {
   const productIds = validItems.map(i => i.productId);
   const products = await Product.find({ _id: { $in: productIds } })
     .select("_id isChildProduct parentProduct packType qtyPerPack unitsPerChild productType")
+    .session(session)
     .lean();
   const productMap = new Map(products.map(p => [String(p._id), p]));
 
@@ -63,7 +67,7 @@ async function applyInventoryChange(items, sign) {
     const result = await Product.findByIdAndUpdate(
       item.productId,
       { $inc: { quantity: sign * item.qty } },
-      { new: true }
+      { new: true, session }
     );
     if (result) {
       console.log(`✅ ${item.name || item.productId}: ${sign < 0 ? "sold" : "restocked"} ${item.qty}, now ${result.quantity}`);
@@ -74,6 +78,7 @@ async function applyInventoryChange(items, sign) {
   if (childItemsByParent.size > 0) {
     const parents = await Product.find({ _id: { $in: [...childItemsByParent.keys()] } })
       .select("_id qtyPerPack")
+      .session(session)
       .lean();
     for (const parent of parents) {
       const childItems = childItemsByParent.get(String(parent._id));
@@ -82,7 +87,7 @@ async function applyInventoryChange(items, sign) {
       const updated = await Product.findByIdAndUpdate(
         parent._id,
         { $inc: { quantity: sign * packs } },
-        { new: true }
+        { new: true, session }
       );
       console.log(`📦 Parent ${parent._id}: ${sign < 0 ? "-" : "+"}${packs} packs from child items, now ${updated?.quantity}`);
     }
@@ -97,7 +102,7 @@ async function applyInventoryChange(items, sign) {
   }
 
   for (const parentId of affectedParentIds) {
-    await deriveChildrenForParent(parentId);
+    await deriveChildrenForParent(parentId, { session });
   }
 }
 
@@ -105,25 +110,25 @@ async function applyInventoryChange(items, sign) {
  * Smart inventory update for a sale. Replaces the old for-loop + syncParentChildQty pattern.
  * items = [{ productId, qty, name? }]
  */
-export async function updateInventoryForSale(items) {
-  await applyInventoryChange(items, -1);
+export async function updateInventoryForSale(items, options) {
+  await applyInventoryChange(items, -1, options);
 }
 
 /**
  * Reverse inventory for a refund/restock.
  * items = [{ productId, qty }]
  */
-export async function reverseInventoryForRefund(items) {
-  await applyInventoryChange(items, 1);
+export async function reverseInventoryForRefund(items, options) {
+  await applyInventoryChange(items, 1, options);
 }
 
 /**
  * Set every child's qty from its parent's current stock.
  */
-export async function deriveChildrenForParent(parentId) {
+export async function deriveChildrenForParent(parentId, { session = null } = {}) {
   const [parent, children] = await Promise.all([
-    Product.findById(parentId).select("_id quantity qtyPerPack").lean(),
-    Product.find({ parentProduct: parentId, ...CHILD_FILTER }).select("_id quantity unitsPerChild").lean(),
+    Product.findById(parentId).select("_id quantity qtyPerPack").session(session).lean(),
+    Product.find({ parentProduct: parentId, ...CHILD_FILTER }).select("_id quantity unitsPerChild").session(session).lean(),
   ]);
   if (!parent || children.length === 0) return;
 
@@ -135,7 +140,7 @@ export async function deriveChildrenForParent(parentId) {
     }));
 
   if (bulkOps.length > 0) {
-    await Product.bulkWrite(bulkOps);
+    await Product.bulkWrite(bulkOps, { session });
   }
 }
 

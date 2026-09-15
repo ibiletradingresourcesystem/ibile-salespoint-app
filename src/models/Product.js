@@ -113,4 +113,7 @@ const ProductSchema = new Schema(
   { timestamps: true }
 );
 
+// Cursor for desktop installations pulling product changes (src/lib/sync/cloudPull.js)
+ProductSchema.index({ updatedAt: 1, _id: 1 });
+
 export default models.Product || model("Product", ProductSchema);

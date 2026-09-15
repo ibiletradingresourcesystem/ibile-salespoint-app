@@ -5,6 +5,8 @@ import Order from '@/src/models/Order';
 import { Transaction } from '@/src/models/Transactions';
 import { sanitizeBody } from '@/src/lib/apiValidation';
 import { sendOrderDeliveredEmail } from '@/src/lib/orderStatusEmail';
+import { isDesktopServer } from '@/src/lib/runtime';
+import { proxyToCloud } from '@/src/lib/desktop/cloudProxy';
 
 const hydrateOrderCustomer = async (order) => {
   if (!order) return null;
@@ -32,6 +34,8 @@ const hydrateOrderCustomer = async (order) => {
 };
 
 export default async function handler(req, res) {
+  if (isDesktopServer()) return proxyToCloud(req, res);
+
   if (req.method !== 'POST') {
     return res.status(405).json({ success: false, error: 'Method not allowed' });
   }

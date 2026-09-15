@@ -1,10 +1,11 @@
 import { mongooseConnect } from "@/src/lib/mongoose";
 import { Staff } from "@/src/models/Staff";
 import Store from "@/src/models/Store";
-import bcrypt from "bcryptjs";
-import { normalizePosPermissions } from "@/src/lib/posPermissions";
 import { setSessionCookie } from "@/src/lib/sessionAuth";
 import { sanitizeString } from "@/src/lib/apiValidation";
+import { verifyPin } from "@/src/lib/staffPin";
+import { isDesktopServer } from "@/src/lib/runtime";
+import { captureCloudSession } from "@/src/lib/desktop/cloudProxy";
 
 const sendError = (res, status, code, message, details = {}) =>
   res.status(status).json({
@@ -27,34 +28,6 @@ const findLocation = (locations = [], requestedLocation) => {
     const codeMatch = String(loc?.code || "").toLowerCase() === requestedLower;
     return idMatch || nameMatch || codeMatch;
   });
-};
-
-const verifyPin = async (staffMember, pin) => {
-  if (!staffMember) return false;
-
-  let isPinCorrect = false;
-
-  if (staffMember.password) {
-    try {
-      isPinCorrect = await bcrypt.compare(pin, staffMember.password);
-    } catch (err) {
-      // Legacy/plain values can throw in compare. Ignore and fallback.
-    }
-  }
-
-  if (!isPinCorrect && staffMember.pin) {
-    try {
-      isPinCorrect = await bcrypt.compare(pin, staffMember.pin);
-    } catch (err) {
-      // Legacy/plain values can throw in compare. Ignore and fallback.
-    }
-  }
-
-  if (!isPinCorrect) {
-    isPinCorrect = pin === staffMember.pin || pin === staffMember.password;
-  }
-
-  return isPinCorrect;
 };
 
 export default async function handler(req, res) {
@@ -164,6 +137,12 @@ export default async function handler(req, res) {
 
     // Set session cookie for API auth
     setSessionCookie(res, String(staffMember._id));
+
+    // Desktop: also sign this staff member in to the cloud (in the background) so cloud-only
+    // features such as online orders and petty cash work while the internet is available.
+    if (isDesktopServer()) {
+      captureCloudSession({ staffId: String(staffMember._id), pin, location: requestedLocation }).catch(() => {});
+    }
 
     return res.status(200).json({
       success: true,

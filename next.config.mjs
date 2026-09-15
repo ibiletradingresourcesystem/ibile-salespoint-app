@@ -1,6 +1,9 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  // Desktop builds (scripts/desktop/build-server.js) produce a self-contained server for Electron.
+  // Vercel builds are unaffected.
+  ...(process.env.BUILD_TARGET === 'desktop' ? { output: 'standalone' } : {}),
   images: {
     formats: ['image/avif', 'image/webp'],
     minimumCacheTTL: 86400,

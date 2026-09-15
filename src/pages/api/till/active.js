@@ -9,6 +9,7 @@
 import { mongooseConnect } from "@/src/lib/mongoose";
 import Till from "@/src/models/Till";
 import Store from "@/src/models/Store";
+import { webTillScope } from "@/src/lib/runtime";
 
 export default async function handler(req, res) {
   if (req.method !== "GET") {
@@ -21,7 +22,7 @@ export default async function handler(req, res) {
     console.log("📋 Fetching all active open tills...");
 
     // Find all tills with OPEN status
-    const activeTills = await Till.find({ status: "OPEN" })
+    const activeTills = await Till.find({ status: "OPEN", ...webTillScope() })
       .sort({ openedAt: -1 }) // Most recent first
       .lean()
       .exec();

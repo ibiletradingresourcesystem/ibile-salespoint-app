@@ -7,7 +7,6 @@
 
 import { mongooseConnect } from '@/src/lib/mongoose';
 import { Transaction } from '@/src/models/Transactions';
-import Customer from '@/src/models/Customer';
 import Till from '@/src/models/Till';
 import mongoose from 'mongoose';
 import { updateInventoryForSale, reverseInventoryForRefund } from '@/src/lib/syncPackQty';
@@ -15,6 +14,7 @@ import crypto from 'crypto';
 import { sanitizeBody } from '@/src/lib/apiValidation';
 import { ROOM_STATUSES } from '@/src/lib/roomReservations';
 import { markRoomsFromTransaction, releaseRoomsFromTransaction } from '@/src/lib/roomAvailability';
+import { recalculateCustomerCreditBalance } from '@/src/lib/creditBalance';
 
 const normalizeLocationName = (location) => {
   if (typeof location === 'string' && location.trim()) return location.trim();
@@ -57,37 +57,6 @@ const applyTenderEntries = (till, entries = [], sign = 1) => {
     till.tenderBreakdown.set(key, next);
   });
   till.markModified('tenderBreakdown');
-};
-
-const getCreditPaidTotal = (transaction = {}) => {
-  const payments = Array.isArray(transaction.creditPayments) ? transaction.creditPayments : [];
-  if (payments.length > 0) {
-    return payments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
-  }
-  return Number(transaction.creditPaidAmount || 0);
-};
-
-const getCreditBalance = (transaction = {}) => {
-  const total = Number(transaction.creditOriginalTotal || transaction.total || 0);
-  return Math.max(0, total - getCreditPaidTotal(transaction));
-};
-
-const recalculateCustomerCreditBalance = async (customerId) => {
-  if (!customerId || !mongoose.Types.ObjectId.isValid(String(customerId))) return;
-
-  const openCredits = await Transaction.find({
-    status: 'credit',
-    creditCustomerId: new mongoose.Types.ObjectId(String(customerId)),
-    creditStatus: { $nin: ['paid', 'written_off'] },
-  }).select('creditBalance total creditOriginalTotal creditPaidAmount creditPayments');
-
-  const creditBalance = openCredits.reduce((sum, transaction) => sum + getCreditBalance(transaction), 0);
-  await Customer.findByIdAndUpdate(customerId, {
-    type: 'CREDIT',
-    isCreditCustomer: true,
-    creditBalance,
-    updatedAt: new Date(),
-  });
 };
 
 export default async function handler(req, res) {

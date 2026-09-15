@@ -8,6 +8,8 @@
 import { mongooseConnect } from "@/src/lib/mongoose";
 import mongoose from "mongoose";
 import Product from "@/src/models/Product";
+import { isDesktopServer } from "@/src/lib/runtime";
+import { proxyToCloud } from "@/src/lib/desktop/cloudProxy";
 
 const PettyCashTransactionSchema = new mongoose.Schema({}, { strict: false, collection: "pettycashtransactions" });
 const PettyCashTransaction = mongoose.models.PettyCashTransaction || mongoose.model("PettyCashTransaction", PettyCashTransactionSchema);
@@ -16,6 +18,8 @@ const ExpenseSchema = new mongoose.Schema({}, { strict: false, collection: "expe
 const Expense = mongoose.models.Expense || mongoose.model("Expense", ExpenseSchema);
 
 export default async function handler(req, res) {
+  if (isDesktopServer()) return proxyToCloud(req, res);
+
   if (req.method !== "PUT") {
     return res.status(405).json({ error: "Method not allowed" });
   }

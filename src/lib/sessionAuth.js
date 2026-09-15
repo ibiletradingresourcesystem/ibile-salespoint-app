@@ -69,7 +69,8 @@ export function verifySessionToken(token) {
  */
 export function setSessionCookie(res, staffId) {
   const token = createSessionToken(staffId);
-  const isProduction = process.env.NODE_ENV === 'production';
+  // The desktop app serves the POS over http://127.0.0.1, where a Secure cookie may be dropped
+  const isProduction = process.env.NODE_ENV === 'production' && process.env.POS_RUNTIME !== 'desktop';
 
   res.setHeader('Set-Cookie',
     `${SESSION_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${SESSION_MAX_AGE_SECONDS}${isProduction ? '; Secure' : ''}`
