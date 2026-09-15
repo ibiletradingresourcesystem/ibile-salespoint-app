@@ -2,14 +2,19 @@
 'use strict';
 
 /**
- * Downloads the MongoDB Community Server for Windows x64 and keeps only what the desktop app runs:
- *   build/desktop/mongodb/bin/mongod.exe (+ any DLLs beside it) and the licence files.
+ * Downloads what the desktop app needs to run its local database on Windows x64:
  *
- * The release and its SHA-256 come from MongoDB's official release list; the download is verified
- * before use.
+ * 1. MongoDB Community Server, keeping build/desktop/mongodb/bin/mongod.exe (+ any DLLs beside it)
+ *    and the licence files. The release and its SHA-256 come from MongoDB's official release list;
+ *    the download is verified before use.
+ * 2. The Microsoft Visual C++ Redistributable (x64) installer, build/desktop/redist/vc_redist.x64.exe.
+ *    mongod.exe needs this runtime and the MongoDB zip does not include it; the Ibile POS installer
+ *    installs it where it is missing. The file must carry a valid Microsoft Authenticode signature.
+ *
  *   MONGODB_SERIES=8.0 (default)   newest production release in that series
  *   MONGODB_VERSION=8.0.x          an exact version
  *   --dry-run                      only show which release would be used
+ *   --refresh-vc-redist            download the Visual C++ Redistributable again (newest version)
  */
 
 const fs = require('fs');
@@ -23,6 +28,8 @@ const { spawnSync } = require('child_process');
 const root = path.resolve(__dirname, '..', '..');
 const target = path.join(root, 'build', 'desktop', 'mongodb');
 const RELEASES_URL = 'https://downloads.mongodb.org/full.json';
+const VC_REDIST_URL = 'https://aka.ms/vs/17/release/vc_redist.x64.exe';
+const vcRedistFile = path.join(root, 'build', 'desktop', 'redist', 'vc_redist.x64.exe');
 
 const compareVersions = (left, right) => {
   const a = left.split('.').map(Number);
@@ -68,11 +75,63 @@ function findFile(dir, name) {
   return null;
 }
 
+/** Returns { status, subject, version } for a signed Windows executable. */
+function readSignature(file) {
+  const script =
+    '$s = Get-AuthenticodeSignature -LiteralPath $env:IBILE_SIGNED_FILE; ' +
+    '[pscustomobject]@{ status = [string]$s.Status; subject = [string]$s.SignerCertificate.Subject; ' +
+    'version = [string](Get-Item -LiteralPath $env:IBILE_SIGNED_FILE).VersionInfo.FileVersion } | ConvertTo-Json -Compress';
+  const result = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], {
+    encoding: 'utf8',
+    env: { ...process.env, IBILE_SIGNED_FILE: file },
+  });
+  if (result.status !== 0) throw new Error(`Could not check the signature of ${file}: ${result.stderr || result.stdout}`);
+  return JSON.parse(result.stdout.trim());
+}
+
+function assertMicrosoftSigned(file) {
+  const signature = readSignature(file);
+  if (signature.status !== 'Valid' || !/\bO=Microsoft Corporation\b/.test(signature.subject)) {
+    throw new Error(`${path.basename(file)} is not validly signed by Microsoft (${signature.status}, ${signature.subject || 'no signer'})`);
+  }
+  return signature;
+}
+
+async function fetchVisualCppRedistributable() {
+  if (process.platform !== 'win32') {
+    throw new Error('Run this on Windows: the Visual C++ Redistributable download is checked with Windows code signing.');
+  }
+  if (fs.existsSync(vcRedistFile) && !process.argv.includes('--refresh-vc-redist')) {
+    const signature = assertMicrosoftSigned(vcRedistFile);
+    console.log(`Visual C++ Redistributable ${signature.version} already downloaded.`);
+    return;
+  }
+
+  console.log(`Downloading the Microsoft Visual C++ Redistributable (x64)\n  ${VC_REDIST_URL}`);
+  fs.mkdirSync(path.dirname(vcRedistFile), { recursive: true });
+  const partial = `${vcRedistFile}.download`;
+  try {
+    const response = await fetch(VC_REDIST_URL);
+    if (!response.ok) throw new Error(`Download failed (${response.status})`);
+    await pipeline(Readable.fromWeb(response.body), fs.createWriteStream(partial));
+    const signature = assertMicrosoftSigned(partial);
+    fs.renameSync(partial, vcRedistFile);
+    console.log(`Visual C++ Redistributable ${signature.version} ready (signed by Microsoft Corporation).`);
+  } finally {
+    fs.rmSync(partial, { force: true });
+  }
+}
+
 async function main() {
   const release = await resolveRelease();
   console.log(`MongoDB ${release.version}\n  ${release.url}\n  sha256 ${release.sha256}`);
   if (process.argv.includes('--dry-run')) return;
 
+  await fetchMongoDB(release);
+  await fetchVisualCppRedistributable();
+}
+
+async function fetchMongoDB(release) {
   const versionFile = path.join(target, 'VERSION');
   if (fs.existsSync(versionFile) && fs.readFileSync(versionFile, 'utf8').trim() === release.version && fs.existsSync(path.join(target, 'bin', 'mongod.exe'))) {
     console.log('Already downloaded.');

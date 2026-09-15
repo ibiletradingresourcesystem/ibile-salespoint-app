@@ -31,6 +31,7 @@ exports.default = async function afterPack(context) {
     'app-server/.next/static',
     'app-server/public',
     `mongodb/bin/${mongod}`,
+    ...(context.electronPlatformName === 'win32' ? ['redist/vc_redist.x64.exe'] : []),
   ];
   const missing = required.filter((relative) => !fs.existsSync(path.join(resources, relative)));
   if (missing.length > 0) {

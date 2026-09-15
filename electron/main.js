@@ -14,8 +14,10 @@
  * (DPAPI-encrypted on disk) and the local POS server; it is never given to the page.
  */
 
+const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { spawn } = require('child_process');
 const { app, BrowserWindow, Menu, dialog, ipcMain, net, powerMonitor, safeStorage, shell } = require('electron');
 
 const { getPaths } = require('./lib/paths');
@@ -35,6 +37,7 @@ if (process.env.POS_USER_DATA_DIR) {
 }
 
 const SPLASH = path.join(__dirname, 'splash.html');
+const VC_REDIST_URL = 'https://aka.ms/vs/17/release/vc_redist.x64.exe';
 const AUTO_BACKUP_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const internalToken = crypto.randomBytes(32).toString('hex');
 
@@ -301,9 +304,76 @@ async function recoverFromCrash(component) {
   busy = false;
 }
 
+function runInstaller(file, args) {
+  return new Promise((resolve) => {
+    const child = spawn(file, args, { stdio: 'ignore' });
+    child.once('error', (error) => {
+      log?.error('Could not run the installer', error);
+      resolve(null);
+    });
+    child.once('exit', (code) => resolve(code));
+  });
+}
+
+/**
+ * mongod.exe needs the Microsoft Visual C++ runtime. The installer adds it; this covers computers where
+ * it is still missing (installer run without it, or the runtime removed later).
+ */
+async function repairVisualCppRuntime(error) {
+  const installer = paths && !paths.isDev ? path.join(process.resourcesPath, 'redist', 'vc_redist.x64.exe') : null;
+  const bundled = Boolean(installer && fs.existsSync(installer));
+
+  const { response } = await dialog.showMessageBox({
+    type: 'error',
+    title: 'Ibile POS',
+    message: 'Ibile POS needs a Microsoft component that is missing on this computer.',
+    detail:
+      `${error.message}\n\n` +
+      (bundled
+        ? 'Choose "Install and Restart". Windows will ask for permission; it takes about a minute.'
+        : `Download and install it from Microsoft (${VC_REDIST_URL}), then open Ibile POS again.`) +
+      '\n\nSales already saved on this computer are safe.',
+    buttons: [bundled ? 'Install and Restart' : 'Download from Microsoft', 'Open Logs Folder', 'Quit'],
+    defaultId: 0,
+    cancelId: 2,
+  });
+
+  if (response === 1) await shell.openPath(paths.logsDir);
+  if (response === 0 && !bundled) await shell.openExternal(VC_REDIST_URL);
+  if (response === 0 && bundled) {
+    sendSplash('Installing the Microsoft Visual C++ Runtime…');
+    const code = await runInstaller(installer, ['/install', '/passive', '/norestart']);
+    log?.info(`Visual C++ Runtime installer finished (exit code ${code})`);
+    // 0 installed, 3010 installed (restart pending), 1638 a newer version is already installed
+    if ([0, 3010, 1638].includes(code)) {
+      app.relaunch();
+    } else if (code === null) {
+      // Could not start it from here: let Windows open it, then the POS is opened again by hand
+      await shell.openPath(installer);
+      await dialog.showMessageBox({
+        type: 'info',
+        title: 'Ibile POS',
+        message: 'Finish installing the Microsoft Visual C++ Runtime, then open Ibile POS again.',
+        buttons: ['OK'],
+      });
+    } else {
+      await dialog.showMessageBox({
+        type: 'error',
+        title: 'Ibile POS',
+        message: 'The Microsoft Visual C++ Runtime was not installed.',
+        detail: `The installer stopped with code ${code}${code === 1602 ? ' (cancelled)' : ''}. ` +
+          `You can also install it from ${VC_REDIST_URL}, then open Ibile POS again.`,
+        buttons: ['OK'],
+      });
+    }
+  }
+  await shutdown();
+}
+
 async function fatal(error) {
   log?.error('Fatal error', error);
   sendSplash(error?.message || 'Ibile POS could not start', true);
+  if (error?.reason === 'vc_runtime') return repairVisualCppRuntime(error);
   const { response } = await dialog.showMessageBox({
     type: 'error',
     title: 'Ibile POS',

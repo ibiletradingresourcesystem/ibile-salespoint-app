@@ -212,13 +212,23 @@ after stopping the service and backing up. Enabled when built with `IBILE_POS_UP
 ```powershell
 npm install
 npm run desktop:install
-npm run desktop:fetch-mongodb    # MongoDB 8.0 Community, SHA-256 verified (~800 MB, cached)
+npm run desktop:fetch-mongodb    # MongoDB 8.0 Community (SHA-256 verified, cached) + Microsoft VC++ Redistributable
 $env:IBILE_POS_UPDATE_URL = "https://updates.example.com/ibile-pos"   # optional
 npm run desktop:dist             # dist-desktop\Ibile POS Setup <version>.exe
 ```
 
+**Microsoft Visual C++ runtime.** `mongod.exe` needs the Visual C++ 2015–2022 Redistributable (x64)
+(`MSVCP140.dll`, `MSVCP140_1.dll`, `VCRUNTIME140.dll`, `VCRUNTIME140_1.dll`); the MongoDB zip does not
+include it and many Windows installations do not have it. `desktop:fetch-mongodb` downloads
+`vc_redist.x64.exe` from Microsoft into `build/desktop/redist` and refuses it unless it carries a valid
+Microsoft Authenticode signature (`--refresh-vc-redist` fetches the newest again). The package build fails
+without it. The installer (`electron/installer.nsh`) runs it silently when the runtime is missing or older
+than the bundled one; Windows asks for permission. If the database still cannot load the runtime
+(Windows exit code 3221225781 / 3221225785), the app offers **Install and Restart**.
+
 Icon: `electron/assets/icon.ico` (from `public/images/logo.png`). Sign installers with a code-signing
-certificate (`CSC_LINK`, `CSC_KEY_PASSWORD`). Development: `npm run desktop:dev`; `POS_USER_DATA_DIR`
+certificate (`CSC_LINK`, `CSC_KEY_PASSWORD`); `mongod.exe` and `vc_redist.x64.exe` keep their vendors'
+signatures (`signExts`). Development: `npm run desktop:dev`; `POS_USER_DATA_DIR`
 selects a separate data folder, `POS_MONGOD_PATH` another `mongod.exe`.
 
 | Situation | Action |
@@ -227,6 +237,8 @@ selects a separate data folder, `POS_MONGOD_PATH` another `mongod.exe`.
 | SYNC ERROR "credentials" / "disconnected" | SYSTEM → Set up this POS again… (manager passcode), then setup with a current connection string and manager passcode. Data is kept. |
 | SYNC ERROR with items listed | Check the reason in the management app, then *Retry these*. |
 | Setup: "Could not reach the database" | Internet connection and Atlas Network Access for the shop's address. |
+| "Microsoft Visual C++ Redistributable … not installed" (exit code 3221225781) | Choose *Install and Restart*, or install `https://aka.ms/vs/17/release/vc_redist.x64.exe` and open Ibile POS again. Installers built from now on do this automatically. |
+| "processor cannot run the local database" (exit code 3221225501) | The CPU lacks AVX, which MongoDB 8.0 requires. Use a newer computer for this till. |
 | Local database credentials lost | Close the app; remove `secrets.mongoPassword` from `config.json`; start `mongod.exe --dbpath "%APPDATA%\Ibile POS\data\mongodb" --port 27517 --bind_ip 127.0.0.1` without `--auth`; drop user `ibilepos` in `admin`; stop it; start the app. |
 | New computer | Old PC: SYSTEM → Back up now. New PC: install, set up, SYSTEM → Restore from backup…, set up again if asked. |
 | Logs | SYSTEM → Open logs folder (`%APPDATA%\Ibile POS\logs`). Developer tools: F12 in development builds only. |
@@ -251,6 +263,12 @@ selects a separate data folder, `POS_MONGOD_PATH` another `mongod.exe`.
 - Direct end-to-end test (local MongoDB + replica-set "customer cloud", desktop server and a web server): **56/56** — first sync, staff data minimisation, local login, automatic push without Sync, parent/child stock, duplicate-safe re-send, stale revision, refund, pull of price/tender changes, online orders (list/process/complete) and petty cash directly on the cloud database, POS working with the cloud database down, OFFLINE → SYNCED after reconnect, credit balance, clock records, management-app conflict, web login/till/orders/petty cash unchanged, Close Till sync, disconnected installation, no credentials in status.
 - Packaged `Ibile POS.exe` setup test: **25/25** — port 5150, frameless window, Ibile logo with SYSTEM/HELP/EXIT on the setup and login screens, draggable header, SYSTEM menu items, database discovery, wrong passcode, installation registered in the cloud, DPAPI-encrypted connection string, first download, page and logs never contain the connection string, local MongoDB auth, manager passcode required for restore and set up again, EXIT button closes cleanly.
 - Backup/restore: 11/11.
+- Visual C++ runtime: installer check compiled with the bundled NSIS and run against bundled-newer,
+  same-version, older-version and missing-file cases; a `mongod.exe` that cannot load its runtime
+  (exit code 3221225781) shows the runtime message and *Install and Restart / Open Logs Folder / Quit*.
+  A tampered `vc_redist.x64.exe` fails the signature check.
 
-Not yet run: full NSIS installer, signed build, updates from a real server, the downloaded MongoDB 8.0
-binary (tests used MongoDB 8.2), and a real Atlas cluster over the internet.
+The packaged test also passes with the downloaded MongoDB 8.0.32 binary.
+
+Not yet run: installing on a computer without the Visual C++ runtime, signed build, updates from a real
+server, and a real Atlas cluster over the internet.

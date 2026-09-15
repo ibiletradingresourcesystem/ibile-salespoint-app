@@ -21,6 +21,8 @@ module.exports = {
   extraResources: [
     { from: '../build/desktop/app-server', to: 'app-server', filter: ['**/*'] },
     { from: '../build/desktop/mongodb', to: 'mongodb', filter: ['**/*'] },
+    // Microsoft Visual C++ Redistributable (x64), needed by mongod.exe; installed by installer.nsh
+    { from: '../build/desktop/redist', to: 'redist', filter: ['vc_redist.x64.exe'] },
   ],
   afterPack: './scripts/after-pack.js',
   asar: true,
@@ -28,6 +30,8 @@ module.exports = {
     // Ibile logo (from public/images/logo.png): app executable, taskbar and desktop shortcut
     icon: 'assets/icon.ico',
     target: [{ target: 'nsis', arch: ['x64'] }],
+    // Keep the vendors' own signatures: re-signing Microsoft's installer can break it
+    signExts: ['!vc_redist.x64.exe', '!mongod.exe'],
   },
   nsis: {
     installerIcon: 'assets/icon.ico',
@@ -39,6 +43,7 @@ module.exports = {
     createDesktopShortcut: true,
     createStartMenuShortcut: true,
     shortcutName: 'Ibile POS',
+    include: 'installer.nsh',
   },
   publish: updateUrl ? [{ provider: 'generic', url: updateUrl }] : null,
 };

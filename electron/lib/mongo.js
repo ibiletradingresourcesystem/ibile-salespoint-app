@@ -21,6 +21,34 @@ const DATABASE_NAME = 'ibile_pos';
 const isAuthError = (error) =>
   error?.code === 18 || error?.code === 13 || /Authentication failed|requires authentication/i.test(error?.message || '');
 
+// Windows exit codes meaning mongod.exe could not run on this computer at all (nothing reaches mongod.log)
+const WINDOWS_START_FAILURES = {
+  // 0xC0000135 STATUS_DLL_NOT_FOUND: MSVCP140*.dll / VCRUNTIME140*.dll missing
+  3221225781: {
+    reason: 'vc_runtime',
+    message: 'The Microsoft Visual C++ Redistributable (x64), which the local database needs, is not installed on this computer.',
+  },
+  // 0xC0000139 STATUS_ENTRYPOINT_NOT_FOUND: an older Visual C++ runtime is installed
+  3221225785: {
+    reason: 'vc_runtime',
+    message: 'The Microsoft Visual C++ Redistributable (x64) on this computer is too old for the local database.',
+  },
+  // 0xC000001D STATUS_ILLEGAL_INSTRUCTION: MongoDB 8.0 needs a processor with AVX
+  3221225501: {
+    reason: 'cpu',
+    message: "This computer's processor cannot run the local database (MongoDB 8.0 needs a processor with AVX support). Use a newer computer for this POS.",
+  },
+};
+
+class LocalDatabaseStartError extends Error {
+  constructor(message, { exitCode = null, reason = 'exit' } = {}) {
+    super(message);
+    this.name = 'LocalDatabaseStartError';
+    this.exitCode = exitCode;
+    this.reason = reason;
+  }
+}
+
 class LocalMongo {
   constructor({ paths, config, log }) {
     this.paths = paths;
@@ -92,7 +120,15 @@ class LocalMongo {
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
       if (this.exitInfo) {
-        throw new Error(`The local database could not start (exit code ${this.exitInfo.code}). Details are in logs\\mongod.log.`);
+        const { code } = this.exitInfo;
+        const known = WINDOWS_START_FAILURES[code];
+        if (known) {
+          throw new LocalDatabaseStartError(`${known.message} (exit code ${code})`, { exitCode: code, reason: known.reason });
+        }
+        throw new LocalDatabaseStartError(
+          `The local database could not start (exit code ${code}). Details are in logs\\mongod.log.`,
+          { exitCode: code }
+        );
       }
       const client = new MongoClient(`mongodb://127.0.0.1:${this.port}/?directConnection=true`, {
         serverSelectionTimeoutMS: 1000,
@@ -167,4 +203,4 @@ class LocalMongo {
   }
 }
 
-module.exports = { LocalMongo, DATABASE_NAME };
+module.exports = { LocalMongo, LocalDatabaseStartError, DATABASE_NAME };
