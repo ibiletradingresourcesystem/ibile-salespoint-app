@@ -41,6 +41,11 @@ exports.default = async function afterPack(context) {
     );
   }
 
+  const provisioning = path.join(resources, 'provisioning', 'cloud.dat');
+  if (fs.existsSync(provisioning) && /mongodb/i.test(fs.readFileSync(provisioning, 'utf8'))) {
+    throw new Error('The pre-filled cloud database file is not encrypted');
+  }
+
   const envFiles = fs.readdirSync(serverResources).filter((name) => name.startsWith('.env'));
   if (envFiles.length > 0) {
     throw new Error(`Environment files must not be packaged: ${envFiles.join(', ')}`);

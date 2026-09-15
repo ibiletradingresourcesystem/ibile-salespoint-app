@@ -494,10 +494,10 @@ export default function Sidebar({ isOpen, onToggle, widthClass = 'w-56', mobileW
                         : printerAvailable === null
                         ? 'Printer status unknown'
                         : printerAvailable
-                        ? 'Thermal Printer Connected — Click to open Printer Settings'
+                        ? 'Receipt printer ready — Click to open Printer Settings'
                         : builtInPrinterAvailable
-                        ? 'System Printer Available (browser print) — Click to open Printer Settings'
-                        : 'Thermal Printer Not Connected — Click to open Printer Settings'
+                        ? 'Printing with the print dialog, or the receipt printer is not ready — Click to open Printer Settings'
+                        : 'Receipt printer not ready — Click to open Printer Settings'
                     }
                     className={`relative px-2.5 py-2.5 sm:px-3 sm:py-3 rounded-lg text-sm sm:text-base font-bold shadow-sm transition-colors ${
                       checkingPrinter

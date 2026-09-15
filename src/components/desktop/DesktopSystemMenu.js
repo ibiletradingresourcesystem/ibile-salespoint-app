@@ -12,16 +12,20 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faCog,
   faDatabase,
+  faEraser,
   faDownload,
   faFileAlt,
   faFolderOpen,
   faInfoCircle,
   faLink,
   faMinus,
+  faPrint,
   faSync,
+  faTimes,
   faUndo,
 } from '@fortawesome/free-solid-svg-icons';
 import { getDesktopBridge } from '../../lib/desktopClient';
+import PrinterSettingsPanel from '../printer/PrinterSettingsPanel';
 import PinPad from './PinPad';
 
 const MANAGER_ROLES = new Set(['admin', 'manager', 'senior staff']);
@@ -37,18 +41,48 @@ const PROTECTED = {
     detail: 'This POS stops syncing until it is connected to the cloud database again. Data on this computer is kept.',
     run: (bridge, manager) => bridge.reenroll(manager),
   },
+  printer: {
+    title: 'Printer settings',
+    detail: 'Choose how this till prints receipts.',
+    run: (bridge, manager) => bridge.confirmManager(manager),
+  },
 };
+
+function PrinterSettingsDialog({ onClose }) {
+  return (
+    <Overlay onClose={onClose}>
+      <div className="w-[min(94vw,860px)] max-h-[92vh] flex flex-col bg-white rounded-2xl shadow-2xl overflow-hidden">
+        <div className="bg-gradient-to-r from-cyan-700 to-cyan-800 text-white px-5 py-4 flex items-center justify-between flex-shrink-0">
+          <div>
+            <h2 className="font-bold text-lg text-white flex items-center gap-2">
+              <FontAwesomeIcon icon={faPrint} className="w-5 h-5" />
+              PRINTER SETTINGS
+            </h2>
+            <p className="text-cyan-100 text-xs">How this till prints receipts. Receipt design is set in the management app.</p>
+          </div>
+          <button type="button" onClick={onClose} aria-label="Close" className="w-9 h-9 rounded-full hover:bg-white/20 flex items-center justify-center">
+            <FontAwesomeIcon icon={faTimes} className="w-4 h-4" />
+          </button>
+        </div>
+        <div className="overflow-y-auto text-gray-800">
+          <PrinterSettingsPanel />
+        </div>
+      </div>
+    </Overlay>
+  );
+}
 
 function Overlay({ children, onClose }) {
   return createPortal(
-    <div className="desktop-no-drag fixed inset-0 z-[100] bg-black/60 flex items-center justify-center p-4" onClick={onClose}>
+    // Below toasts, the receipt preview and confirmations (z-100+), which can open from these dialogs
+    <div className="desktop-no-drag fixed inset-0 z-[95] bg-black/60 flex items-center justify-center p-4" onClick={onClose}>
       <div onClick={(event) => event.stopPropagation()}>{children}</div>
     </div>,
     document.body
   );
 }
 
-function ManagerConfirm({ action, bridge, onClose }) {
+function ManagerConfirm({ action, bridge, onClose, onConfirmed }) {
   const [managers, setManagers] = useState([]);
   const [staffId, setStaffId] = useState('');
   const [pin, setPin] = useState('');
@@ -76,7 +110,8 @@ function ManagerConfirm({ action, bridge, onClose }) {
         setPin('');
         return;
       }
-      onClose();
+      if (onConfirmed) onConfirmed(result);
+      else onClose();
     } catch (err) {
       setError(err.message);
     } finally {
@@ -193,7 +228,7 @@ export default function DesktopSystemMenu({ variant = 'login', className = '' })
   const [bridge, setBridge] = useState(null);
   const [open, setOpen] = useState(false);
   const [dialog, setDialog] = useState(null); // 'restore' | 'reenroll' | 'about'
-  const [notice, setNotice] = useState('');
+  const [notice, setNotice] = useState(null); // { text, tone: 'ok' | 'error' }
   const menuRef = useRef(null);
 
   useEffect(() => {
@@ -211,7 +246,7 @@ export default function DesktopSystemMenu({ variant = 'login', className = '' })
 
   useEffect(() => {
     if (!notice) return undefined;
-    const timer = setTimeout(() => setNotice(''), 4000);
+    const timer = setTimeout(() => setNotice(null), notice.tone === 'error' ? 8000 : 4000);
     return () => clearTimeout(timer);
   }, [notice]);
 
@@ -225,14 +260,24 @@ export default function DesktopSystemMenu({ variant = 'login', className = '' })
   const items = [
     ...(variant === 'login'
       ? [
-          { label: 'Sync now', icon: faSync, action: async () => { await bridge.syncNow(); setNotice('Sync started'); } },
+          { label: 'Sync now', icon: faSync, action: async () => { await bridge.syncNow(); setNotice({ text: 'Sync started', tone: 'ok' }); } },
           { label: 'Back up now', icon: faDatabase, action: () => bridge.backupNow() },
           { label: 'Open backups folder', icon: faFolderOpen, action: () => bridge.openBackupsFolder() },
           { label: 'Restore from backup…', icon: faUndo, action: () => setDialog('restore') },
+          { label: 'Printer settings…', icon: faPrint, action: () => setDialog('printer') },
           { label: 'Check for updates', icon: faDownload, action: () => bridge.checkForUpdates() },
           { label: 'Set up this POS again…', icon: faLink, action: () => setDialog('reenroll') },
         ]
-      : []),
+      : [
+          {
+            label: 'Clear setup and start again…',
+            icon: faEraser,
+            action: async () => {
+              const result = await bridge.resetSetup();
+              if (result?.ok === false && !result.canceled) setNotice({ text: result.error, tone: 'error' });
+            },
+          },
+        ]),
     { label: 'Open logs folder', icon: faFileAlt, action: () => bridge.openLogsFolder() },
     { label: 'About Ibile POS', icon: faInfoCircle, action: () => setDialog('about') },
     { label: 'Minimize', icon: faMinus, action: () => bridge.minimize() },
@@ -267,14 +312,22 @@ export default function DesktopSystemMenu({ variant = 'login', className = '' })
       )}
 
       {notice && (
-        <div className="desktop-no-drag absolute right-0 top-full mt-2 whitespace-nowrap z-50 bg-green-600 text-white text-xs font-semibold px-3 py-2 rounded-lg shadow-lg">
-          {notice}
+        <div
+          className={`desktop-no-drag absolute right-0 top-full mt-2 w-72 z-50 text-white text-xs font-semibold px-3 py-2 rounded-lg shadow-lg ${
+            notice.tone === 'error' ? 'bg-red-600' : 'bg-green-600'
+          }`}
+        >
+          {notice.text}
         </div>
       )}
 
       {(dialog === 'restore' || dialog === 'reenroll') && (
         <ManagerConfirm action={dialog} bridge={bridge} onClose={() => setDialog(null)} />
       )}
+      {dialog === 'printer' && (
+        <ManagerConfirm action="printer" bridge={bridge} onClose={() => setDialog(null)} onConfirmed={() => setDialog('printer-settings')} />
+      )}
+      {dialog === 'printer-settings' && <PrinterSettingsDialog onClose={() => setDialog(null)} />}
       {dialog === 'about' && <About bridge={bridge} onClose={() => setDialog(null)} />}
     </div>
   );

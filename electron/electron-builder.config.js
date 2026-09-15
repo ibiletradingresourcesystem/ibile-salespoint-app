@@ -8,10 +8,15 @@
  * and runs, with updates turned off.
  */
 
+const { prepareProvisioning } = require('./scripts/provisioning');
+
 const updateUrl = process.env.IBILE_POS_UPDATE_URL;
+// Customer's cloud database pre-filled for setup, encrypted (see scripts/provisioning.js)
+const provisioningKey = prepareProvisioning();
 
 module.exports = {
   appId: 'com.ibilemart.pos',
+  extraMetadata: provisioningKey ? { ibilePos: { provisioningKey } } : {},
   productName: 'Ibile POS',
   copyright: 'Ibile Mart Systems',
   directories: {
@@ -23,6 +28,7 @@ module.exports = {
     { from: '../build/desktop/mongodb', to: 'mongodb', filter: ['**/*'] },
     // Microsoft Visual C++ Redistributable (x64), needed by mongod.exe; installed by installer.nsh
     { from: '../build/desktop/redist', to: 'redist', filter: ['vc_redist.x64.exe'] },
+    { from: '../build/desktop/provisioning', to: 'provisioning', filter: ['cloud.dat'] },
   ],
   afterPack: './scripts/after-pack.js',
   asar: true,

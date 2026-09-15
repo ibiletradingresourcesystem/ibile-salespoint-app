@@ -36,13 +36,29 @@ contextBridge.exposeInMainWorld('posDesktop', {
   // { staffId, pin } of a manager or admin, checked by the app before anything happens
   restoreBackup: (manager) => ipcRenderer.invoke('desktop:restore-backup', manager),
   reenroll: (manager) => ipcRenderer.invoke('desktop:reenroll', manager),
+  // Clears an unfinished setup and restarts the app at the first setup step
+  resetSetup: () => ipcRenderer.invoke('desktop:reset-setup'),
   openBackupsFolder: () => ipcRenderer.invoke('desktop:open-backups-folder'),
   openLogsFolder: () => ipcRenderer.invoke('desktop:open-logs-folder'),
   checkForUpdates: () => ipcRenderer.invoke('desktop:check-for-updates'),
   installUpdate: () => ipcRenderer.invoke('desktop:install-update'),
+  // Printing through Windows printers: listPrinters() -> [{ name, displayName, isDefault }];
+  // printHtml({ html, deviceName, silent, paperWidth, fitToContent }) -> { ok, error? }
+  listPrinters: () => ipcRenderer.invoke('desktop:list-printers'),
+  printHtml: (job) => ipcRenderer.invoke('desktop:print-html', job),
+  printerRequest: (action, body) => ipcRenderer.invoke('desktop:printer-request', { action, body }),
+  confirmManager: (manager) => ipcRenderer.invoke('desktop:confirm-manager', manager),
+  getPrinterSettings: () => ipcRenderer.invoke('desktop:get-printer-settings'),
+  setPrinterSettings: (settings) => ipcRenderer.invoke('desktop:set-printer-settings', settings),
   minimize: () => ipcRenderer.invoke('desktop:window-minimize'),
   toggleMaximize: () => ipcRenderer.invoke('desktop:window-toggle-maximize'),
   quit: () => ipcRenderer.invoke('desktop:quit'),
+  // { message, at } while setup connects to the cloud database and authorises this POS
+  onSetupStep: (callback) => {
+    const listener = (_event, step) => callback(step);
+    ipcRenderer.on('desktop:setup-step', listener);
+    return () => ipcRenderer.removeListener('desktop:setup-step', listener);
+  },
   onUpdateStatus: (callback) => {
     const listener = (_event, status) => callback(status);
     ipcRenderer.on('desktop:update-status', listener);

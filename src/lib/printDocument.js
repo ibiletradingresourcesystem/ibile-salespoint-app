@@ -2,6 +2,9 @@
  * Browser printing helpers shared by receipts and the end-of-day report.
  */
 
+import { getDesktopBridge } from './desktopClient';
+import { getDesktopPrintTarget } from './printerConfig';
+
 /**
  * Page CSS for thermal rolls. The printout fills the width the printer driver gives the browser,
  * keeping `marginLeft` / `marginRight` mm clear so nothing is cut off at either edge. On screen
@@ -31,9 +34,28 @@ export function buildPrintPageCss({ paperWidth, marginLeft, marginRight }) {
   `;
 }
 
-/** Print a complete HTML document through a hidden iframe (shows the OS print dialog). */
-export function printHtmlDocument(html) {
-  if (typeof document === 'undefined') return;
+/**
+ * Print a complete HTML document.
+ * Browser: through a hidden iframe (shows the browser print dialog); resolves { ok: true } at once.
+ * Desktop app: to this till's Windows printer without a dialog, or with the Windows print dialog,
+ * following Printer Settings (getDesktopPrintTarget); resolves { ok, error? } when Windows has it.
+ * @param {string} html
+ * @param {Object} [options] { printerSettings, dialog: true to always show the Windows print dialog }
+ */
+export async function printHtmlDocument(html, options = {}) {
+  if (typeof document === 'undefined') return { ok: false, error: 'Nothing to print on the server' };
+
+  const bridge = getDesktopBridge();
+  if (bridge?.printHtml) {
+    const target = getDesktopPrintTarget(options.printerSettings);
+    return bridge.printHtml({ html, ...target, ...(options.dialog ? { silent: false } : {}) });
+  }
+
+  printInIframe(html);
+  return { ok: true };
+}
+
+function printInIframe(html) {
 
   const iframe = document.createElement('iframe');
   iframe.setAttribute('aria-hidden', 'true');

@@ -9,19 +9,29 @@
  * it, keeps it encrypted, and never gives it back to this page. The page clears it straight away.
  */
 
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
   faArrowLeft,
+  faCheck,
   faCheckCircle,
+  faChevronDown,
+  faChevronUp,
+  faCircleNotch,
   faCloud,
   faDatabase,
+  faEraser,
+  faEye,
+  faEyeSlash,
+  faFileAlt,
   faLocationDot,
   faPowerOff,
   faQuestionCircle,
+  faRotateRight,
   faTriangleExclamation,
   faUserShield,
+  faXmark,
 } from "@fortawesome/free-solid-svg-icons";
 import { getDesktopBridge } from "@/src/lib/desktopClient";
 import DesktopSystemMenu from "@/src/components/desktop/DesktopSystemMenu";
@@ -38,11 +48,79 @@ const DATA_LABELS = {
   products: "Products and prices",
 };
 
+// Share of the download progress bar (connecting and checking the registration take the other 10)
+const DATA_WEIGHTS = {
+  store: 6,
+  systemthemes: 3,
+  tenders: 4,
+  categories: 5,
+  promotions: 4,
+  staff: 6,
+  customers: 8,
+  products: 54,
+};
+
 const STEPS = [
   { key: "connect", label: "CONNECT" },
   { key: "authorise", label: "AUTHORISE" },
   { key: "sync", label: "DOWNLOAD" },
 ];
+
+const secondaryButton =
+  "px-3 py-2 rounded-lg border border-cyan-400/70 text-white text-xs font-bold hover:bg-cyan-700 transition flex items-center justify-center gap-2 disabled:opacity-50";
+
+const formatNumber = (value) => (typeof value === "number" ? value.toLocaleString("en-NG") : "");
+const formatTime = (value) => (value ? new Date(value).toLocaleTimeString("en-NG", { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "");
+
+function downloadPercent(status) {
+  const details = status?.pullDetails || {};
+  const progress = status?.progress;
+  const anyDone = Object.values(details).some((entry) => entry?.lastPulledAt);
+  const connected = anyDone || ["check", "push", "pull"].includes(progress?.step);
+  const checked = anyDone || ["push", "pull"].includes(progress?.step);
+  let value = (connected ? 5 : 0) + (checked ? 5 : 0);
+  for (const [entity, weight] of Object.entries(DATA_WEIGHTS)) {
+    if (details[entity]?.lastPulledAt) value += weight;
+    else if (progress?.entity === entity && progress.total) value += weight * Math.min(1, (progress.done || 0) / progress.total);
+  }
+  return Math.min(100, Math.round(value));
+}
+
+function currentActivity(status) {
+  const progress = status?.progress;
+  if (!status?.running || !progress) return null;
+  if (progress.step === "connect") return "Connecting to the cloud database";
+  if (progress.step === "check") return "Checking this POS's registration";
+  if (progress.step === "push") return "Sending changes made on this computer";
+  const label = DATA_LABELS[progress.entity] || "store data";
+  if (progress.detail) return `${label}: ${progress.detail}`;
+  if (progress.total) return `Downloading ${label.toLowerCase()} — ${formatNumber(progress.done || 0)} of ${formatNumber(progress.total)}`;
+  return `Downloading ${label.toLowerCase()}`;
+}
+
+/** Live steps while connecting or authorising (sent by the app, no credentials). */
+function StepList({ steps, busy, failed }) {
+  if (steps.length === 0) return null;
+  return (
+    <ol className="mt-4 space-y-1.5 rounded-lg bg-cyan-900/50 border border-cyan-700 p-3 text-xs">
+      {steps.map((step, index) => {
+        const last = index === steps.length - 1;
+        const state = last && busy ? "active" : last && failed ? "failed" : "done";
+        return (
+          <li key={`${step.at}-${index}`} className="flex items-start gap-2">
+            <span className="mt-0.5 w-3.5 flex-shrink-0 text-center">
+              {state === "active" && <FontAwesomeIcon icon={faCircleNotch} spin className="w-3.5 h-3.5 text-yellow-300" />}
+              {state === "done" && <FontAwesomeIcon icon={faCheck} className="w-3.5 h-3.5 text-green-300" />}
+              {state === "failed" && <FontAwesomeIcon icon={faXmark} className="w-3.5 h-3.5 text-red-300" />}
+            </span>
+            <span className={state === "active" ? "text-white font-semibold" : state === "failed" ? "text-red-200" : "text-cyan-100"}>{step.message}</span>
+            <span className="ml-auto text-cyan-300 tabular-nums">{formatTime(step.at)}</span>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
 
 const headerButton =
   "px-4 py-1.5 border-2 border-white text-white rounded-full font-semibold text-sm hover:bg-cyan-600 transition flex items-center gap-2";
@@ -111,23 +189,45 @@ export default function DesktopSetup() {
 
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [showConnectionString, setShowConnectionString] = useState(false);
+  const [setupSteps, setSetupSteps] = useState([]);
+  const [online, setOnline] = useState(null);
+  const [showDetails, setShowDetails] = useState(false);
+  const [showActivity, setShowActivity] = useState(true);
+  const [resetMessage, setResetMessage] = useState("");
+  const [now, setNow] = useState(Date.now());
+  const [manualEntry, setManualEntry] = useState(false);
+  const autoConnectTried = useRef(false);
 
   useEffect(() => {
     const desktop = getDesktopBridge();
     setBridge(desktop);
-    if (!desktop) return;
+    if (!desktop) return undefined;
     desktop.getInfo().then((details) => {
       setInfo(details);
       setInstallationName(details.installationName || "");
     });
+    return desktop.onSetupStep?.((step) => setSetupSteps((steps) => [...steps, step].slice(-12)));
   }, []);
 
   useEffect(() => {
-    const tick = () => setClock(new Date().toLocaleTimeString("en-NG", { hour: "2-digit", minute: "2-digit" }));
+    const tick = () => {
+      setClock(new Date().toLocaleTimeString("en-NG", { hour: "2-digit", minute: "2-digit" }));
+      setNow(Date.now());
+    };
     tick();
     const timer = setInterval(tick, 1000);
     return () => clearInterval(timer);
   }, []);
+
+  // This computer's own internet connection, to tell "no internet" apart from "cloud database not answering"
+  useEffect(() => {
+    if (!bridge || step !== "sync") return undefined;
+    const check = () => bridge.getNetworkStatus?.().then((result) => setOnline(Boolean(result?.online))).catch(() => {});
+    check();
+    const timer = setInterval(check, 5000);
+    return () => clearInterval(timer);
+  }, [bridge, step]);
 
   useEffect(() => {
     if (!bridge) return undefined;
@@ -168,15 +268,22 @@ export default function DesktopSetup() {
     return () => clearInterval(interval);
   }, [step, startSync]);
 
+  // Installers built for the customer carry their cloud database (encrypted); only the host is known here
+  const preconfiguredHost = info?.preconfiguredCloudHost || "";
+  const usePreconfigured = Boolean(preconfiguredHost) && !manualEntry;
+
   const connect = async (event) => {
-    event.preventDefault();
+    event?.preventDefault();
     setError("");
+    setSetupSteps([]);
     setBusy(true);
     try {
-      const result = await bridge.cloudLookup({ connectionString });
+      const result = await bridge.cloudLookup(usePreconfigured ? { preconfigured: true } : { connectionString });
       if (!result?.ok) throw new Error(result?.error || "Could not reach the cloud database");
       // The app keeps the connection string now; do not hold it in the page any longer
       setConnectionString("");
+      setShowConnectionString(false);
+      setSetupSteps([]);
       setLookup(result);
       setLocationId(result.locations[0]?._id || "");
       setStaffId("");
@@ -189,8 +296,17 @@ export default function DesktopSetup() {
     }
   };
 
+  // Pre-filled database: connect as soon as the first step opens
+  useEffect(() => {
+    if (step !== "connect" || !usePreconfigured || autoConnectTried.current || !bridge) return;
+    autoConnectTried.current = true;
+    connect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, usePreconfigured, bridge]);
+
   const enroll = async () => {
     setError("");
+    setSetupSteps([]);
     setBusy(true);
     try {
       const result = await bridge.enroll({ installationName, locationId, staffId, pin });
@@ -207,6 +323,12 @@ export default function DesktopSetup() {
 
   const exitApp = () => bridge?.quit();
 
+  const resetSetup = async () => {
+    setResetMessage("");
+    const result = await bridge.resetSetup?.();
+    if (result?.ok === false && !result.canceled) setResetMessage(result.error);
+  };
+
   if (bridge === null) {
     return (
       <div className="h-screen bg-gradient-to-b from-cyan-600 to-cyan-700 flex items-center justify-center p-4">
@@ -218,10 +340,13 @@ export default function DesktopSetup() {
     );
   }
 
-  const pulled = status?.pull || {};
-  const pulledCount = Object.keys(DATA_LABELS).filter((entity) => pulled[entity]).length;
-  const offline = status?.cloudReachable === false;
   const stepIndex = STEPS.findIndex((item) => item.key === step);
+  const percent = downloadPercent(status);
+  const activity = currentActivity(status);
+  const problem = Boolean(status?.lastError) && !status?.initialSyncComplete;
+  const elapsed = status?.running && status?.cycleStartedAt
+    ? Math.max(0, Math.round((now - new Date(status.cycleStartedAt).getTime()) / 1000))
+    : null;
 
   return (
     <div className="h-screen bg-gradient-to-b from-cyan-600 to-cyan-700 flex flex-col overflow-hidden pos-mobile-scale">
@@ -305,43 +430,66 @@ export default function DesktopSetup() {
                 </div>
               </div>
 
+              {usePreconfigured ? (
+                <div className="mb-5 rounded-lg bg-cyan-900/50 border border-cyan-600 p-3">
+                  <p className="text-white font-semibold text-xs flex items-center gap-2">
+                    <FontAwesomeIcon icon={faCloud} className="w-3.5 h-3.5" />
+                    CLOUD DATABASE
+                  </p>
+                  <p className="text-white font-mono text-sm mt-1 break-all">{preconfiguredHost}</p>
+                  <p className="text-xs text-cyan-200 mt-1">Set up for this store in the installer; stored encrypted on this computer.</p>
+                </div>
+              ) : (
               <label className="block mb-4">
                 <span className="text-white font-semibold text-xs flex items-center gap-2 mb-2">
                   <FontAwesomeIcon icon={faCloud} className="w-3.5 h-3.5" />
                   CLOUD DATABASE CONNECTION STRING
                 </span>
-                <input
-                  className="w-full text-gray-900 placeholder-gray-400"
-                  type="password"
-                  required
-                  autoComplete="off"
-                  spellCheck={false}
-                  placeholder="mongodb+srv://user:password@cluster.mongodb.net/"
-                  value={connectionString}
-                  onChange={(event) => setConnectionString(event.target.value.trim())}
-                />
-                <span className="mt-1.5 block text-xs text-cyan-200">Stored encrypted on this computer only.</span>
+                <div className="relative">
+                  <input
+                    className="w-full text-gray-900 placeholder-gray-400 !pr-12 font-mono text-sm"
+                    type={showConnectionString ? "text" : "password"}
+                    required
+                    autoComplete="off"
+                    spellCheck={false}
+                    placeholder="mongodb+srv://user:password@cluster.mongodb.net/"
+                    value={connectionString}
+                    onChange={(event) => setConnectionString(event.target.value.trim())}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowConnectionString((value) => !value)}
+                    title={showConnectionString ? "Hide connection string" : "Show connection string"}
+                    aria-label={showConnectionString ? "Hide connection string" : "Show connection string"}
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2 w-9 h-9 rounded-md text-gray-500 hover:text-cyan-800 hover:bg-gray-100 flex items-center justify-center"
+                  >
+                    <FontAwesomeIcon icon={showConnectionString ? faEyeSlash : faEye} className="w-4 h-4" />
+                  </button>
+                </div>
+                <span className="mt-1.5 block text-xs text-cyan-200">
+                  Stored encrypted on this computer only. Once saved it is never shown again.
+                </span>
               </label>
-
-              <label className="block mb-5">
-                <span className="text-white font-semibold text-xs mb-2 block">NAME FOR THIS COMPUTER</span>
-                <input
-                  className="w-full text-gray-900"
-                  required
-                  maxLength={80}
-                  value={installationName}
-                  onChange={(event) => setInstallationName(event.target.value)}
-                />
-              </label>
+              )}
 
               <ErrorBox message={error} />
               <button
                 type="submit"
-                disabled={busy || !connectionString || !installationName.trim()}
+                disabled={busy || (!usePreconfigured && !connectionString)}
                 className={primaryButton}
               >
-                {busy ? "CONNECTING…" : "CONTINUE"}
+                {busy ? "CONNECTING…" : usePreconfigured && error ? "TRY AGAIN" : "CONTINUE"}
               </button>
+              <StepList steps={setupSteps} busy={busy} failed={Boolean(error)} />
+              {preconfiguredHost && !busy && (
+                <button
+                  type="button"
+                  onClick={() => { setManualEntry((value) => !value); setError(""); setSetupSteps([]); }}
+                  className="w-full mt-3 text-xs text-white/70 hover:text-white underline"
+                >
+                  {manualEntry ? `Use the store's cloud database (${preconfiguredHost})` : "Use a different connection string"}
+                </button>
+              )}
               <p className="mt-4 text-[11px] text-cyan-300 text-center">Installation ID: {info?.installationId}</p>
             </form>
           </div>
@@ -350,9 +498,20 @@ export default function DesktopSetup() {
         {step === "authorise" && (
           <>
             <div className="flex-1 overflow-y-auto p-4">
-              <div className="mb-4 p-3 bg-cyan-800 rounded-lg border-2 border-cyan-600 text-white">
-                <p className="font-bold text-sm text-white">{lookup?.storeName || "Your store"}</p>
-                <p className="text-xs text-cyan-200">Connected to {lookup?.host}</p>
+              <div className="mb-4 p-3 bg-cyan-800 rounded-lg border-2 border-cyan-600 text-white flex flex-wrap items-end justify-between gap-3">
+                <div>
+                  <p className="font-bold text-sm text-white">{lookup?.storeName || "Your store"}</p>
+                  <p className="text-xs text-cyan-200">Connected to {lookup?.host}</p>
+                </div>
+                <label className="block w-full sm:w-72">
+                  <span className="text-white font-semibold text-[11px] mb-1 block">NAME FOR THIS COMPUTER</span>
+                  <input
+                    className="w-full text-gray-900 !py-2 text-sm"
+                    maxLength={80}
+                    value={installationName}
+                    onChange={(event) => setInstallationName(event.target.value)}
+                  />
+                </label>
               </div>
 
               <div className="mb-4 bg-cyan-800/80 rounded-xl p-3 border border-cyan-600 shadow-lg">
@@ -422,6 +581,7 @@ export default function DesktopSetup() {
                   >
                     {busy ? "SETTING UP…" : "SET UP THIS POS"}
                   </button>
+                  <StepList steps={setupSteps} busy={busy} failed={Boolean(error)} />
                   <button
                     type="button"
                     onClick={() => { setError(""); setPin(""); setStep("connect"); }}
@@ -438,42 +598,156 @@ export default function DesktopSetup() {
         )}
 
         {step === "sync" && (
-          <div className="flex-1 flex items-center justify-center p-4 overflow-y-auto">
-            <div className={panel}>
-              <h1 className="text-white font-bold text-lg tracking-wide">DOWNLOADING STORE DATA</h1>
-              <p className="text-cyan-100 text-sm mb-4">What the till needs to work without internet. Keep the app open.</p>
-
-              {offline && (
-                <div className="mb-3 p-2.5 bg-yellow-500 text-cyan-900 rounded-lg text-xs font-bold flex items-center gap-2">
-                  <FontAwesomeIcon icon={faTriangleExclamation} className="w-3.5 h-3.5" />
-                  Waiting for an internet connection…
+          <div className="flex-1 overflow-y-auto p-4">
+            <div className="w-full max-w-4xl mx-auto grid gap-4 lg:grid-cols-5">
+              {/* Progress */}
+              <div className="lg:col-span-3 bg-cyan-800/80 rounded-xl p-5 border border-cyan-600 shadow-2xl">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h1 className="text-white font-bold text-lg tracking-wide">DOWNLOADING STORE DATA</h1>
+                    <p className="text-cyan-100 text-sm">What the till needs to work without internet. Keep the app open.</p>
+                  </div>
+                  <span className="text-3xl font-bold text-white tabular-nums">{percent}%</span>
                 </div>
-              )}
-              {status?.lastError && !offline && <ErrorBox message={`${status.lastError} Retrying automatically.`} />}
 
-              <div className="w-full h-2 bg-cyan-900 rounded-full overflow-hidden mb-4">
-                <div
-                  className="h-full bg-gradient-to-r from-cyan-300 to-green-300 rounded-full transition-all duration-300"
-                  style={{ width: `${Math.round((pulledCount / Object.keys(DATA_LABELS).length) * 100)}%` }}
-                />
+                <div className="mt-4 w-full h-3 bg-cyan-900 rounded-full overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all duration-500 ${
+                      problem ? "bg-gradient-to-r from-yellow-400 to-orange-400" : "bg-gradient-to-r from-cyan-300 to-green-300"
+                    }`}
+                    style={{ width: `${Math.max(percent, 2)}%` }}
+                  />
+                </div>
+
+                <div className="mt-3 min-h-[2.5rem] flex items-center gap-2 text-sm">
+                  {activity ? (
+                    <>
+                      <FontAwesomeIcon icon={faCircleNotch} spin className="w-4 h-4 text-yellow-300 flex-shrink-0" />
+                      <span className="text-white font-semibold">{activity}…</span>
+                      {elapsed !== null && <span className="ml-auto text-cyan-200 tabular-nums">{elapsed} s</span>}
+                    </>
+                  ) : problem ? (
+                    <span className="text-yellow-200 font-semibold">Paused: retrying automatically every 15 seconds</span>
+                  ) : (
+                    <span className="text-cyan-200">Waiting to continue…</span>
+                  )}
+                </div>
+
+                {problem && (
+                  <div className="mt-2 rounded-lg bg-red-600/90 border border-red-400 p-3 text-white">
+                    <p className="text-sm font-bold flex items-start gap-2">
+                      <FontAwesomeIcon icon={faTriangleExclamation} className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                      <span>
+                        {online === false ? "This computer is not connected to the internet." : status.lastError}
+                      </span>
+                    </p>
+                    <p className="mt-1 text-xs text-red-100">
+                      {online === false
+                        ? "Connect to the internet; the download continues by itself."
+                        : `This computer's internet connection is working; the cloud database is not answering.${status.lastErrorAt ? ` Last attempt ${formatTime(status.lastErrorAt)}.` : ""}`}
+                    </p>
+                    {status.lastErrorDetail && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => setShowDetails((value) => !value)}
+                          className="mt-2 text-xs font-semibold underline flex items-center gap-1"
+                        >
+                          <FontAwesomeIcon icon={showDetails ? faChevronUp : faChevronDown} className="w-3 h-3" />
+                          {showDetails ? "Hide technical details" : "Show technical details"}
+                        </button>
+                        {showDetails && (
+                          <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-all rounded bg-black/30 p-2 text-[11px] font-mono text-red-50">
+                            {status.lastErrorStep ? `Step: ${status.lastErrorStep}\n` : ""}
+                            {status.lastErrorDetail}
+                          </pre>
+                        )}
+                      </>
+                    )}
+                  </div>
+                )}
+
+                <ul className="mt-4 space-y-2">
+                  {Object.entries(DATA_LABELS).map(([entity, label]) => {
+                    const detail = status?.pullDetails?.[entity] || {};
+                    const done = Boolean(detail.lastPulledAt);
+                    const active = status?.running && status?.progress?.entity === entity;
+                    const { done: count = 0, total } = active ? status.progress : {};
+                    return (
+                      <li key={entity} className="text-sm bg-cyan-900/40 rounded-lg px-3 py-2">
+                        <div className="flex items-center justify-between gap-3">
+                          <span className={done || active ? "text-white font-semibold" : "text-cyan-200"}>{label}</span>
+                          <span className="flex items-center gap-2">
+                            <span className="text-xs text-cyan-100 tabular-nums">
+                              {done && typeof detail.count === "number" ? formatNumber(detail.count) : ""}
+                              {active && total ? `${formatNumber(count)} / ${formatNumber(total)}` : ""}
+                            </span>
+                            <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
+                              done ? "bg-green-500 text-white" : active ? "bg-yellow-400 text-cyan-900" : "bg-cyan-700 text-cyan-200"
+                            }`}>
+                              {done ? "READY" : active ? "DOWNLOADING" : "WAITING"}
+                            </span>
+                          </span>
+                        </div>
+                        {active && total > 0 && (
+                          <div className="mt-1.5 h-1.5 bg-cyan-950/60 rounded-full overflow-hidden">
+                            <div className="h-full bg-yellow-300 rounded-full transition-all duration-500" style={{ width: `${Math.min(100, (count / total) * 100)}%` }} />
+                          </div>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
               </div>
 
-              <ul className="space-y-2">
-                {Object.entries(DATA_LABELS).map(([entity, label]) => {
-                  const done = Boolean(pulled[entity]);
-                  const active = status?.progress?.entity === entity;
-                  return (
-                    <li key={entity} className="flex items-center justify-between text-sm bg-cyan-900/40 rounded-lg px-3 py-2">
-                      <span className={done ? "text-white font-semibold" : "text-cyan-200"}>{label}</span>
-                      <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
-                        done ? "bg-green-500 text-white" : active ? "bg-yellow-400 text-cyan-900" : "bg-cyan-700 text-cyan-200"
-                      }`}>
-                        {done ? "READY" : active ? "DOWNLOADING" : "WAITING"}
-                      </span>
-                    </li>
-                  );
-                })}
-              </ul>
+              {/* Activity and actions */}
+              <div className="lg:col-span-2 flex flex-col gap-4">
+                <div className="bg-cyan-800/80 rounded-xl p-4 border border-cyan-600 shadow-2xl">
+                  <button
+                    type="button"
+                    onClick={() => setShowActivity((value) => !value)}
+                    className="w-full flex items-center justify-between text-white font-bold text-xs tracking-wide"
+                  >
+                    ACTIVITY
+                    <FontAwesomeIcon icon={showActivity ? faChevronUp : faChevronDown} className="w-3 h-3" />
+                  </button>
+                  {showActivity && (
+                    <ol className="mt-3 space-y-1.5 max-h-80 overflow-y-auto text-xs">
+                      {(status?.activity || []).length === 0 && <li className="text-cyan-200">Nothing yet.</li>}
+                      {[...(status?.activity || [])].reverse().map((entry, index) => (
+                        <li key={`${entry.at}-${index}`} className="flex gap-2">
+                          <span className="text-cyan-300 tabular-nums flex-shrink-0">{formatTime(entry.at)}</span>
+                          <span className={entry.level === "error" ? "text-red-200" : entry.level === "warn" ? "text-yellow-200" : "text-cyan-50"}>
+                            {entry.message}
+                            {entry.repeat > 1 && <span className="text-cyan-300"> ×{entry.repeat}</span>}
+                          </span>
+                        </li>
+                      ))}
+                    </ol>
+                  )}
+                </div>
+
+                <div className="bg-cyan-800/80 rounded-xl p-4 border border-cyan-600 shadow-2xl space-y-2">
+                  <p className="text-white font-bold text-xs tracking-wide">IF SETUP IS STUCK</p>
+                  <button type="button" onClick={startSync} disabled={status?.running} className={`w-full ${secondaryButton}`}>
+                    <FontAwesomeIcon icon={faRotateRight} className="w-3.5 h-3.5" />
+                    {status?.running ? "WORKING…" : "RETRY NOW"}
+                  </button>
+                  <button type="button" onClick={() => bridge.openLogsFolder()} className={`w-full ${secondaryButton}`}>
+                    <FontAwesomeIcon icon={faFileAlt} className="w-3.5 h-3.5" />
+                    OPEN LOGS FOLDER
+                  </button>
+                  <button type="button" onClick={resetSetup} className={`w-full ${secondaryButton} !border-red-300 hover:!bg-red-700`}>
+                    <FontAwesomeIcon icon={faEraser} className="w-3.5 h-3.5" />
+                    CLEAR SETUP AND START AGAIN
+                  </button>
+                  <p className="text-[11px] text-cyan-200">
+                    Clearing removes the cloud connection and the data downloaded so far from this computer, then restarts at the first
+                    step. Nothing in the cloud database changes.
+                  </p>
+                  <ErrorBox message={resetMessage} />
+                </div>
+              </div>
             </div>
           </div>
         )}

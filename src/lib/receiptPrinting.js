@@ -4,12 +4,14 @@
  * Content and styling come from the management app's Receipt Settings (/api/receipt-settings);
  * this till's printer settings decide how it prints (see printerConfig.js):
  *   - browser: branded preview (or straight to the OS print dialog) laid out at the printable width
+ *   - windows: desktop app, the same printout to a Windows printer without a dialog
  *   - direct:  ESC/POS straight to the thermal printer via the POS server (POS running on the till PC)
- *   - both:    direct first, browser printing if that fails
+ *   - both:    direct first, browser printing if that fails (desktop app: the Windows printer)
  */
 
-import { getPrinterSettings, getPrintLayout, normalizePrinterSettings, sendDirectPrint } from './printerConfig';
+import { getDesktopPrintTarget, getPrinterSettings, getPrintLayout, normalizePrinterSettings, sendDirectPrint } from './printerConfig';
 import { buildPrintPageCss, printHtmlDocument } from './printDocument';
+import { isDesktopApp } from './desktopClient';
 import { getStoreLogo, setStoreLogo } from './logoCache';
 import { getUiSettings } from './uiSettings';
 import { showToast } from '../components/common/Toast';
@@ -275,7 +277,7 @@ export async function printTransactionReceipt(transaction, receiptSettings = nul
     const printer = normalizePrinterSettings(options.printerSettings || getPrinterSettings());
     const settings = await getReceiptSettings(receiptSettings);
 
-    if (printer.printMethod !== 'browser') {
+    if (printer.printMethod === 'direct' || printer.printMethod === 'both') {
       const result = await sendDirectPrint(transaction, settings, printer);
       if (result.success) return { success: true, method: 'direct' };
 
@@ -283,20 +285,27 @@ export async function printTransactionReceipt(transaction, receiptSettings = nul
         showToast(`Receipt not printed: ${result.message}`, 'error', 6000);
         return { success: false, method: 'direct', message: result.message };
       }
-      console.warn('Direct print failed, using browser printing:', result.message);
+      console.warn('Direct print failed, using the fallback printing:', result.message);
     }
 
+    // Browser: print dialog. Desktop app: the Windows printer (no dialog) or the Windows print dialog
+    const method = isDesktopApp() && getDesktopPrintTarget(printer).silent ? 'windows' : 'browser';
     const receiptHTML = buildReceiptHtml(transaction, settings, printer);
     const showPreview = options.showPreview ?? getUiSettings().system?.showPrintPreview !== false;
 
     if (showPreview) {
       window.dispatchEvent(new CustomEvent('printPreview:show', {
-        detail: { receiptHTML, companyName: settings.companyDisplayName || '', transaction },
+        detail: { receiptHTML, companyName: settings.companyDisplayName || '', transaction, printerSettings: printer },
       }));
-    } else {
-      printHtmlDocument(receiptHTML);
+      return { success: true, method };
     }
-    return { success: true, method: 'browser' };
+
+    const result = await printHtmlDocument(receiptHTML, { printerSettings: printer });
+    if (!result.ok && !result.canceled) {
+      showToast(`Receipt not printed: ${result.error}`, 'error', 6000);
+      return { success: false, method, message: result.error };
+    }
+    return { success: result.ok, method };
   } catch (error) {
     console.error('Error printing receipt:', error);
     return { success: false, method: 'none', message: error.message };

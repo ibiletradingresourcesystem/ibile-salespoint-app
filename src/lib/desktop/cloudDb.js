@@ -36,7 +36,7 @@ export function classifyCloudError(error) {
   if (error instanceof CloudDatabaseError) return error.kind;
   const text = `${error?.name || ''} ${error?.code || ''} ${error?.codeName || ''} ${error?.message || ''}`;
   if (error?.code === 18 || /AuthenticationFailed|bad auth|Authentication failed/i.test(text)) return 'auth';
-  if (NETWORK_NAMES.has(error?.name) || /ENOTFOUND|ECONNREFUSED|ECONNRESET|ETIMEDOUT|EAI_AGAIN|querySrv|getaddrinfo|timed out|connection .* closed/i.test(text)) {
+  if (NETWORK_NAMES.has(error?.name) || /ENOTFOUND|ECONNREFUSED|ECONNRESET|ETIMEDOUT|EAI_AGAIN|EBADRESP|querySrv|getaddrinfo|timed out|connection .* closed/i.test(text)) {
     return 'offline';
   }
   return 'error';
@@ -44,10 +44,47 @@ export function classifyCloudError(error) {
 
 export function describeCloudError(error) {
   const kind = classifyCloudError(error);
-  if (kind === 'offline') return 'Cannot reach the cloud database. Check the internet connection.';
+  const text = `${error?.code || ''} ${error?.message || ''}`;
+  if (kind === 'offline') {
+    if (/querySrv|EBADRESP/i.test(text)) {
+      return 'The cloud database address could not be looked up (DNS). Restart Ibile POS; if it continues, check the network\'s DNS settings.';
+    }
+    if (/ENOTFOUND|EAI_AGAIN|getaddrinfo/i.test(text)) {
+      return 'The cloud database servers could not be found. Check the internet connection.';
+    }
+    if (/Server selection timed out|timed out|ETIMEDOUT/i.test(text)) {
+      return 'The cloud database did not answer in time. Check the internet connection and that MongoDB Atlas Network Access allows this computer\'s internet address.';
+    }
+    return 'Cannot reach the cloud database. Check the internet connection.';
+  }
   if (kind === 'auth') return 'The cloud database refused the saved credentials. Set up this POS again from the app menu.';
   if (kind === 'config') return error.message;
   return 'The cloud database returned an error.';
+}
+
+/**
+ * The driver's own error text for logs and the setup screen's details, with the connection
+ * string, user name and password removed.
+ */
+export function cloudErrorDetail(error) {
+  const cause = error instanceof CloudDatabaseError && error.cause ? error.cause : error;
+  const servers = cause?.reason?.servers instanceof Map
+    ? [...cause.reason.servers.entries()].map(([address, server]) => `${address} ${server.type}${server.error ? ` (${server.error.message})` : ''}`)
+    : [];
+  let text = [`${cause?.name || 'Error'}${cause?.code ? ` ${cause.code}` : ''}: ${cause?.message || cause || ''}`, ...servers].join(' | ');
+
+  const { cloudMongoUri } = getDesktopConfig();
+  const userInfo = /^mongodb(?:\+srv)?:\/\/([^@/]*)@/i.exec(cloudMongoUri || '')?.[1] || '';
+  const secrets = [cloudMongoUri, userInfo, ...userInfo.split(':')].filter((part) => part && part.length >= 3);
+  const decoded = secrets.map((part) => {
+    try {
+      return decodeURIComponent(part);
+    } catch {
+      return part;
+    }
+  });
+  for (const part of new Set([...secrets, ...decoded])) text = text.split(part).join('***');
+  return text.replace(/mongodb(\+srv)?:\/\/[^\s@]*@/gi, 'mongodb$1://***@').slice(0, 1500);
 }
 
 export async function getCloudConnection() {
@@ -71,8 +108,9 @@ export async function getCloudConnection() {
       autoIndex: false,
       autoCreate: false,
       bufferCommands: false,
-      serverSelectionTimeoutMS: 8000,
-      connectTimeoutMS: 8000,
+      // Shop connections to Atlas can be slow (TLS to each replica set member); allow for that
+      serverSelectionTimeoutMS: 30000,
+      connectTimeoutMS: 20000,
       socketTimeoutMS: 60000,
       maxPoolSize: 5,
       minPoolSize: 0,

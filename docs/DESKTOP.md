@@ -80,8 +80,38 @@ MongoDB is the POS database and survives app restarts, Windows restarts and outa
 3. **First download** of store, staff, tenders, categories, promotions, customers and products.
 
 The connection string is stored with Electron `safeStorage` (Windows DPAPI: readable only by that Windows
-user on that computer) and passed to the local POS server process only. It is not written to logs, not in
-the installer, not in Git.
+user on that computer) and passed to the local POS server process only. It is not written to logs and not
+in Git. While typing it, the eye button shows or hides it; once saved it is never shown again.
+
+**Pre-filled database (single-customer installers).** `desktop:dist` builds the customer's connection
+string into the installer (`electron/scripts/provisioning.js`), taken from `IBILE_POS_CLOUD_MONGODB_URI`
+or else `MONGODB_URI` in the POS project's `.env`; the build log prints only the host. It is encrypted
+with AES-256-GCM using a key made for that build: the encrypted file is `resources\provisioning\cloud.dat`,
+the key is inside `app.asar`. Setup then connects by itself and goes straight to location + manager
+passcode ("Use a different connection string" is still offered). The page only receives the host; after
+setup the string is kept with DPAPI as above. Because the key ships with the app, anyone holding the
+installer can recover the string: share the installer only with the customer and use a database user
+limited to the POS database. `IBILE_POS_NO_PREFILL=1` builds an installer that asks for the string.
+
+**Atlas addresses (`mongodb+srv://`).** The driver normally looks up the SRV/TXT records itself with Node's
+DNS client, which some shop routers answer badly (`querySrv EBADRESP`) even when the internet and Windows
+DNS work. `electron/lib/srv.js` looks them up with Node DNS, then Windows DNS, then DNS over HTTPS
+(Cloudflare/Google), checks every host is in the cluster's own domain, and builds a standard
+`mongodb://host1,host2,host3/?replicaSet=…&tls=true` string. That string (encrypted, `cloudConnectUri`) is
+what setup and the POS server connect with. It is refreshed in the background on each start and used from
+the next start; installations set up before this get it on their next start.
+
+**Progress.** While connecting and authorising, the app sends each step to the page (address lookup,
+connect, POS data found, passcode check, registration, restart). The download screen shows an overall
+progress bar, the current step with elapsed time, per-item counts (e.g. products 1,500 / 2,411), an
+activity list, and on failure the message, whether this computer has internet, and *Show technical
+details* (the driver's error with credentials removed; also written to `server.log` as `[sync] …`).
+
+**Clear setup and start again** (download screen, or SYSTEM on the setup screen): for a setup that never
+finished. Makes a safety backup when there is local data, removes the cloud connection and the local
+database, keeps the installation ID, and restarts at the first step. Refused once setup has completed or
+while any change has not reached the cloud; a POS in use has *Set up this POS again* and *Restore from
+backup* instead. Nothing in the cloud database changes.
 
 ### Customer database requirements
 
@@ -175,6 +205,28 @@ Conflicts and rejections stay on the computer and appear as **SYNC ERROR** with 
 - **Email:** the desktop has no mail account. Order-status emails report "skipped"; the support chat opens
   the staff member's email app.
 
+### Printing
+
+Printer settings live in Settings → Printer Settings, and on the login screen under SYSTEM → Printer
+settings… (manager or admin passcode, same lockout as restore). The app keeps them in `config.json`
+(`printerSettings`) as well as the page's local storage, so they survive browser data being cleared.
+
+| Method (desktop) | What happens |
+|---|---|
+| **Windows printer** (default) | The receipt design (logo, fonts, QR) prints through the printer's Windows driver to the chosen printer, or the Windows default, with no dialog. *Receipt roll* makes the page as long as the printout (thermal rolls); turn it off for A4/Letter printers. |
+| **Thermal direct (ESC/POS)** | Unchanged: raw commands to the USB printer's Windows queue or a network printer (IP:9100) from the POS server. |
+| **Thermal direct, Windows printer if it fails** | Direct first; otherwise the Windows printer. |
+| **Print dialog** | The Windows print dialog for every printout. |
+
+Designed printouts (`electron/lib/printing.js`) are loaded in a hidden sandboxed window without the app
+bridge and printed with `webContents.print`, one job at a time; the page waits for the logo/QR images
+(up to 3 s). The Windows default printer is read from `HKCU\Software\Microsoft\Windows NT\CurrentVersion\Windows`
+because Electron no longer reports it. The end-of-day report follows the same settings (thermal USB
+queue, else the chosen Windows printer, else the dialog). The receipt preview shows the target printer,
+prints there, and offers *Choose printer* (Windows dialog). Thermal checks and test prints go through the
+app (`/api/desktop/printer`, internal token), so they also work before anyone has logged in. The web
+version keeps browser printing, direct and both.
+
 ---
 
 ## 6. Security
@@ -229,7 +281,8 @@ than the bundled one; Windows asks for permission. If the database still cannot 
 Icon: `electron/assets/icon.ico` (from `public/images/logo.png`). Sign installers with a code-signing
 certificate (`CSC_LINK`, `CSC_KEY_PASSWORD`); `mongod.exe` and `vc_redist.x64.exe` keep their vendors'
 signatures (`signExts`). Development: `npm run desktop:dev`; `POS_USER_DATA_DIR`
-selects a separate data folder, `POS_MONGOD_PATH` another `mongod.exe`.
+selects a separate data folder, `POS_MONGOD_PATH` another `mongod.exe`, `POS_WINDOW_HIDDEN=1` runs without
+showing the window (automated checks on a till someone is using).
 
 | Situation | Action |
 |---|---|
@@ -237,6 +290,8 @@ selects a separate data folder, `POS_MONGOD_PATH` another `mongod.exe`.
 | SYNC ERROR "credentials" / "disconnected" | SYSTEM → Set up this POS again… (manager passcode), then setup with a current connection string and manager passcode. Data is kept. |
 | SYNC ERROR with items listed | Check the reason in the management app, then *Retry these*. |
 | Setup: "Could not reach the database" | Internet connection and Atlas Network Access for the shop's address. |
+| Download stuck, "cloud database address could not be looked up" | The network's DNS answers badly; the app falls back to Windows DNS and DNS over HTTPS. *Show technical details* names what failed. Allow HTTPS to cloudflare-dns.com / dns.google if Windows DNS also fails. |
+| Download stuck for another reason | *Show technical details* and `server.log` (`[sync]` lines) give the cause. *Retry now*, or *Clear setup and start again*. |
 | "Microsoft Visual C++ Redistributable … not installed" (exit code 3221225781) | Choose *Install and Restart*, or install `https://aka.ms/vs/17/release/vc_redist.x64.exe` and open Ibile POS again. Installers built from now on do this automatically. |
 | "processor cannot run the local database" (exit code 3221225501) | The CPU lacks AVX, which MongoDB 8.0 requires. Use a newer computer for this till. |
 | Local database credentials lost | Close the app; remove `secrets.mongoPassword` from `config.json`; start `mongod.exe --dbpath "%APPDATA%\Ibile POS\data\mongodb" --port 27517 --bind_ip 127.0.0.1` without `--auth`; drop user `ibilepos` in `admin`; stop it; start the app. |
@@ -260,7 +315,14 @@ selects a separate data folder, `POS_MONGOD_PATH` another `mongod.exe`.
 ## 10. Verification
 
 - Web production build and lint pass; the removed `/api/sync/*` endpoints no longer exist on the web.
-- Direct end-to-end test (local MongoDB + replica-set "customer cloud", desktop server and a web server): **56/56** — first sync, staff data minimisation, local login, automatic push without Sync, parent/child stock, duplicate-safe re-send, stale revision, refund, pull of price/tender changes, online orders (list/process/complete) and petty cash directly on the cloud database, POS working with the cloud database down, OFFLINE → SYNCED after reconnect, credit balance, clock records, management-app conflict, web login/till/orders/petty cash unchanged, Close Till sync, disconnected installation, no credentials in status.
+- Atlas address lookup against the real cluster from a network whose DNS returns `EBADRESP` for SRV: Node DNS
+  fails, Windows DNS and DNS over HTTPS each give the same three hosts, the standard string connects
+  (read-only check), and a host outside the cluster's domain is refused. The packaged app then set up,
+  downloaded 2,411 products and synced a sale on that network.
+- Setup screens in the packaged app: show/hide connection string, live connect steps, download failure
+  with technical details, *Clear setup and start again* (safety backup, connection and data removed,
+  installation ID kept, restart at the first step).
+- Direct end-to-end test (local MongoDB + replica-set "customer cloud", desktop server and a web server): **60/60** (adds activity steps, per-item counts, driver error detail in status and server log) — first sync, staff data minimisation, local login, automatic push without Sync, parent/child stock, duplicate-safe re-send, stale revision, refund, pull of price/tender changes, online orders (list/process/complete) and petty cash directly on the cloud database, POS working with the cloud database down, OFFLINE → SYNCED after reconnect, credit balance, clock records, management-app conflict, web login/till/orders/petty cash unchanged, Close Till sync, disconnected installation, no credentials in status.
 - Packaged `Ibile POS.exe` setup test: **25/25** — port 5150, frameless window, Ibile logo with SYSTEM/HELP/EXIT on the setup and login screens, draggable header, SYSTEM menu items, database discovery, wrong passcode, installation registered in the cloud, DPAPI-encrypted connection string, first download, page and logs never contain the connection string, local MongoDB auth, manager passcode required for restore and set up again, EXIT button closes cleanly.
 - Backup/restore: 11/11.
 - Visual C++ runtime: installer check compiled with the bundled NSIS and run against bundled-newer,
@@ -268,7 +330,15 @@ selects a separate data folder, `POS_MONGOD_PATH` another `mongod.exe`.
   (exit code 3221225781) shows the runtime message and *Install and Restart / Open Logs Folder / Quit*.
   A tampered `vc_redist.x64.exe` fails the signature check.
 
-The packaged test also passes with the downloaded MongoDB 8.0.32 binary.
+The packaged test also passes with the downloaded MongoDB 8.0.32 binary (26/26, run with the window hidden).
+
+- Pre-filled database: encryption round trip, tampered file refused, local database refused, no-prefill
+  build (8/8); packaged app with a pre-filled test database connects on its own, the page never holds the
+  string, setup completes (13/13 together with printing below).
+- Printing: printer list with the Windows default, unknown printer refused, silent / dialog options, 80 and
+  58 mm page width, page length following the receipt (checked as PDF), jobs in order, temp files removed
+  (13/13, print call captured, nothing sent to a printer); SYSTEM → Printer settings with manager passcode,
+  settings saved by the app, preview naming the printer.
 
 Not yet run: installing on a computer without the Visual C++ runtime, signed build, updates from a real
-server, and a real Atlas cluster over the internet.
+server, and a printout on paper (Windows printer and thermal direct) from the packaged app.

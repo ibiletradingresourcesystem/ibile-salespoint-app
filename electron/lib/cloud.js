@@ -9,6 +9,7 @@
 
 const { MongoClient } = require('mongodb');
 const bcrypt = require('bcryptjs');
+const { resolveSrvConnectionString } = require('./srv');
 
 const MANAGER_ROLES = new Set(['admin', 'manager', 'senior staff']);
 const SYSTEM_DATABASES = new Set(['admin', 'local', 'config']);
@@ -29,6 +30,9 @@ function hostOf(connectionString) {
 
 function friendlyError(error) {
   const text = `${error?.name || ''} ${error?.code || ''} ${error?.message || ''}`;
+  if (error?.code === 'SRV_LOOKUP_FAILED') {
+    return new Error(`${error.message} Check the connection string and the internet connection.`);
+  }
   if (error?.code === 18 || /bad auth|Authentication failed|AuthenticationFailed/i.test(text)) {
     return new Error('The database username or password is not correct.');
   }
@@ -46,20 +50,35 @@ function friendlyError(error) {
   return new Error('Could not use this database.');
 }
 
-async function withClient(connectionString, work) {
-  const client = new MongoClient(connectionString, {
-    appName: 'IbilePOS-Desktop-Setup',
-    serverSelectionTimeoutMS: 15 * 1000,
-    connectTimeoutMS: 15 * 1000,
-  });
+/**
+ * connectUri: the mongodb:// form with the Atlas hosts already looked up (see srv.js); resolved here
+ * when not given. work(client, connectUri) runs with a connected client.
+ */
+async function withClient(connectionString, work, { connectUri, log, onStep = () => {} } = {}) {
+  let client = null;
   try {
+    let uri = connectUri;
+    if (!uri) {
+      onStep(`Looking up the database address (${hostOf(connectionString)})`);
+      const resolved = await resolveSrvConnectionString(connectionString, { log });
+      uri = resolved.uri;
+      if (resolved.resolver) onStep(`Address found: ${resolved.hosts.length} database servers (${resolved.resolver})`);
+    }
+    onStep('Connecting to the database');
+    const started = Date.now();
+    client = new MongoClient(uri, {
+      appName: 'IbilePOS-Desktop-Setup',
+      serverSelectionTimeoutMS: 30 * 1000,
+      connectTimeoutMS: 20 * 1000,
+    });
     await client.connect();
-    return await work(client);
+    onStep(`Connected (${((Date.now() - started) / 1000).toFixed(1)} s)`);
+    return await work(client, uri);
   } catch (error) {
     if (error?.userFacing) throw error;
     throw friendlyError(error);
   } finally {
-    await client.close().catch(() => {});
+    await client?.close().catch(() => {});
   }
 }
 
@@ -97,10 +116,12 @@ async function findPosDatabase(client) {
   throw userFacing('No System POS data was found in this database. Check that this is the customer\'s POS database.');
 }
 
-async function lookupCloud(connectionString) {
+async function lookupCloud(connectionString, { log, onStep = () => {} } = {}) {
   const uri = validateConnectionString(connectionString);
-  return withClient(uri, async (client) => {
+  return withClient(uri, async (client, connectUri) => {
+    onStep('Finding the POS data');
     const dbName = await findPosDatabase(client);
+    onStep(`POS data found in database "${dbName}"; reading locations and managers`);
     const db = client.db(dbName);
 
     const store = await db.collection('stores').findOne({}, { projection: { storeName: 1, companyName: 1, locations: 1 } });
@@ -123,11 +144,13 @@ async function lookupCloud(connectionString) {
       ok: true,
       dbName,
       host: hostOf(uri),
+      // Holds the credentials: stays in the main process
+      connectUri,
       storeName: store?.storeName || store?.companyName || '',
       locations,
       managers,
     };
-  });
+  }, { log, onStep });
 }
 
 /** Same rules as the POS login (src/lib/staffPin.js), including legacy unhashed passcodes. */
@@ -143,15 +166,16 @@ async function verifyPin(staffMember, pin) {
   return pin === String(staffMember.pin ?? '') || pin === String(staffMember.password ?? '');
 }
 
-async function enrollInstallation({ connectionString, dbName, installationId, installationName, locationId, staffId, pin, appVersion }) {
+async function enrollInstallation({ connectionString, connectUri, dbName, installationId, installationName, locationId, staffId, pin, appVersion, log, onStep = () => {} }) {
   const uri = validateConnectionString(connectionString);
   if (!/^\d{4}$/.test(String(pin || ''))) throw new Error('Enter the manager\'s 4-digit passcode.');
 
-  return withClient(uri, async (client) => {
+  return withClient(uri, async (client, resolvedUri) => {
     const { ObjectId } = require('mongodb');
     const db = client.db(dbName);
     const toId = (value) => (ObjectId.isValid(String(value || '')) ? new ObjectId(String(value)) : null);
 
+    onStep('Checking the manager passcode');
     const staffMember = await db.collection('staffs').findOne({ _id: toId(staffId) });
     if (!staffMember || staffMember.isActive === false || !(await verifyPin(staffMember, String(pin)))) {
       throw userFacing('The manager or passcode is not correct.');
@@ -164,6 +188,7 @@ async function enrollInstallation({ connectionString, dbName, installationId, in
     const location = (store?.locations || []).find((entry) => String(entry._id) === String(locationId));
     if (!location || location.isActive === false) throw userFacing('That location is not available.');
 
+    onStep(`Registering this POS for ${location.name || 'the location'}`);
     const now = new Date();
     await db.collection('syncinstallations').updateOne(
       { installationId },
@@ -191,8 +216,9 @@ async function enrollInstallation({ connectionString, dbName, installationId, in
       store: { name: store?.storeName || store?.companyName || '' },
       dbName,
       host: hostOf(uri),
+      connectUri: resolvedUri,
     };
-  });
+  }, { connectUri, log, onStep });
 }
 
 module.exports = { lookupCloud, enrollInstallation, hostOf };

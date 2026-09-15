@@ -31,6 +31,8 @@ export function isDesktopEnrolled() {
 
 /** Host of the cloud database for display, without credentials. */
 export function cloudDatabaseHost() {
+  // Electron passes the address as entered (the connection string itself may list the resolved hosts)
+  if (process.env.CLOUD_MONGODB_HOST) return process.env.CLOUD_MONGODB_HOST;
   const { cloudMongoUri } = getDesktopConfig();
   const match = /^mongodb(?:\+srv)?:\/\/(?:[^@/]*@)?([^/?]+)/i.exec(cloudMongoUri);
   return match ? match[1] : '';

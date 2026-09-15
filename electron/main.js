@@ -29,6 +29,9 @@ const backups = require('./lib/backup');
 const migrations = require('./lib/migrations');
 const { Updater } = require('./lib/updater');
 const cloud = require('./lib/cloud');
+const { isSrvUri, resolveSrvConnectionString } = require('./lib/srv');
+const { readPreconfiguredCloud } = require('./lib/provisioning');
+const printing = require('./lib/printing');
 const appDefaults = require('./app-config.json');
 
 // Testing and support: run against a separate data folder without touching the real installation
@@ -73,9 +76,34 @@ function serverEnv() {
     SYNC_INSTALLATION_ID: config.get('installationId'),
     SYNC_INSTALLATION_NAME: config.get('installationName'),
     SYNC_LOCATION_ID: config.get('enrollment')?.locationId || '',
-    CLOUD_MONGODB_URI: enrolled ? config.secret('cloudMongoUri') : '',
+    // The Atlas hosts already looked up (lib/srv.js), so the server does not depend on SRV DNS answers
+    CLOUD_MONGODB_URI: enrolled ? config.secret('cloudConnectUri') || config.secret('cloudMongoUri') : '',
     CLOUD_MONGODB_DB: enrolled ? config.get('cloudDbName') : '',
+    CLOUD_MONGODB_HOST: enrolled ? config.get('cloudHost') || '' : '',
   };
+}
+
+/**
+ * Looks up the hosts behind a mongodb+srv:// connection string and keeps the result (encrypted).
+ * Installations set up before this existed get it on their next start.
+ */
+async function refreshCloudConnectUri({ wait = false } = {}) {
+  if (!config.isEnrolled || !isSrvUri(config.secret('cloudMongoUri'))) return false;
+  const run = async () => {
+    try {
+      const { uri, resolver } = await resolveSrvConnectionString(config.secret('cloudMongoUri'), { log });
+      if (uri === config.secret('cloudConnectUri')) return false;
+      config.setSecret('cloudConnectUri', uri);
+      log.info(`Cloud database hosts updated (looked up with ${resolver})`);
+      return true;
+    } catch (error) {
+      log.warn(error.message);
+      return false;
+    }
+  };
+  if (wait) return run();
+  run();
+  return false;
 }
 
 function sendSplash(text, isError = false) {
@@ -167,6 +195,8 @@ function createWindow() {
   });
 
   mainWindow.once('ready-to-show', () => {
+    // Support and automated checks: run without putting a window in front of the till user
+    if (process.env.POS_WINDOW_HIDDEN === '1') return;
     mainWindow.maximize();
     mainWindow.show();
   });
@@ -268,11 +298,18 @@ async function startApp() {
 
   await prepareDatabase();
 
+  if (config.isEnrolled && isSrvUri(config.secret('cloudMongoUri')) && !config.secret('cloudConnectUri')) {
+    sendSplash('Looking up the cloud database…');
+    await refreshCloudConnectUri({ wait: true });
+  }
+
   sendSplash('Starting the POS…');
   await server.start(serverEnv());
   server.onUnexpectedExit = () => recoverFromCrash('server');
 
   await loadPos();
+  // Atlas hosts rarely change; a new list is used from the next start
+  refreshCloudConnectUri();
   watchConnectivity();
   scheduleAutoBackups();
   updater.init();
@@ -421,10 +458,27 @@ async function shutdown({ installUpdate = false } = {}) {
 // Connection string checked by the setup page's first step, held here until the manager authorises
 let pendingCloud = null;
 
-async function lookupCloudDatabase({ connectionString }) {
+/** Live step messages for the setup page while it connects and authorises (no credentials). */
+function sendSetupStep(message) {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  mainWindow.webContents.send('desktop:setup-step', { message, at: new Date().toISOString() });
+}
+
+const preconfiguredCloud = () => readPreconfiguredCloud({ log, isDev: paths.isDev });
+
+async function lookupCloudDatabase({ connectionString, preconfigured = false }) {
   try {
-    const result = await cloud.lookupCloud(connectionString);
-    pendingCloud = { connectionString: String(connectionString).trim(), dbName: result.dbName, host: result.host };
+    if (preconfigured) {
+      connectionString = preconfiguredCloud()?.cloudMongoUri;
+      if (!connectionString) throw new Error('This installer has no cloud database set up. Enter the connection string.');
+    }
+    const result = await cloud.lookupCloud(connectionString, { log, onStep: sendSetupStep });
+    pendingCloud = {
+      connectionString: String(connectionString).trim(),
+      connectUri: result.connectUri,
+      dbName: result.dbName,
+      host: result.host,
+    };
     return { ok: true, host: result.host, storeName: result.storeName, locations: result.locations, managers: result.managers };
   } catch (error) {
     pendingCloud = null;
@@ -444,6 +498,9 @@ async function enrollThisInstallation(payload = {}) {
     const name = String(payload.installationName || '').trim().slice(0, 80) || config.get('installationName');
     const result = await cloud.enrollInstallation({
       connectionString: pendingCloud.connectionString,
+      connectUri: pendingCloud.connectUri,
+      log,
+      onStep: sendSetupStep,
       dbName: pendingCloud.dbName,
       installationId: config.get('installationId'),
       installationName: name,
@@ -453,7 +510,9 @@ async function enrollThisInstallation(payload = {}) {
       appVersion: app.getVersion(),
     });
 
+    sendSetupStep('Saving the connection on this computer (encrypted)');
     config.setSecret('cloudMongoUri', pendingCloud.connectionString);
+    config.setSecret('cloudConnectUri', result.connectUri || '');
     config.set({
       cloudDbName: result.dbName,
       cloudHost: result.host,
@@ -468,6 +527,7 @@ async function enrollThisInstallation(payload = {}) {
     pendingCloud = null;
     log.info(`Connected to cloud database ${result.host}/${result.dbName} for ${result.installation?.locationName}`);
 
+    sendSetupStep('Restarting the POS service with the cloud connection');
     await restartServer();
     setTimeout(() => mainWindow?.loadURL(`${server.origin}/desktop-setup`), 200);
     return { ok: true };
@@ -493,10 +553,79 @@ async function reenroll() {
   });
   if (response !== 0) return;
 
-  config.setSecret('cloudMongoUri', '');
-  config.set({ enrollment: null, cloudDbName: '', cloudHost: '' });
+  clearCloudConnection();
   await restartServer();
   await mainWindow.loadURL(`${server.origin}/desktop-setup`);
+}
+
+function clearCloudConnection() {
+  config.setSecret('cloudMongoUri', '');
+  config.setSecret('cloudConnectUri', '');
+  config.set({ enrollment: null, cloudDbName: '', cloudHost: '' });
+}
+
+/**
+ * Setup stopped half-way (closed, lost connection, wrong store): clears this computer's POS data and
+ * cloud connection, then restarts the app so setup starts from the beginning. Only while setup has
+ * never finished, so no sales can be lost; a POS that was in use has Restore from backup and
+ * Set up this POS again instead. A safety backup is made first whenever there is local data.
+ */
+async function resetUnfinishedSetup() {
+  if (busy) return { ok: false, error: 'Another operation is in progress. Try again shortly.' };
+
+  const status = await fetchStatus();
+  if (!status) return { ok: false, error: 'The POS service is not answering. Close Ibile POS and open it again.' };
+  if (status.initialSyncComplete) {
+    return {
+      ok: false,
+      error: 'This POS has already been used, so its data cannot be cleared here. Use Set up this POS again or Restore from backup.',
+    };
+  }
+  const unsent = (status.pending || 0) + (status.failed || 0) + (status.conflicts || 0);
+  if (unsent > 0) {
+    return { ok: false, error: `${unsent} change(s) on this computer have not reached the cloud yet, so the data cannot be cleared.` };
+  }
+
+  const { response } = await dialog.showMessageBox(mainWindow, {
+    type: 'warning',
+    buttons: ['Clear and Restart', 'Cancel'],
+    defaultId: 1,
+    cancelId: 1,
+    title: 'Start setup again',
+    message: 'Clear the setup and start again?',
+    detail:
+      'The cloud connection and the store data downloaded so far are removed from this computer, and Ibile POS restarts ' +
+      'at the first setup step. Nothing in the cloud database is changed.',
+  });
+  if (response !== 0) return { ok: false, canceled: true };
+
+  busy = true;
+  try {
+    await showSplash('Clearing setup…');
+    await server.stop();
+
+    const { hasData } = await migrations.inspect(mongo.uri());
+    if (hasData) {
+      sendSplash('Saving a safety backup…');
+      await backups.createBackup({ uri: mongo.uri(), backupsDir: paths.backupsDir, reason: 'pre-reset', meta: backupMeta(), log });
+    }
+
+    sendSplash('Removing local data…');
+    await mongo.stop();
+    fs.rmSync(paths.dbPath, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 });
+    clearCloudConnection();
+    config.set({ lastAutoBackupAt: null });
+    log.info('Unfinished setup cleared; restarting');
+
+    app.relaunch();
+  } catch (error) {
+    log.error('Clearing setup failed', error);
+    busy = false;
+    return fatal(new Error(`Could not clear the setup: ${error.message}`));
+  }
+  busy = false;
+  await shutdown();
+  return { ok: true };
 }
 
 async function backupNow() {
@@ -575,13 +704,10 @@ async function restoreFromBackup() {
     await backups.restoreBackup({ uri: mongo.uri(), file, log });
 
     if (fromOtherInstallation) {
-      config.setSecret('cloudMongoUri', '');
+      clearCloudConnection();
       config.set({
-        cloudDbName: '',
-        cloudHost: '',
         installationId: manifest.installationId,
         installationName: manifest.installationName || config.get('installationName'),
-        enrollment: null,
       });
     }
     await prepareDatabase();
@@ -711,6 +837,8 @@ function registerIpc() {
     cloudDbName: config.isEnrolled ? config.get('cloudDbName') : '',
     locationName: config.get('enrollment')?.locationName || '',
     storeName: config.get('enrollment')?.storeName || '',
+    // Host only: set up with the customer's database built into this installer
+    preconfiguredCloudHost: preconfiguredCloud()?.host || '',
     dataFolder: paths.userData,
     update: updater?.state || null,
   }));
@@ -722,12 +850,49 @@ function registerIpc() {
   handle('desktop:backup-now', () => backupNow());
   handle('desktop:restore-backup', (payload) => withManager(payload, function restoreBackup() { return restoreFromBackup(); }));
   handle('desktop:reenroll', (payload) => withManager(payload, async function setUpAgain() { await reenroll(); return { ok: true }; }));
+  // Only for a setup that never finished (checked in the function)
+  handle('desktop:reset-setup', () => resetUnfinishedSetup());
   handle('desktop:open-backups-folder', () => shell.openPath(paths.backupsDir));
   handle('desktop:open-logs-folder', () => shell.openPath(paths.logsDir));
   handle('desktop:check-for-updates', () => checkForUpdates());
   handle('desktop:install-update', () => {
     if (updater.isReady) shutdown({ installUpdate: true });
     return updater.state;
+  });
+  // Printing through Windows printer drivers, and this till's printer settings (kept by the app)
+  handle('desktop:list-printers', () => printing.listPrinters(mainWindow.webContents));
+  handle('desktop:print-html', (payload) => printing.printHtml(payload, { log, webContents: mainWindow.webContents }));
+  // Thermal printer check / ESC/POS print through the POS server, allowed before anyone logs in
+  handle('desktop:printer-request', async ({ action, body } = {}) => {
+    if (!['status', 'print-direct'].includes(action)) throw new Error('Unknown printer action');
+    try {
+      const response = await fetch(`${server.origin}/api/desktop/printer`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-desktop-internal-token': internalToken },
+        body: JSON.stringify({ ...(body || {}), action }),
+        signal: AbortSignal.timeout(45 * 1000),
+      });
+      return await response.json();
+    } catch (error) {
+      return { success: false, available: false, message: `The POS service did not answer: ${error.message}` };
+    }
+  });
+  // Manager or admin passcode for app settings opened from the login screen (same lockout as restore)
+  handle('desktop:confirm-manager', async (payload) => {
+    try {
+      const manager = await verifyManager(payload);
+      log.info(`Printer settings opened by ${manager.name}`);
+      return { ok: true, name: manager.name };
+    } catch (error) {
+      return { ok: false, error: error.message };
+    }
+  });
+  handle('desktop:get-printer-settings', () => config.get('printerSettings') || null);
+  handle('desktop:set-printer-settings', (payload) => {
+    const text = JSON.stringify(payload || {});
+    if (text.length > 10000) throw new Error('Printer settings are too large');
+    config.set({ printerSettings: JSON.parse(text) });
+    return { ok: true };
   });
   // Window controls (the window has no Windows title bar)
   handle('desktop:window-minimize', () => mainWindow?.minimize());

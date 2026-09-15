@@ -143,7 +143,7 @@ const getBotReply = (question) => {
 
   if (q.includes("printer") || q.includes("thermal")) {
     return {
-      text: "Printer setup:\n1. Go to Settings > Open Printer Settings\n2. Choose how receipts print: Browser, Direct, or Direct with browser fallback (direct needs the POS running on the till computer)\n3. Pick the paper roll (80mm or 58mm)\n4. For direct printing: choose the USB printer, or enter the network printer IP and port (default 9100), then click \u2018Check printer\u2019\n5. Click \u2018Print test receipt\u2019. If the right edge is cut off, lower the print area width by 1\u20132mm\n\nThe receipt design itself is set in the management app under Receipt Settings.",
+      text: "Printer setup:\n1. Go to Settings > Open Printer Settings (desktop app: also SYSTEM > Printer settings on the login screen, with a manager passcode)\n2. Choose how receipts print. Desktop app: Windows printer (full receipt design, no dialog), Thermal direct, Thermal with Windows fallback, or Print dialog. Browser: Browser printing, Direct, or Direct with browser fallback (direct needs the POS running on the till computer)\n3. Pick the paper roll (80mm or 58mm)\n4. Windows printer: pick it from the list (or the Windows default). Direct printing: choose the USB printer, or enter the network printer IP and port (default 9100), then click \u2018Check printer\u2019\n5. Click \u2018Print test receipt\u2019. If one edge is cut off, raise that side\u2019s margin by 1\u20132mm\n\nThe receipt design itself is set in the management app under Receipt Settings.",
     };
   }
 

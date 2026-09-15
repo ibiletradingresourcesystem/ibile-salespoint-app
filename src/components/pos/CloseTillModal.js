@@ -153,11 +153,11 @@ const printEndOfDayReport = (tillData, summaryData, tenderCounts, tenders, closi
 </body>
 </html>`;
 
-  try {
-    printHtmlDocument(html);
-  } catch (err) {
-    console.error('Failed to print end-of-day report:', err);
-  }
+  printHtmlDocument(html)
+    .then((result) => {
+      if (!result.ok && !result.canceled) showToast(`End of day report not printed: ${result.error}`, 'error', 6000);
+    })
+    .catch((err) => console.error('Failed to print end-of-day report:', err));
 };
 
 

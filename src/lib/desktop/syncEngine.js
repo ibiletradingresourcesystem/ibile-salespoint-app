@@ -26,7 +26,13 @@ import { toObjectId } from '@/src/lib/sync/ejson';
 import { applyPushOps } from '@/src/lib/sync/cloudApply';
 import { readProductChanges, readProductManifest, readProductsByIds, readSnapshot } from '@/src/lib/sync/cloudPull';
 import { cloudDatabaseHost, getDesktopConfig, isDesktopEnrolled, isDesktopServer } from '@/src/lib/runtime';
-import { CloudDatabaseError, classifyCloudError, describeCloudError, pingCloudDatabase } from '@/src/lib/desktop/cloudDb';
+import {
+  CloudDatabaseError,
+  classifyCloudError,
+  cloudErrorDetail,
+  describeCloudError,
+  pingCloudDatabase,
+} from '@/src/lib/desktop/cloudDb';
 import {
   applyProductPage,
   applySnapshot,
@@ -49,6 +55,20 @@ const PRODUCT_CURSOR_OVERLAP_MS = 2 * 60 * 1000;
 const SWEEP_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const SWEEP_WINDOW_MS = 25 * 24 * 60 * 60 * 1000;
 const INSTALLATIONS = 'syncinstallations';
+const MAX_ACTIVITY = 40;
+const ERROR_LOG_REPEAT_MS = 10 * 60 * 1000;
+
+// For the setup screen's activity list and progress messages
+const ENTITY_LABELS = {
+  store: 'Store and locations',
+  systemthemes: 'Theme',
+  tenders: 'Payment types',
+  categories: 'Categories',
+  promotions: 'Promotions',
+  staff: 'Staff and permissions',
+  customers: 'Customers',
+  products: 'Products and prices',
+};
 
 // Records only ever created on this installation; the sweep re-queues any that were never recorded
 const LOCALLY_AUTHORED = {
@@ -69,10 +89,36 @@ const runtime = () => {
       recoveredClaims: false,
       lastSweepAt: 0,
       loopStarted: false,
+      cycleStartedAt: null,
+      activity: [],
+      lastLoggedError: { text: '', at: 0 },
     };
   }
   return globalThis.__ibilePosSyncEngine;
 };
+
+/** Adds a line to the activity list shown during setup (newest last). */
+function note(message, level = 'info') {
+  const rt = runtime();
+  // Retries repeat the same lines ("Connecting…", the error): keep one of each, moved to the end
+  const recent = rt.activity.slice(-2).findIndex((entry) => entry.message === message);
+  if (recent >= 0) {
+    const [entry] = rt.activity.splice(rt.activity.length - Math.min(2, rt.activity.length) + recent, 1);
+    rt.activity.push({ ...entry, at: new Date().toISOString(), repeat: (entry.repeat || 1) + 1 });
+    return;
+  }
+  rt.activity.push({ at: new Date().toISOString(), message, level });
+  if (rt.activity.length > MAX_ACTIVITY) rt.activity.splice(0, rt.activity.length - MAX_ACTIVITY);
+}
+
+/** Writes the real cause of a failed sync to server.log, without repeating it every retry. */
+function logSyncError(message, detail) {
+  const rt = runtime();
+  const text = `${message} — ${detail}`;
+  if (rt.lastLoggedError.text === text && Date.now() - rt.lastLoggedError.at < ERROR_LOG_REPEAT_MS) return;
+  rt.lastLoggedError = { text, at: Date.now() };
+  console.warn(`[sync] ${text}`);
+}
 
 const stateCollection = () => mongoose.connection.collection('sync_state');
 
@@ -240,18 +286,27 @@ async function pushPending(models, installation, { deadline, force }) {
 const hasUnsentSales = async () =>
   (await SyncOutbox.countDocuments({ entity: 'transactions', status: { $in: OPEN_STATUSES } })) > 0;
 
-async function pullSnapshotEntity(definition, cursor, models) {
+async function pullSnapshotEntity(definition, cursor, models, verbose) {
+  const rt = runtime();
+  const label = ENTITY_LABELS[definition.name] || definition.name;
   const snapshot = await readSnapshot(definition.name, models);
+  const total = snapshot.docs.length;
+  rt.progress = { step: 'pull', entity: definition.name, done: 0, total };
+
   if (cursor.etag && cursor.etag === snapshot.etag) {
     await writeState({ [`pull.${definition.name}.lastPulledAt`]: new Date() });
+    rt.progress = { ...rt.progress, done: total };
+    if (verbose) note(`${label}: up to date (${total})`);
     return { unchanged: true };
   }
 
   const applied = await applySnapshot(definition.name, await snapshot.prepare());
   await writeState({
-    [`pull.${definition.name}`]: { etag: snapshot.etag, lastPulledAt: new Date(), count: snapshot.docs.length },
+    [`pull.${definition.name}`]: { etag: snapshot.etag, lastPulledAt: new Date(), count: total },
   });
-  return { count: snapshot.docs.length, ...applied };
+  rt.progress = { ...rt.progress, done: total };
+  if (verbose) note(`${label}: ${total} downloaded`);
+  return { count: total, ...applied };
 }
 
 async function cloudClock(models) {
@@ -285,23 +340,39 @@ async function reconcileProducts(models) {
   return { removed, refreshed: staleIds.length };
 }
 
-async function pullProducts(definition, cursor, models, deadline) {
+async function pullProducts(definition, cursor, models, deadline, verbose) {
+  const rt = runtime();
   const cursorKey = `pull.${definition.name}`;
   let since = cursor.since ? new Date(cursor.since) : null;
   let afterId = cursor.afterId || null;
   let runStartedAt = cursor.runStartedAt ? new Date(cursor.runStartedAt) : null;
+  // A download stopped part-way (app closed, time budget) continues where it was
+  const alreadyDownloaded = runStartedAt ? Number(cursor.downloaded || 0) : 0;
   let count = 0;
 
   const saveProgress = (extra = {}) =>
     writeState({
-      [cursorKey]: { ...cursor, since, afterId: afterId ? String(afterId) : null, runStartedAt, ...extra },
+      [cursorKey]: {
+        ...cursor,
+        since,
+        afterId: afterId ? String(afterId) : null,
+        runStartedAt,
+        downloaded: runStartedAt ? alreadyDownloaded + count : 0,
+        ...extra,
+      },
     });
 
   if (!runStartedAt) runStartedAt = await cloudClock(models);
 
+  // A full download knows its size up front; later runs only fetch changes
+  const total = since ? null : await models.Product.collection.estimatedDocumentCount().catch(() => null);
+  rt.progress = { step: 'pull', entity: definition.name, done: alreadyDownloaded, total };
+  if (verbose && !since) note(`Products and prices: downloading${total ? ` about ${total}` : ''}${alreadyDownloaded ? ` (continuing from ${alreadyDownloaded})` : ''}…`);
+
   for (;;) {
     if (Date.now() > deadline) {
       await saveProgress();
+      if (verbose) note(`Products and prices: ${alreadyDownloaded + count} so far; continuing shortly`);
       return { count, incomplete: true };
     }
 
@@ -315,6 +386,7 @@ async function pullProducts(definition, cursor, models, deadline) {
 
     await applyProductPage(page.docs);
     count += page.docs.length;
+    rt.progress = { ...rt.progress, done: alreadyDownloaded + count };
 
     if (page.hasMore && page.next) {
       since = page.next.since ? new Date(page.next.since) : since;
@@ -332,11 +404,14 @@ async function pullProducts(definition, cursor, models, deadline) {
     const lastManifestAt = cursor.lastManifestAt ? new Date(cursor.lastManifestAt).getTime() : 0;
     let manifestAt = cursor.lastManifestAt || null;
     if (Date.now() - lastManifestAt >= definition.manifestIntervalMs && !(await hasUnsentSales())) {
+      rt.progress = { ...rt.progress, detail: 'checking for removed products' };
       reconciled = await reconcileProducts(models);
       manifestAt = new Date();
     }
 
-    await saveProgress({ lastPulledAt: new Date(), lastManifestAt: manifestAt });
+    const downloaded = alreadyDownloaded + count;
+    await saveProgress({ lastPulledAt: new Date(), lastManifestAt: manifestAt, count: cursor.since ? cursor.count ?? null : downloaded });
+    if (verbose) note(cursor.since ? `Products and prices: ${downloaded} changed` : `Products and prices: ${downloaded} downloaded`);
     return { count, reconciled };
   }
 }
@@ -346,7 +421,7 @@ const isPullDue = (definition, cursor) => {
   return !lastPulledAt || Date.now() - lastPulledAt >= definition.intervalMs;
 };
 
-async function pullData(state, models, { force, deadline }) {
+async function pullData(state, models, { force, deadline, verbose }) {
   const results = {};
   let completedAll = true;
   const rt = runtime();
@@ -361,12 +436,13 @@ async function pullData(state, models, { force, deadline }) {
 
     rt.progress = { step: 'pull', entity: definition.name };
     if (definition.strategy === 'snapshot') {
-      results[definition.name] = await pullSnapshotEntity(definition, cursor, models);
+      results[definition.name] = await pullSnapshotEntity(definition, cursor, models, verbose);
     } else if (await hasUnsentSales()) {
       results[definition.name] = { skipped: 'sales-waiting-to-sync' };
       if (!cursor.lastPulledAt) completedAll = false;
+      if (verbose) note('Products and prices: waiting until sales on this computer reach the cloud', 'warn');
     } else {
-      results[definition.name] = await pullProducts(definition, cursor, models, deadline);
+      results[definition.name] = await pullProducts(definition, cursor, models, deadline, verbose);
       if (results[definition.name].incomplete) completedAll = false;
     }
   }
@@ -437,14 +513,22 @@ async function runCycle({ force, pushOnly }) {
   await recoverClaims();
   await sweepUnrecordedChanges();
   rt.phase = 'syncing';
+  rt.cycleStartedAt = new Date(startedAt).toISOString();
+  // Step-by-step activity while setting up, or when staff started the sync
+  const verbose = force || !(await readState()).initialSyncComplete;
 
   try {
     rt.progress = { step: 'connect' };
+    if (verbose) note('Connecting to the cloud database…');
     const models = modelsFor(await pingCloudDatabase());
+    if (verbose) note(`Connected to the cloud database (${((Date.now() - startedAt) / 1000).toFixed(1)} s)`);
+
+    rt.progress = { step: 'check' };
     const installation = await checkInstallation(models);
 
     rt.progress = { step: 'push' };
     const push = await pushPending(models, installation, { deadline: startedAt + CYCLE_BUDGET_MS, force });
+    if (push.sent > 0) note(`Sent ${push.synced} of ${push.sent} change(s) to the cloud`);
 
     let pull = null;
     const state = await readState();
@@ -452,6 +536,7 @@ async function runCycle({ force, pushOnly }) {
       pull = await pullData(state, models, {
         force: force || !state.initialSyncComplete,
         deadline: startedAt + CYCLE_BUDGET_MS * 2,
+        verbose,
       });
     }
 
@@ -461,11 +546,13 @@ async function runCycle({ force, pushOnly }) {
       lastSuccessAt: new Date(),
       lastError: '',
       lastErrorCode: '',
+      lastErrorDetail: '',
       lastErrorAt: null,
     };
     if (pull && !state.initialSyncComplete && pull.completedAll) {
       set.initialSyncComplete = true;
       set.initialSyncAt = new Date();
+      note('All store data downloaded. This POS is ready.');
     }
     await writeState(set);
 
@@ -485,17 +572,23 @@ async function runCycle({ force, pushOnly }) {
       rt.nextAttemptAt = Date.now() + (kind === 'auth' ? MAX_OFFLINE_BACKOFF_MS : 60 * 1000);
     }
 
-    if (kind === 'error') console.error('[sync] Cycle failed:', error?.message || error);
+    const detail = cloudErrorDetail(error);
+    const failedStep = rt.progress?.entity ? ENTITY_LABELS[rt.progress.entity] || rt.progress.entity : rt.progress?.step;
+    logSyncError(`${message}${failedStep ? ` (during ${failedStep})` : ''}`, detail);
+    note(message, 'error');
     await writeState({
       cloudReachable: kind !== 'offline',
       lastCheckAt: new Date(),
       lastError: message.slice(0, 500),
       lastErrorCode: kind,
+      lastErrorDetail: detail,
+      lastErrorStep: failedStep || '',
       lastErrorAt: new Date(),
     });
     return { error: message, offline: kind === 'offline' };
   } finally {
     rt.progress = null;
+    rt.cycleStartedAt = null;
   }
 }
 
@@ -636,12 +729,24 @@ export async function getSyncStatus() {
     failed,
     conflicts,
     initialSyncComplete: Boolean(state.initialSyncComplete),
+    running: Boolean(rt.running),
+    cycleStartedAt: rt.cycleStartedAt,
     progress: rt.progress,
+    activity: rt.activity,
     nextAttemptAt: rt.nextAttemptAt ? new Date(rt.nextAttemptAt) : null,
     lastCheckAt: state.lastCheckAt || null,
     lastSuccessAt: state.lastSuccessAt || null,
     lastError: state.lastError || '',
+    // Driver's own message with credentials removed (setup screen "Details")
+    lastErrorDetail: state.lastErrorDetail || '',
+    lastErrorStep: state.lastErrorStep || '',
     lastErrorAt: state.lastErrorAt || null,
     pull,
+    pullDetails: Object.fromEntries(
+      PULL_ENTITIES.map(({ name }) => {
+        const cursor = state.pull?.[name] || {};
+        return [name, { lastPulledAt: cursor.lastPulledAt || null, count: cursor.count ?? null, downloaded: cursor.downloaded || 0 }];
+      })
+    ),
   };
 }

@@ -1,15 +1,22 @@
 /**
- * PrintPreview - branded receipt preview shown before browser printing.
+ * PrintPreview - branded receipt preview shown before printing.
  * Opened by receiptPrinting.js via the "printPreview:show" window event; receipts that arrive
  * while one is open are queued.
+ *
+ * Browser: Print opens the browser print dialog. Desktop app: Print sends the receipt to this till's
+ * Windows printer (or the Windows print dialog, per Printer Settings); "Choose printer" always opens
+ * the Windows print dialog.
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import Image from 'next/image';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faPrint, faTimes } from '@fortawesome/free-solid-svg-icons';
+import { faPrint, faSliders, faTimes } from '@fortawesome/free-solid-svg-icons';
 import { getStoreLogo } from '@/src/lib/logoCache';
 import { printHtmlDocument } from '@/src/lib/printDocument';
+import { describeDesktopPrintTarget, getDesktopPrintTarget } from '@/src/lib/printerConfig';
+import { isDesktopApp } from '@/src/lib/desktopClient';
+import { showToast } from '@/src/components/common/Toast';
 
 const formatNaira = (amount) =>
   `₦${(Number(amount) || 0).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -17,8 +24,13 @@ const formatNaira = (amount) =>
 export default function PrintPreview() {
   const [current, setCurrent] = useState(null);
   const [queuedCount, setQueuedCount] = useState(0);
+  const [desktop, setDesktop] = useState(false);
   const currentRef = useRef(null);
   const queueRef = useRef([]);
+
+  useEffect(() => {
+    setDesktop(isDesktopApp());
+  }, []);
 
   const showNext = useCallback(() => {
     const next = queueRef.current.shift() || null;
@@ -29,8 +41,8 @@ export default function PrintPreview() {
 
   useEffect(() => {
     const handleShow = (event) => {
-      const { receiptHTML = '', companyName = '', transaction = null } = event.detail || {};
-      const entry = { receiptHTML, companyName, transaction };
+      const { receiptHTML = '', companyName = '', transaction = null, printerSettings = null } = event.detail || {};
+      const entry = { receiptHTML, companyName, transaction, printerSettings };
       if (currentRef.current) {
         queueRef.current.push(entry);
         setQueuedCount(queueRef.current.length);
@@ -46,11 +58,18 @@ export default function PrintPreview() {
 
   if (!current) return null;
 
-  const handlePrint = () => {
-    const html = current.receiptHTML;
-    // Close first so the preview doesn't sit behind the OS print dialog
+  const printerSettings = current.printerSettings || undefined;
+  const silentTarget = desktop && getDesktopPrintTarget(printerSettings).silent;
+
+  const handlePrint = (dialog = false) => {
+    const { receiptHTML } = current;
+    // Close first so the preview doesn't sit behind a print dialog
     showNext();
-    setTimeout(() => printHtmlDocument(html), 50);
+    setTimeout(async () => {
+      const result = await printHtmlDocument(receiptHTML, { printerSettings, dialog });
+      if (!result.ok && !result.canceled) showToast(`Receipt not printed: ${result.error}`, 'error', 6000);
+      else if (result.ok && desktop && silentTarget && !dialog) showToast('Receipt sent to the printer', 'success', 2500);
+    }, 50);
   };
 
   return (
@@ -69,9 +88,9 @@ export default function PrintPreview() {
             />
           </div>
           <div className="flex-1">
-            <h2 className="font-bold text-lg">{current.companyName || 'Print Receipt'}</h2>
+            <h2 className="font-bold text-lg text-white">{current.companyName || 'Print Receipt'}</h2>
             <p className="text-cyan-200 text-xs">
-              Review and print your receipt
+              {desktop ? `Printer: ${describeDesktopPrintTarget(printerSettings)}` : 'Review and print your receipt'}
               {queuedCount > 0 && (
                 <span className="ml-2 px-1.5 py-0.5 bg-amber-500 text-white text-[10px] rounded-full font-bold">
                   +{queuedCount} more
@@ -115,8 +134,18 @@ export default function PrintPreview() {
           >
             Cancel
           </button>
+          {silentTarget && (
+            <button
+              onClick={() => handlePrint(true)}
+              title="Open the Windows print dialog to pick a printer or copies"
+              className="flex-1 px-3 py-3 whitespace-nowrap text-sm bg-white hover:bg-gray-50 text-cyan-800 border border-cyan-300 font-semibold rounded-xl transition flex items-center justify-center gap-2"
+            >
+              <FontAwesomeIcon icon={faSliders} className="w-4 h-4" />
+              Choose printer
+            </button>
+          )}
           <button
-            onClick={handlePrint}
+            onClick={() => handlePrint(false)}
             className="flex-[2] px-4 py-3 bg-gradient-to-r from-cyan-600 to-cyan-700 hover:from-cyan-700 hover:to-cyan-800 text-white font-bold rounded-xl transition flex items-center justify-center gap-2 shadow-lg"
           >
             <FontAwesomeIcon icon={faPrint} className="w-4 h-4" />

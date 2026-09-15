@@ -10,6 +10,7 @@ import { applyRadiusScale } from "@/src/lib/radiusScale";
 import { ToastContainer } from "@/src/components/common/Toast";
 import { ConfirmDialogContainer } from "@/src/components/common/ConfirmDialog";
 import PrintPreview from "@/src/components/common/PrintPreview";
+import { loadDesktopPrinterSettings } from "@/src/lib/printerConfig";
 
 export default function App({ Component, pageProps }) {
   const router = useRouter();
@@ -27,6 +28,8 @@ export default function App({ Component, pageProps }) {
           console.error('❌ Service Worker registration failed:', error);
         });
     }
+    // Desktop app: this till's printer settings are kept by the app
+    if (window.posDesktop) loadDesktopPrinterSettings();
   }, []);
 
   useEffect(() => {
