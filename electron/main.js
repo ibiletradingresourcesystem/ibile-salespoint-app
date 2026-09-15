@@ -6,21 +6,21 @@
  * Runs the existing System POS on the customer's computer:
  *   local MongoDB (lib/mongo.js)  ->  POS server = the same Next.js app (lib/server.js)  ->  window
  * and keeps it in step with the cloud through the sync engine inside the POS server
- * (src/lib/desktop/syncEngine.js), woken by lib/scheduler.js.
+ * (src/lib/desktop/syncEngine.js). Sync runs only when staff ask for it (Sync Products, Sync Now),
+ * so the cloud deployment is not called in the background.
  *
  * There is no server PC: every installation is self-contained and talks only to the cloud.
  */
 
 const path = require('path');
 const crypto = require('crypto');
-const { app, BrowserWindow, dialog, ipcMain, shell } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, net, shell } = require('electron');
 
 const { getPaths } = require('./lib/paths');
 const { createLogger } = require('./lib/logger');
 const { DesktopConfig } = require('./lib/config');
 const { LocalMongo } = require('./lib/mongo');
 const { LocalServer } = require('./lib/server');
-const { SyncScheduler } = require('./lib/scheduler');
 const backups = require('./lib/backup');
 const migrations = require('./lib/migrations');
 const { Updater } = require('./lib/updater');
@@ -42,7 +42,6 @@ let log;
 let config;
 let mongo;
 let server;
-let scheduler;
 let updater;
 let mainWindow = null;
 let shuttingDown = false;
@@ -105,9 +104,22 @@ async function loadPos() {
 }
 
 async function restartServer() {
-  scheduler.stop();
   await server.restart(serverEnv());
-  scheduler.start();
+}
+
+/** Runs one sync cycle in the POS server. Only called from staff actions (menu, setup). */
+async function syncNow() {
+  try {
+    const response = await fetch(`${server.origin}/api/desktop/sync`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-desktop-internal-token': internalToken },
+      body: JSON.stringify({ force: true }),
+      signal: AbortSignal.timeout(10 * 1000),
+    });
+    return { ok: response.ok };
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
 }
 
 /* ------------------------------------------------------------------ window */
@@ -216,7 +228,6 @@ async function startApp() {
 
   mongo = new LocalMongo({ paths, config, log });
   server = new LocalServer({ paths, config, log });
-  scheduler = new SyncScheduler({ getOrigin: () => server.origin, internalToken, log });
   updater = new Updater({ log, updateConfigPath: paths.updateConfig });
   updater.on('status', onUpdateStatus);
 
@@ -230,7 +241,6 @@ async function startApp() {
   await server.start(serverEnv());
   server.onUnexpectedExit = () => recoverFromCrash('server');
 
-  scheduler.start();
   await loadPos();
   scheduleAutoBackups();
   updater.init();
@@ -249,13 +259,11 @@ async function recoverFromCrash(component) {
   busy = true;
   try {
     await showSplash(`${label} stopped. Restarting…`);
-    scheduler.stop();
     if (component === 'database') {
       await server.stop();
       await mongo.start();
     }
     await server.start(serverEnv());
-    scheduler.start();
     await loadPos();
   } catch (error) {
     busy = false;
@@ -289,7 +297,6 @@ async function shutdown({ installUpdate = false } = {}) {
 
   try {
     await showSplash(installing ? 'Preparing to install the update…' : 'Closing Ibile POS…');
-    scheduler?.stop();
     await server?.stop();
     if (installing && mongo?.port) {
       sendSplash('Backing up local data…');
@@ -438,7 +445,6 @@ async function restoreFromBackup() {
   let safety = null;
   try {
     await showSplash('Stopping the POS…');
-    scheduler.stop();
     await server.stop();
 
     sendSplash('Saving a safety backup of the current data…');
@@ -467,7 +473,6 @@ async function restoreFromBackup() {
   try {
     sendSplash('Starting the POS…');
     await server.start(serverEnv());
-    scheduler.start();
     await loadPos();
   } catch (error) {
     busy = false;
@@ -520,7 +525,7 @@ const menuActions = {
   backupNow: () => backupNow(),
   restoreBackup: () => restoreFromBackup(),
   openBackupsFolder: () => shell.openPath(paths.backupsDir),
-  syncNow: () => scheduler?.trigger({ force: true }),
+  syncNow: () => syncNow(),
   reenroll: () => reenroll(),
   checkForUpdates: () => checkForUpdates(),
   openLogsFolder: () => shell.openPath(paths.logsDir),
@@ -569,10 +574,9 @@ function registerIpc() {
     }
   });
   handle('desktop:enroll', (payload) => enrollThisInstallation(payload));
-  handle('desktop:sync-now', async () => {
-    await scheduler.trigger({ force: true });
-    return { ok: true };
-  });
+  handle('desktop:sync-now', () => syncNow());
+  // Internet connection of this computer, without contacting the cloud
+  handle('desktop:network-status', () => ({ online: net.isOnline() }));
   handle('desktop:backup-now', () => backupNow());
   handle('desktop:restore-backup', () => restoreFromBackup());
   handle('desktop:open-backups-folder', () => shell.openPath(paths.backupsDir));

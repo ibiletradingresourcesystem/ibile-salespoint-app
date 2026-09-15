@@ -71,12 +71,33 @@ Answers that shaped the design:
 
 ## 3. Synchronisation
 
+### 3.0 When the desktop contacts the cloud (Vercel)
+
+To keep Vercel usage (Fluid Active CPU) for web users, **the desktop app never syncs in the background**.
+It calls the cloud only when staff do something that needs it:
+
+| Staff action | Cloud calls |
+|---|---|
+| **Sync Products** (menu screen) or **Sync now** (status popover, app menu) | Send everything waiting, then download store, staff, tenders, categories, promotions, customers and product changes |
+| **Retry these** (items the cloud refused) | Same as Sync now |
+| First-run setup | Enrolment, then the first full download |
+| Opening the Online Orders tab, completing/delivering a web-shop order | Those order requests (the till is sent first if needed) |
+| Opening Petty Cash, sending a support message | Those requests |
+| Login by staff who can use online orders or petty cash | One cloud sign-in in the background |
+
+There is no heartbeat, no connectivity ping and no retry timer. Sales, till opens/closes and customers
+wait safely in the local outbox until the next sync. The status pill shows how many changes are waiting,
+and **OFFLINE** comes from the computer's own network state, not from a cloud request.
+
+Consequence: cloud stock, reports and the management app only reflect a till's sales after that till
+syncs, and price or product changes reach the till only when it syncs.
+
 ### 3.1 Local → cloud (push)
 
 1. Any write through `Transaction`, `Till`, `EndOfDayReport` or `Customer` models (save, update, findOneAndUpdate, insertMany) records an entry in `sync_outbox` **in the same request**. Clock-ins and UI settings are recorded explicitly in their routes. Nothing in the POS routes had to change to be captured.
 2. One pending entry per record: later changes merge into it (fields are unioned, revision raised). The record's **current** state is read when it is sent.
 3. The engine claims entries (`pending → processing`), sends up to 25 per request, in priority order: customers, tills, sales, end-of-day reports, clock records, settings.
-4. Result per entry: `applied`/`duplicate` → `synced`; `conflict` → `conflict`; `rejected` → `failed`; anything else (or no response) → back to `pending` with backoff 10 s, 20 s, … up to 15 min, retried indefinitely.
+4. Result per entry: `applied`/`duplicate` → `synced`; `conflict` → `conflict`; `rejected` → `failed`; anything else (or no response) → back to `pending` and sent again at the next sync, however many syncs that takes. Each entry is tried at most once per sync.
 5. Entries left `processing` by a crash or restart return to `pending` on the next start.
 
 Schema (adapted from the brief): `installationId, entity, entityId, operation, status, priority, rev, fields, payload, attempts, nextRetryAt, lastAttemptAt, lockedAt, syncedAt, error, cloudId, createdAt, updatedAt`. Synced entries are kept 30 days (TTL index).
@@ -93,11 +114,13 @@ Tested: a lost response followed by a retry leaves one sale and one stock decrem
 
 ### 3.3 Cloud → local (pull)
 
-| Data | Strategy | Interval |
-|---|---|---|
-| store (locations, receipt settings), tenders, categories, promotions, staff, system theme | Snapshot with ETag: nothing is sent when unchanged. These models have no reliable `updatedAt`, so a cursor could miss edits. Records deleted in the cloud are removed locally. | 2 min (theme 5 min) |
-| customers | Snapshot with ETag; customers with unsent local changes are left alone | 5 min |
-| products | `(updatedAt, _id)` cursor with a 2-minute overlap; first sync pages by `_id`. Every 6 h a manifest (ids + `updatedAt`) removes deleted products and refetches any that differ. | 45 s |
+All of these are pulled on each sync.
+
+| Data | Strategy |
+|---|---|
+| store (locations, receipt settings), tenders, categories, promotions, staff, system theme | Snapshot with ETag: nothing is sent when unchanged. These models have no reliable `updatedAt`, so a cursor could miss edits. Records deleted in the cloud are removed locally. |
+| customers | Snapshot with ETag; customers with unsent local changes are left alone |
+| products | `(updatedAt, _id)` cursor with a 2-minute overlap; first sync pages by `_id`. At most once a day, a manifest (ids + `updatedAt`) removes deleted products and refetches any that differ. |
 
 Products are pulled only when no sales are waiting to sync, and each write is conditional on the local version read just before, so a sale made during a pull is never overwritten. Pulled data is written with the raw driver: cloud timestamps are preserved and the writes are not captured as local changes.
 
@@ -124,7 +147,7 @@ Conflicts and rejections are never deleted. They show as **SYNC ERROR** with a l
 
 ## 5. Cloud-only features
 
-Web-shop orders, petty cash and support email are shared with the management app and payment providers, so they stay in the cloud. When a staff member logs in on the desktop with internet available, the local server also signs them in to the cloud in the background and keeps that staff session. Those routes are then forwarded to the cloud with the staff member's own session, so cloud permissions apply exactly as for web terminals. Offline, they return a clear "needs an internet connection" message; the till keeps working.
+Web-shop orders, petty cash and support email are shared with the management app and payment providers, so they stay in the cloud. When a staff member who can use them (online orders need *viewAdvancedOrders*, petty cash is in the sidebar) logs in with internet available, the local server also signs them in to the cloud in the background and keeps that staff session. Cashiers without those permissions cause no cloud call at login. On desktop, the Online Orders tab loads orders when it is opened, not every time the window regains focus. Those routes are then forwarded to the cloud with the staff member's own session, so cloud permissions apply exactly as for web terminals. Offline, they return a clear "needs an internet connection" message; the till keeps working.
 
 Completing an online order first makes sure this till exists in the cloud, lets the cloud record the sale (as today), then stores a copy on the till so Close Till includes it.
 
@@ -181,7 +204,8 @@ Development: `npm run desktop:fetch-mongodb` once, then `npm run desktop:dev` (r
 
 | Situation | Action |
 |---|---|
-| OFFLINE | Nothing to do; sales are saved locally and sync automatically. |
+| OFFLINE | Nothing to do; sales are saved locally. Press Sync Products once the internet is back. |
+| ONLINE · number | Changes are waiting. Press Sync Products (e.g. at shift change and before closing the till) so the cloud and management app are up to date. |
 | SYNC ERROR, "not authorised" | Installation revoked or token invalid: Sync → Set Up This POS Again (manager passcode). Data is kept. |
 | SYNC ERROR, items listed | Read the reason. Fix the record in the management app if needed, then *Retry these*. |
 | App says the local database has credentials this computer no longer has | Close the app. Remove `secrets.mongoPassword` from `config.json`. Run `resources\mongodb\bin\mongod.exe --dbpath "%APPDATA%\Ibile POS\data\mongodb" --port 27517 --bind_ip 127.0.0.1` (no `--auth`), drop the `ibilepos` user in the `admin` database with any MongoDB shell, stop `mongod`, start the app (it creates a new user). |
@@ -208,7 +232,7 @@ Not changed for the web version (behaviour change needs a product decision), lis
 ## 10. Verification performed
 
 - Web production build (`next build`) passes with all changes.
-- End-to-end test against a throwaway local replica set, one server as cloud and one as desktop: **62/62 checks**, including enrolment rules, token hashing, initial sync, staff data minimisation, local passcode checks, sale → cloud with parent/child stock, lost-response retry (one sale, one decrement), stale revision ignored, refund restock and till totals, price/tender changes pulled, offline sale synced after reconnect, credit customer balance, clock records, management-app refund conflict, web till isolation, online orders forwarded, revocation.
+- End-to-end test against a throwaway local replica set, one server as cloud and one as desktop: **63/63 checks**, including nothing sent until staff sync, enrolment rules, token hashing, initial sync, staff data minimisation, local passcode checks, sale → cloud with parent/child stock, lost-response retry (one sale, one decrement), stale revision ignored, refund restock and till totals, price/tender changes pulled, offline sale synced after reconnect, credit customer balance, clock records, management-app refund conflict, web till isolation, online orders forwarded, revocation.
 - Backup/restore/migrations: **11/11** (exact BSON types, partial/TTL indexes, damaged file rejected, retention).
 - Packaged `Ibile POS.exe` (unpacked build): **15/15** — database and service start, sandboxed bridge, enrolment through the app, DPAPI-encrypted token, initial sync, unauthenticated MongoDB access refused, clean shutdown.
 

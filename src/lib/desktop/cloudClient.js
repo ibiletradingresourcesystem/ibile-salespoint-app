@@ -59,12 +59,3 @@ export async function cloudRequest(path, { method = 'POST', body, timeoutMs = 20
   }
   return data;
 }
-
-export async function pingCloud(timeoutMs = 6000) {
-  try {
-    await cloudRequest('/api/sync/ping', { method: 'GET', auth: false, timeoutMs });
-    return true;
-  } catch {
-    return false;
-  }
-}

@@ -32,10 +32,11 @@ import { useCart } from '../../context/CartContext';
 import PaymentPanel from './PaymentPanel';
 import { useStaff } from '../../context/StaffContext';
 import { getLocalCategories, getLocalProductsByCategory, syncCategories, syncProducts, getAllLocalProducts } from '../../lib/indexedDB';
-import { initOfflineSync, getOnlineStatus, getImageUrl, shouldShowPlaceholder, syncPendingTransactions, syncPendingTillCloses } from '../../lib/offlineSync';
+import { initOfflineSync, getOnlineStatus, getImageUrl, shouldShowPlaceholder, syncPendingTransactions, syncPendingTillCloses, syncPendingTillOpens } from '../../lib/offlineSync';
 import { cleanupOldTransactions } from '../../lib/indexedDBCleanup';
 import { getUiSettings } from '../../lib/uiSettings';
 import AlphaKeyboardModal from '../common/AlphaKeyboardModal';
+import { isDesktopApp } from '../../lib/desktopClient';
 
 // Color mapping for categories
 const CATEGORY_COLORS = {
@@ -784,7 +785,38 @@ export default function MenuScreen() {
     try {
       console.log("🔄 Manual sync initiated - syncing ALL products...");
       setError(null);
-      
+
+      // Desktop app: this button is when the till exchanges data with the cloud. Sales and tills go
+      // up, product/price/staff changes come down into the local database, then the screen reloads
+      // from it below. Offline, the reload still works and sales stay saved for the next sync.
+      if (isDesktopApp()) {
+        try {
+          // Sales still in the browser queue go into the local database first, so they are sent too
+          await syncPendingTillOpens().catch(() => {});
+          await syncPendingTransactions().catch(() => {});
+          await syncPendingTillCloses().catch(() => {});
+
+          const cloudResponse = await fetch('/api/desktop/sync', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ wait: true }),
+          });
+          const cloudData = await cloudResponse.json().catch(() => ({}));
+          const cloudError = !cloudResponse.ok ? cloudData?.message : cloudData?.result?.error;
+          if (cloudError) {
+            setError(
+              cloudData?.result?.offline
+                ? 'No internet connection. Sales are saved on this computer and will be sent the next time you sync.'
+                : `Cloud sync failed: ${cloudError}`
+            );
+          }
+        } catch (cloudErr) {
+          setError(`Cloud sync failed: ${cloudErr.message}`);
+        } finally {
+          window.dispatchEvent(new CustomEvent('pos:sync-state-changed', { detail: { reason: 'cloud-sync' } }));
+        }
+      }
+
       // Fetch and sync categories - use location filter if available
       const catUrl = location?._id 
         ? `/api/categories?location=${location._id}` 

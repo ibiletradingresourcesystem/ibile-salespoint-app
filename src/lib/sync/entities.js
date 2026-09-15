@@ -19,15 +19,16 @@ export const PUSH_ENTITIES = {
   store_ui_settings: { priority: 60, mode: 'payload' },
 };
 
+// All of these are pulled on every sync; manifestIntervalMs limits the full product check
 export const PULL_ENTITIES = [
-  { name: 'store', strategy: 'snapshot', intervalMs: 2 * 60 * 1000 },
-  { name: 'systemthemes', strategy: 'snapshot', intervalMs: 5 * 60 * 1000 },
-  { name: 'tenders', strategy: 'snapshot', intervalMs: 2 * 60 * 1000 },
-  { name: 'categories', strategy: 'snapshot', intervalMs: 2 * 60 * 1000 },
-  { name: 'promotions', strategy: 'snapshot', intervalMs: 2 * 60 * 1000 },
-  { name: 'staff', strategy: 'snapshot', intervalMs: 2 * 60 * 1000 },
-  { name: 'customers', strategy: 'snapshot', intervalMs: 5 * 60 * 1000 },
-  { name: 'products', strategy: 'incremental', intervalMs: 45 * 1000, manifestIntervalMs: 6 * 60 * 60 * 1000 },
+  { name: 'store', strategy: 'snapshot' },
+  { name: 'systemthemes', strategy: 'snapshot' },
+  { name: 'tenders', strategy: 'snapshot' },
+  { name: 'categories', strategy: 'snapshot' },
+  { name: 'promotions', strategy: 'snapshot' },
+  { name: 'staff', strategy: 'snapshot' },
+  { name: 'customers', strategy: 'snapshot' },
+  { name: 'products', strategy: 'incremental', manifestIntervalMs: 24 * 60 * 60 * 1000 },
 ];
 
 export const PULL_ENTITY_NAMES = PULL_ENTITIES.map((entity) => entity.name);

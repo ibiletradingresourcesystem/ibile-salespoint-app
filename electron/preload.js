@@ -31,6 +31,7 @@ contextBridge.exposeInMainWorld('posDesktop', {
   cloudLookup: (payload) => ipcRenderer.invoke('desktop:cloud-lookup', payload),
   enroll: (payload) => ipcRenderer.invoke('desktop:enroll', payload),
   syncNow: () => ipcRenderer.invoke('desktop:sync-now'),
+  getNetworkStatus: () => ipcRenderer.invoke('desktop:network-status'),
   backupNow: () => ipcRenderer.invoke('desktop:backup-now'),
   restoreBackup: () => ipcRenderer.invoke('desktop:restore-backup'),
   openBackupsFolder: () => ipcRenderer.invoke('desktop:open-backups-folder'),

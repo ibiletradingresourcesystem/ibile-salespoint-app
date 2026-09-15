@@ -3,14 +3,14 @@
  *
  * Entries are written to the local MongoDB in the same request that changed the data, so they
  * survive app and computer restarts. Several changes to the same record while it waits are merged
- * into one pending entry; the latest state of the record is read at send time.
+ * into one pending entry; the latest state of the record is read at send time. They are sent when
+ * staff sync (Sync Products / Sync now), not automatically.
  */
 
 import mongoose from 'mongoose';
 import SyncOutbox from '@/src/models/SyncOutbox';
 import { PUSH_ENTITIES } from '@/src/lib/sync/entities';
 import { getDesktopConfig, isDesktopServer } from '@/src/lib/runtime';
-import { requestSyncSoon } from '@/src/lib/desktop/syncSignal';
 
 async function nextRevision() {
   const result = await mongoose.connection.collection('sync_counters').findOneAndUpdate(
@@ -68,6 +68,4 @@ export async function recordLocalChange(entity, entityId, { fields = ['*'], payl
       if (error?.code !== 11000 || attempt >= 2) throw error;
     }
   }
-
-  requestSyncSoon();
 }

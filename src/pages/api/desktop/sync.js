@@ -1,7 +1,8 @@
 /**
  * POST /api/desktop/sync  (desktop app only)
- * Starts a sync cycle. Called by the Electron scheduler (internal token) and by "Sync now" (session).
- * Body: { force?: boolean, wait?: boolean }
+ * Runs a sync cycle: the only way the desktop contacts the cloud sync API. Called by Sync Products
+ * and Sync now (staff session), and by the app menu and first-run setup (internal token).
+ * Body: { wait?: boolean }
  */
 
 import { getSyncStatus, runSyncCycle } from '@/src/lib/desktop/syncEngine';
@@ -16,9 +17,8 @@ export default async function handler(req, res) {
     return res.status(401).json({ success: false, message: 'Authentication required' });
   }
 
-  const { force = false, wait = false } = req.body || {};
-  const reason = isInternalRequest(req) ? 'scheduler' : 'manual';
-  const cycle = runSyncCycle({ reason, force: Boolean(force) || reason === 'manual' });
+  const { wait = false } = req.body || {};
+  const cycle = runSyncCycle();
 
   if (!wait) {
     cycle.catch(() => {});

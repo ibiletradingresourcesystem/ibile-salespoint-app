@@ -1,32 +1,40 @@
 /**
- * Desktop app only: cloud connection and sync state in the POS top bar.
+ * Desktop app only: connection and sync state in the POS top bar.
  * ONLINE · OFFLINE · SYNCING · SYNCED · SYNC ERROR, with details and "Sync now" on click.
+ *
+ * Nothing here contacts the cloud: status comes from the local server and the internet state from
+ * this computer. Data is exchanged with the cloud only when staff sync.
  */
 
 import React, { useCallback, useEffect, useState } from 'react';
-import { isDesktopApp } from '../../lib/desktopClient';
+import { getDesktopBridge, isDesktopApp } from '../../lib/desktopClient';
 
 const LABELS = {
-  checking: 'ONLINE',
   online: 'ONLINE',
   syncing: 'SYNCING',
   synced: 'SYNCED',
   offline: 'OFFLINE',
   error: 'SYNC ERROR',
-  auth_error: 'SYNC ERROR',
   not_enrolled: 'NOT SET UP',
 };
 
 const STYLES = {
-  checking: 'bg-white/20',
   online: 'bg-sky-500',
   syncing: 'bg-sky-500 animate-pulse',
   synced: 'bg-green-600',
   offline: 'bg-amber-500',
   error: 'bg-red-600',
-  auth_error: 'bg-red-600',
   not_enrolled: 'bg-red-600',
 };
+
+function displayPhase(status, networkOnline) {
+  if (status.phase === 'not_enrolled') return 'not_enrolled';
+  if (status.phase === 'syncing') return 'syncing';
+  if (networkOnline === false) return 'offline';
+  if (status.phase === 'auth_error' || status.phase === 'error') return 'error';
+  if (Number(status.pending || 0) > 0 || !status.lastSuccessAt) return 'online';
+  return 'synced';
+}
 
 const formatTime = (value) => {
   if (!value) return 'Never';
@@ -52,8 +60,12 @@ export default function DesktopSyncStatus() {
   const [open, setOpen] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [attention, setAttention] = useState([]);
+  const [networkOnline, setNetworkOnline] = useState(null);
 
   const refresh = useCallback(async () => {
+    getDesktopBridge()?.getNetworkStatus?.()
+      .then((network) => setNetworkOnline(Boolean(network?.online)))
+      .catch(() => {});
     try {
       const response = await fetch('/api/desktop/status', { cache: 'no-store' });
       setStatus(await response.json());
@@ -118,7 +130,7 @@ export default function DesktopSyncStatus() {
 
   if (!enabled || !status) return null;
 
-  const phase = LABELS[status.phase] ? status.phase : 'error';
+  const phase = displayPhase(status, networkOnline);
 
   return (
     <div className="relative">
@@ -137,8 +149,8 @@ export default function DesktopSyncStatus() {
           <div className="font-semibold mb-2">Cloud sync</div>
           <dl className="space-y-1">
             <div className="flex justify-between gap-2">
-              <dt className="text-gray-500">Connection</dt>
-              <dd className="font-medium">{status.cloudReachable === false ? 'Offline' : 'Online'}</dd>
+              <dt className="text-gray-500">Internet</dt>
+              <dd className="font-medium">{networkOnline === false ? 'Offline' : 'Connected'}</dd>
             </div>
             <div className="flex justify-between gap-2">
               <dt className="text-gray-500">Waiting to sync</dt>
@@ -156,17 +168,16 @@ export default function DesktopSyncStatus() {
             </div>
           </dl>
 
-          {status.cloudReachable === false && (
-            <p className="mt-3 text-xs text-gray-600">
-              Sales are saved on this computer and will sync automatically when the internet is back.
-            </p>
-          )}
+          <p className="mt-3 text-xs text-gray-600">
+            Sales are saved on this computer. They are sent to the cloud, and product changes come
+            back, when you press Sync Products or Sync now.
+          </p>
           {status.phase === 'auth_error' && (
             <p className="mt-3 text-xs text-red-700">
               This POS is no longer authorised to sync. Ask a manager to set it up again from the app menu.
             </p>
           )}
-          {status.lastError && status.phase !== 'offline' && (
+          {status.lastError && phase === 'error' && (
             <p className="mt-3 text-xs text-red-700 break-words">{status.lastError}</p>
           )}
 
@@ -199,7 +210,7 @@ export default function DesktopSyncStatus() {
           <button
             type="button"
             onClick={syncNow}
-            disabled={syncing || status.cloudReachable === false}
+            disabled={syncing || networkOnline === false}
             className="mt-3 w-full rounded-md bg-cyan-600 hover:bg-cyan-700 disabled:bg-gray-300 text-white font-semibold py-2"
           >
             {syncing ? 'Syncing…' : 'Sync now'}

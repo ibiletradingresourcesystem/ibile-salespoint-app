@@ -26,6 +26,7 @@ import { useStaff } from '../../context/StaffContext';
 import { getCompletedTransactions, cacheCompletedTransactions, getCachedCompletedTransactions, markLocalTransactionVoided } from '../../lib/offlineSync';
 import { getReceiptSettings, printTransactionReceipt } from '../../lib/receiptPrinting';
 import { hasPosPermission } from '@/src/lib/posPermissions';
+import { isDesktopApp } from '@/src/lib/desktopClient';
 import { showToast } from '../common/Toast';
 
 const ORDER_STATUS_TABS = ['HELD', 'ORDERED', 'PENDING', 'COMPLETE'];
@@ -231,7 +232,8 @@ export default function OrdersScreen({ onNavigateToMenu }) {
   }, [activeStatus, fetchOnlineOrders]);
 
   useEffect(() => {
-    if (activeStatus !== 'ORDERED') {
+    // The desktop app fetches web-shop orders from the cloud only when staff open this tab
+    if (activeStatus !== 'ORDERED' || isDesktopApp()) {
       return undefined;
     }
 

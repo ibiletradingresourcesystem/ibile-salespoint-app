@@ -6,6 +6,7 @@ import { sanitizeString } from "@/src/lib/apiValidation";
 import { verifyPin } from "@/src/lib/staffPin";
 import { isDesktopServer } from "@/src/lib/runtime";
 import { captureCloudSession } from "@/src/lib/desktop/cloudProxy";
+import { hasPosPermission } from "@/src/lib/posPermissions";
 
 const sendError = (res, status, code, message, details = {}) =>
   res.status(status).json({
@@ -139,8 +140,11 @@ export default async function handler(req, res) {
     setSessionCookie(res, String(staffMember._id));
 
     // Desktop: also sign this staff member in to the cloud (in the background) so cloud-only
-    // features such as online orders and petty cash work while the internet is available.
-    if (isDesktopServer()) {
+    // features work while the internet is available. Only for staff who can open them (online
+    // orders need viewAdvancedOrders, petty cash is in the sidebar), to keep cloud calls down.
+    const usesCloudFeatures =
+      hasPosPermission(staffMember, "viewAdvancedOrders") || hasPosPermission(staffMember, "sidebarAccess");
+    if (isDesktopServer() && usesCloudFeatures) {
       captureCloudSession({ staffId: String(staffMember._id), pin, location: requestedLocation }).catch(() => {});
     }
 
