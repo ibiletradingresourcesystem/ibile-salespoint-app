@@ -3,24 +3,16 @@
  * 
  * Fetch petty cash vendors for the POS system (includes their product lists)
  */
-import { mongooseConnect } from "@/src/lib/mongoose";
-import mongoose from "mongoose";
-
-const VendorSchema = new mongoose.Schema({}, { strict: false, collection: "vendors" });
-const Vendor = mongoose.models.Vendor || mongoose.model("Vendor", VendorSchema);
-
-import Product from "@/src/models/Product";
-import { isDesktopServer } from "@/src/lib/runtime";
-import { proxyToCloud } from "@/src/lib/desktop/cloudProxy";
+import { cloudDataModelsOrRespond } from "@/src/lib/dataModels";
 
 export default async function handler(req, res) {
-  if (isDesktopServer()) return proxyToCloud(req, res);
-
   if (req.method !== "GET") {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  await mongooseConnect();
+  const models = await cloudDataModelsOrRespond(res);
+  if (!models) return;
+  const { Vendor, Product } = models;
 
   try {
     const vendors = await Vendor.find({ vendorType: "petty-cash", isActive: { $ne: false } })

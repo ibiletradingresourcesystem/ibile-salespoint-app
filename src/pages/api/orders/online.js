@@ -1,9 +1,5 @@
 import mongoose from "mongoose";
-import { mongooseConnect } from "@/src/lib/mongoose";
-import Order from "@/src/models/Order";
-import { Transaction } from "@/src/models/Transactions";
-import { isDesktopServer } from "@/src/lib/runtime";
-import { proxyToCloud } from "@/src/lib/desktop/cloudProxy";
+import { cloudDataModels } from "@/src/lib/dataModels";
 
 const ACTIVE_ORDER_STATUSES = [
   "Pending",
@@ -52,9 +48,6 @@ const buildUnassignedSiteFilters = (siteKey) => {
 };
 
 export default async function handler(req, res) {
-  // Web shop orders live in the cloud; the desktop app reads them from there when online
-  if (isDesktopServer()) return proxyToCloud(req, res);
-
   if (req.method !== "GET") {
     return res.status(405).json({
       success: false,
@@ -63,7 +56,8 @@ export default async function handler(req, res) {
   }
 
   try {
-    await mongooseConnect();
+    // Web shop orders live in the cloud database (the desktop app reads it directly)
+    const { Order, Transaction } = await cloudDataModels();
 
     const {
       locationId,

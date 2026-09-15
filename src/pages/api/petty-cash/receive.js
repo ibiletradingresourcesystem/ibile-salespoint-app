@@ -5,26 +5,19 @@
  * Updates product stock quantities (like a Restock stock movement)
  * Creates expense entry
  */
-import { mongooseConnect } from "@/src/lib/mongoose";
 import mongoose from "mongoose";
-import Product from "@/src/models/Product";
-import { isDesktopServer } from "@/src/lib/runtime";
-import { proxyToCloud } from "@/src/lib/desktop/cloudProxy";
-
-const PettyCashTransactionSchema = new mongoose.Schema({}, { strict: false, collection: "pettycashtransactions" });
-const PettyCashTransaction = mongoose.models.PettyCashTransaction || mongoose.model("PettyCashTransaction", PettyCashTransactionSchema);
-
-const ExpenseSchema = new mongoose.Schema({}, { strict: false, collection: "expenses" });
-const Expense = mongoose.models.Expense || mongoose.model("Expense", ExpenseSchema);
+import { cloudDataModelsOrRespond } from "@/src/lib/dataModels";
 
 export default async function handler(req, res) {
-  if (isDesktopServer()) return proxyToCloud(req, res);
-
   if (req.method !== "PUT") {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  await mongooseConnect();
+  // Received stock goes straight to the cloud database (inventory stays online-only); the desktop
+  // app picks the new quantities up with its next product sync
+  const models = await cloudDataModelsOrRespond(res);
+  if (!models) return;
+  const { PettyCashTransaction, Product } = models;
 
   try {
     const { orderId, products: incomingProducts, staffName, paymentMethod, location } = req.body;

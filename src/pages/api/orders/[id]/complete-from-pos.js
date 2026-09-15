@@ -1,18 +1,13 @@
 import mongoose from 'mongoose';
-import { mongooseConnect } from '@/src/lib/mongoose';
-import Customer from '@/src/models/Customer';
-import Order from '@/src/models/Order';
-import { Staff } from '@/src/models/Staff';
-import { Transaction } from '@/src/models/Transactions';
-import Till from '@/src/models/Till';
-import Product from '@/src/models/Product';
+import { cloudDataModels } from '@/src/lib/dataModels';
 import { sanitizeBody } from '@/src/lib/apiValidation';
 import { updateInventoryForSale } from '@/src/lib/syncPackQty';
 import { markRoomsFromTransaction } from '@/src/lib/roomAvailability';
 import { ROOM_STATUSES } from '@/src/lib/roomReservations';
 import { sendOrderDeliveredEmail, sendOrderProcessingEmail } from '@/src/lib/orderStatusEmail';
 import { isDesktopServer } from '@/src/lib/runtime';
-import { completeOnlineOrderThroughCloud } from '@/src/lib/desktop/cloudProxy';
+import { flushRecord } from '@/src/lib/desktop/syncEngine';
+import { mirrorOnlineOrderSale } from '@/src/lib/desktop/onlineOrders';
 
 const ONLINE_TENDER_NAME = 'ONLINE';
 const MANUAL_ENTRY_TENDER_NAME = 'MANUAL ENTRY';
@@ -58,7 +53,7 @@ const getOrderContactDetails = (order) => {
   };
 };
 
-const hydrateOrderCustomer = async (order) => {
+const hydrateOrderCustomer = async (order, Customer) => {
   if (!order) return null;
 
   const customerRef = order.customer;
@@ -163,7 +158,7 @@ const normalizePaymentDetails = ({ order, paymentDetails }) => {
   };
 };
 
-const clearReservedInventory = async (items = []) => {
+const clearReservedInventory = async (items = [], Product) => {
   for (const item of items) {
     const productId = item.productId?._id || item.productId || item.id;
     const quantity = Number(item.quantity || item.qty || 0);
@@ -222,13 +217,20 @@ export default async function handler(req, res) {
     });
   }
 
-  // Desktop: the cloud records the online-order sale; this till keeps a copy
-  if (isDesktopServer()) return completeOnlineOrderThroughCloud(req, res);
+  // Desktop: the sale is recorded in the cloud database against this till, so the till must be there
+  if (isDesktopServer()) {
+    const flushed = await flushRecord('tills', req.body?.tillId);
+    if (!flushed.ok) {
+      const message = 'This till has not reached the cloud yet. Check the internet connection and try again.';
+      return res.status(503).json({ success: false, code: 'TILL_NOT_SYNCED', error: message, message });
+    }
+  }
 
   req.body = sanitizeBody(req.body);
 
   try {
-    await mongooseConnect();
+    // Web shop orders live in the cloud database (the desktop app writes to it directly)
+    const { Customer, Order, Staff, Transaction, Till, Product } = await cloudDataModels();
 
     const { id } = req.query;
     const {
@@ -279,7 +281,7 @@ export default async function handler(req, res) {
     }
 
     const baseOrder = await Order.findById(id).lean();
-    const order = await hydrateOrderCustomer(baseOrder);
+    const order = await hydrateOrderCustomer(baseOrder, Customer);
     if (!order) {
       return res.status(404).json({
         success: false,
@@ -410,8 +412,8 @@ export default async function handler(req, res) {
     }
 
     if (needsInventoryUpdate && transaction.inventoryUpdated !== true) {
-      await updateInventoryForSale(mappedItems);
-      await clearReservedInventory(orderItems);
+      await updateInventoryForSale(mappedItems, { Product });
+      await clearReservedInventory(orderItems, Product);
       transaction.inventoryUpdated = true;
       await transaction.save();
     }
@@ -447,7 +449,14 @@ export default async function handler(req, res) {
       { new: true, runValidators: true }
     ).lean();
 
-    const updatedOrder = await hydrateOrderCustomer(updatedOrderRaw);
+    const updatedOrder = await hydrateOrderCustomer(updatedOrderRaw, Customer);
+
+    // Desktop: keep a copy of the sale on this till so Close Till and history include it
+    if (isDesktopServer()) {
+      await mirrorOnlineOrderSale(req, formatTransactionResponse(transaction)).catch((mirrorError) => {
+        console.error('[desktop] Online order sale recorded in the cloud but not copied to this till:', mirrorError);
+      });
+    }
 
     const shouldSendProcessingEmail =
       requestedFinalStatus === 'Processing' &&

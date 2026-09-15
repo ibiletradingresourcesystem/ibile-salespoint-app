@@ -6,8 +6,13 @@
  * runtime. Data applied from the cloud is written with the raw driver and is not recorded.
  */
 
+import mongoose from 'mongoose';
 import { isDesktopServer } from '@/src/lib/runtime';
 import { recordLocalChange } from '@/src/lib/desktop/outbox';
+
+// The same schemas are also used on the direct cloud connection (sync, online orders); only writes
+// to the local database are local changes
+const isLocal = (connection) => !connection || connection === mongoose.connection;
 
 const QUERY_WRITE_OPS = ['updateOne', 'updateMany', 'findOneAndUpdate', 'replaceOne', 'findOneAndReplace'];
 
@@ -41,14 +46,20 @@ export function syncTracking(schema, { entity }) {
   };
 
   schema.pre('save', function trackSavedFields() {
+    if (!isLocal(this.constructor?.db)) return;
     this.$locals.syncFields = this.isNew ? ['*'] : [...new Set(this.modifiedPaths().map(rootPath))];
   });
 
   schema.post('save', async function recordSave(doc) {
+    if (!isLocal(doc.constructor?.db)) return;
     await record([doc._id], doc.$locals?.syncFields?.length ? doc.$locals.syncFields : ['*']);
   });
 
   schema.pre(QUERY_WRITE_OPS, async function findTargets() {
+    if (!isLocal(this.model?.db)) {
+      this._syncSkip = true;
+      return;
+    }
     let query = this.model.find(this.getFilter()).select('_id').lean();
     const session = this.getOptions()?.session;
     if (session) query = query.session(session);
@@ -57,6 +68,7 @@ export function syncTracking(schema, { entity }) {
   });
 
   schema.post(QUERY_WRITE_OPS, async function recordQueryWrite(result) {
+    if (this._syncSkip) return;
     const unchanged = result && typeof result.matchedCount === 'number' && !result.modifiedCount && !result.upsertedId;
     if (unchanged) return;
 
@@ -68,6 +80,7 @@ export function syncTracking(schema, { entity }) {
   });
 
   schema.post('insertMany', async function recordInsertMany(docs) {
+    if (!isLocal(this?.db)) return;
     await record((docs || []).map((doc) => doc._id), ['*']);
   });
 }

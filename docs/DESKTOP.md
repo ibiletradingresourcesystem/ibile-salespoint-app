@@ -1,132 +1,137 @@
 # System POS desktop app
 
-The desktop app is another way to run the existing System POS, not a separate product. It runs the same
-Next.js app and API routes on the customer's computer, against a local MongoDB, and keeps that data in
-step with the existing Vercel deployment.
+The desktop app is another way to run the existing System POS, not a separate product. On the
+customer's Windows computer it runs the same Next.js app and API routes against a **local MongoDB**, and
+synchronises **directly with the customer's cloud MongoDB**. No Vercel, VPS or other server sits between
+the desktop and the database.
 
 ```
-CUSTOMER COMPUTER (no server PC, no LAN)                        CLOUD (existing)
-┌──────────────────────────────────────────────┐
-│ Ibile POS.exe (Electron, electron/main.js)    │
-│  ├─ window ── http://127.0.0.1:47321 ─┐       │
-│  ├─ POS server = this Next.js app  ◄──┘       │   HTTPS    Vercel: same Next.js app
-│  │   POS_RUNTIME=desktop                      │ ─────────► /api/sync/*  (installation token)
-│  │   sync engine (src/lib/desktop)            │            /api/orders, petty cash (staff session)
-│  ├─ mongod 127.0.0.1:27517, auth on           │                 │
-│  └─ backups, updates, scheduler               │            MongoDB Atlas (shared with the
-└──────────────────────────────────────────────┘            management app)
+                    CUSTOMER CLOUD MongoDB (e.g. Atlas)
+                     ▲                          ▲
+      Vercel web app │                          │ direct MongoDB connection (TLS)
+      (unchanged)    │                          │ sync engine, online orders, petty cash
+                     │                          │
+ Browser ── Next.js ─┘        ┌─────────────────┴──────────────────────────┐
+                              │ CUSTOMER WINDOWS PC                        │
+                              │ Ibile POS.exe (Electron, electron/main.js) │
+                              │  ├─ window → http://127.0.0.1:5150         │
+                              │  ├─ local System POS (same Next.js app,    │
+                              │  │   POS_RUNTIME=desktop)                  │
+                              │  └─ local MongoDB 127.0.0.1:27517 (auth)   │
+                              └────────────────────────────────────────────┘
 ```
 
-Nothing changes for the Vercel deployment's behaviour except the additions listed under
-[Cloud changes](#cloud-changes). Deploy the POS to Vercel before enrolling any desktop installation.
+**Web stays as it is.** Every desktop branch in the shared code runs only when `POS_RUNTIME=desktop`.
+The web deployment needs no configuration for the desktop.
 
 ---
 
-## 1. What already existed (inspection)
+## 1. Runtime
 
-| Existing mechanism | What it does | Where data lives | Survives restart | Kept for desktop? |
-|---|---|---|---|---|
-| `src/lib/offlineSync.js` + `src/lib/indexedDB.js` | Every sale is written to IndexedDB first, then POSTed to `/api/transactions` when `navigator.onLine`. Till opens/closes queued the same way with `offline-till-*` ids. | Browser IndexedDB `SalesPOS` | Yes (browser profile) unless site data is cleared | **Kept.** On desktop it flushes to the local server within milliseconds, so it acts as a write-ahead buffer in front of local MongoDB. |
-| Retry logic in `offlineSync.js` | In-memory retry map, 5 attempts with backoff, then skipped until a forced retry. Sync only on the `online` event or manual button. | Memory | No (resets on reload) | Kept for the browser → local hop; cloud retries are done by the durable outbox instead. |
-| Server-side idempotency | `externalId` (unique sparse index) and `dedupeKey` on `Transaction`; duplicate POSTs return `duplicate: true`; `inventoryUpdated` / `inventoryRestockedAt` guards. | MongoDB | Yes | **Kept and reused.** Cloud sync relies on the same ids and guards. |
-| Offline login (`StaffLogin.js attemptOfflineLogin`) | Logs in from cached staff **without checking the passcode**. | localStorage | Yes | **Not used on desktop.** Desktop always verifies the passcode (bcrypt) against local MongoDB. Still present for the web version — see [Pre-existing issues](#9-pre-existing-issues-found). |
-| Service worker `public/sw.js` | Network-first page cache and offline fallback page; skips `/api/*`. | Cache Storage | Yes | Not registered on desktop (pages are served locally; avoids stale pages after updates). |
-| `src/lib/offline/*`, `src/hooks/useOnlineStatus.js`, `src/services/syncService.js` | Older queue with a mocked backend call; localStorage queue. | localStorage | Yes | Unchanged; appear unused. |
-| Electron / desktop code | None existed. | — | — | Added (`electron/`). |
+| | Desktop |
+|---|---|
+| Start | Electron → splash → local `mongod` (bundled MongoDB 8.0) → migrations (backup first) → local POS server → window |
+| Page | `http://127.0.0.1:5150` (`/desktop-setup` on first run) |
+| POS database | Local MongoDB `ibile_pos` in `%APPDATA%\Ibile POS\data\mongodb`, localhost only, password-protected (DPAPI-encrypted password) |
+| Cloud database | Customer's MongoDB via connection string (DPAPI-encrypted), used only by the local server process |
+| Needs internet for | First-run setup, sync, web-shop orders, petty cash |
+| Works without internet | Login, products, cart, discounts, taxes, payments, sales, receipts, printing, refunds, tills, Close Till, credit sales, customers, local sales history |
 
-Answers that shaped the design:
-
-- **Duplicates:** the web path already de-duplicates by `externalId`; the desktop keeps the id generated at the till end to end (local `_id` and `externalId` become the cloud's).
-- **Sync failure:** the web path eventually skips transactions after 5 attempts and marks stale unmapped till closes as synced after 24 h. The desktop outbox never gives up on transient errors and never marks anything synced without the cloud's confirmation.
-- **Suitability:** browser storage is not a database for a till that must run for days offline, and the web offline path cannot enforce passcodes. Hence local MongoDB, with the existing code running unchanged on top of it.
-
----
-
-## 2. How the desktop runtime works
-
-**Processes.** `Ibile POS.exe` starts `mongod` (bundled), then runs the POS server (`build/desktop/app-server/server.js`, Next.js standalone output) using its own executable in Node mode, then opens the window at `http://127.0.0.1:47321`. Ports are saved in `config.json`; the POS port stays fixed because browser storage belongs to the page origin.
-
-**Same business logic.** All existing API routes (sales, edits, refunds, tills, close till, credit, customers, receipts, printing, reports) run unmodified against local MongoDB. `POS_RUNTIME=desktop` switches on only:
+**Same business logic.** All POS routes run unmodified against local MongoDB. `POS_RUNTIME=desktop` switches on:
 
 - change capture for synced records (`src/lib/desktop/syncTracking.js`)
 - the sync engine and `/api/desktop/*` routes
-- forwarding of cloud-only features (see §5)
+- web-shop orders and petty cash reading/writing the **cloud** database directly (`src/lib/dataModels.js`)
 - refusal of writes to cloud-managed data (products, categories, promotions)
 
-**Connectivity in the page.** The preload (`electron/preload.js`) reports `navigator.onLine = true` and suppresses the `offline` event, because the POS API is local and always reachable. This keeps all existing online code paths in use without editing the ~150 connectivity checks in the UI. Real cloud state comes from `/api/desktop/status` and is shown by `DesktopSyncStatus` in the top bar: **ONLINE · OFFLINE · SYNCING · SYNCED · SYNC ERROR**.
+**Connectivity in the page.** The preload reports `navigator.onLine = true`, because the POS API is on
+the same computer; existing POS code therefore always uses its online paths against the local server.
+The top-bar pill shows the real state: **ONLINE · OFFLINE · SYNCING · SYNCED · SYNC ERROR** (internet
+state from the computer, sync state from `/api/desktop/status`).
 
-**Data locations** (separate from program files, untouched by updates or uninstall):
+**Local persistence.** A sale is written to IndexedDB and immediately posted to the local server, which
+commits it to local MongoDB before the sale shows as complete. IndexedDB is only a short buffer; local
+MongoDB is the POS database and survives app restarts, Windows restarts and outages.
 
-```
-%APPDATA%\Ibile POS\
-  config.json         installation id, ports, DPAPI-encrypted secrets
-  data\mongodb\       local database (journaled)
-  backups\            *.ibpbak
-  logs\               main.log, server.log, mongod.log
-```
+---
 
-**First run.** `/desktop-setup` asks for the cloud address, a location and a manager/admin passcode, enrols the installation (`POST /api/sync/enroll`), then downloads store, staff, tenders, categories, promotions, customers and products before opening the POS.
+## 2. First-run setup
+
+1. **Connection string** of the customer's cloud MongoDB (Atlas → Connect → Drivers). The main process
+   tests it and finds the POS database (the one named in the string, or the only database holding `stores`
+   and `staffs`). The page clears the string immediately; it is never sent back to the page.
+2. **Location + manager/admin passcode**, checked against the cloud `staffs` collection (bcrypt). The
+   installation is recorded in the cloud collection `syncinstallations` (`INSTALLATION_ID`, name, location).
+3. **First download** of store, staff, tenders, categories, promotions, customers and products.
+
+The connection string is stored with Electron `safeStorage` (Windows DPAPI: readable only by that Windows
+user on that computer) and passed to the local POS server process only. It is not written to logs, not in
+the installer, not in Git.
+
+### Customer database requirements
+
+- **Network access:** MongoDB Atlas → Network Access must allow the shop's internet address (outbound
+  port 27017 and DNS SRV lookups must work on the shop network).
+- **Database user (recommended):** a dedicated user for the desktop POS with `readWrite` on the POS database
+  only, rather than an admin user. The desktop reads `stores, staffs, tenders, categories, promotions,
+  systemthemes, customers, products, orders, vendors` and writes `transactions, tills, endofdayreports,
+  customers, products` (stock), `staffs` (clock records), `stores` (UI settings), `orders,
+  pettycashtransactions, expenses, expensecategories, syncinstallations`.
+- **Transactions:** stock changes are applied in MongoDB transactions (Atlas replica sets support this).
+- If the user cannot list databases, include the database name in the connection string.
 
 ---
 
 ## 3. Synchronisation
 
-### 3.0 When the desktop contacts the cloud (Vercel)
+### When it runs
 
-To keep Vercel usage (Fluid Active CPU) for web users, **the desktop app never syncs in the background**.
-It calls the cloud only when staff do something that needs it:
-
-| Staff action | Cloud calls |
+| Trigger | What happens |
 |---|---|
-| **Sync Products** (menu screen) or **Sync now** (status popover, app menu) | Send everything waiting, then download store, staff, tenders, categories, promotions, customers and product changes |
-| **Retry these** (items the cloud refused) | Same as Sync now |
-| First-run setup | Enrolment, then the first full download |
-| Opening the Online Orders tab, completing/delivering a web-shop order | Those order requests (the till is sent first if needed) |
-| Opening Petty Cash, sending a support message | Those requests |
-| Login by staff who can use online orders or petty cash | One cloud sign-in in the background |
+| A sale, till change, customer or clock-in | Push starts about 5 s later |
+| Every 30 s in the background | Push if changes are waiting; pull data that is due (products, store, staff, tenders, categories, promotions every 5 min; customers and theme every 30 min) |
+| Internet restored / computer resumes | Sync starts straight away |
+| **Sync Products**, **Sync now**, **Close Till**, **Retry these** | Full sync immediately: everything waiting is sent, all data is pulled |
 
-There is no heartbeat, no connectivity ping and no retry timer. Sales, till opens/closes and customers
-wait safely in the local outbox until the next sync. The status pill shows how many changes are waiting,
-and **OFFLINE** comes from the computer's own network state, not from a cloud request.
+While the cloud database cannot be reached, background attempts back off from 30 s up to 5 minutes. The
+till never waits for sync.
 
-Consequence: cloud stock, reports and the management app only reflect a till's sales after that till
-syncs, and price or product changes reach the till only when it syncs.
+### Local → cloud (push)
 
-### 3.1 Local → cloud (push)
+1. Writes through `Transaction`, `Till`, `EndOfDayReport` and `Customer` models record an entry in the local
+   `sync_outbox` in the same request (clock-ins and UI settings are recorded explicitly). Writes made on the
+   cloud connection are ignored by the tracker.
+2. One pending entry per record; later changes merge into it and raise its revision. The record's current
+   state is sent.
+3. Entries are claimed (`pending → processing`) and applied to the cloud database in priority order:
+   customers, tills, sales, end-of-day reports, clock records, settings (`src/lib/sync/cloudApply.js`).
+4. Result: applied/duplicate → `synced`; conflict → `conflict`; invalid → `failed`; connection error →
+   back to `pending` with backoff. Nothing is marked synced without the cloud write succeeding.
+5. Entries interrupted by a crash return to `pending` on the next start. A 6-hourly sweep re-queues any
+   recent sale, till or report without an outbox entry.
 
-1. Any write through `Transaction`, `Till`, `EndOfDayReport` or `Customer` models (save, update, findOneAndUpdate, insertMany) records an entry in `sync_outbox` **in the same request**. Clock-ins and UI settings are recorded explicitly in their routes. Nothing in the POS routes had to change to be captured.
-2. One pending entry per record: later changes merge into it (fields are unioned, revision raised). The record's **current** state is read when it is sent.
-3. The engine claims entries (`pending → processing`), sends up to 25 per request, in priority order: customers, tills, sales, end-of-day reports, clock records, settings.
-4. Result per entry: `applied`/`duplicate` → `synced`; `conflict` → `conflict`; `rejected` → `failed`; anything else (or no response) → back to `pending` and sent again at the next sync, however many syncs that takes. Each entry is tried at most once per sync.
-5. Entries left `processing` by a crash or restart return to `pending` on the next start.
+### Duplicate protection
 
-Schema (adapted from the brief): `installationId, entity, entityId, operation, status, priority, rev, fields, payload, attempts, nextRetryAt, lastAttemptAt, lockedAt, syncedAt, error, cloudId, createdAt, updatedAt`. Synced entries are kept 30 days (TTL index).
+- Revisions: the cloud copy stores `syncRev`; a revision it already holds is a duplicate and changes nothing.
+- Stock is changed by the **difference** between the cloud copy's applied stock and the incoming copy
+  (`inventoryUpdated && !inventoryRestockedAt`), using the existing `updateInventoryForSale` /
+  `reverseInventoryForRefund` (pack/child rules included), in one MongoDB transaction with the sale.
+- Sales also match by `externalId` / `dedupeKey`.
 
-A safety sweep every 6 h re-queues any sale, till or report from the last 25 days that has no outbox entry (covers a write whose outbox insert failed).
+Tested: re-sending a confirmed sale leaves one sale and one stock change; an older revision changes nothing.
 
-### 3.2 Idempotency — sales never duplicate
-
-- Each entry carries a monotonic revision (`sync_counters`). The cloud stores `syncRev` on the record and acknowledges any revision it already holds as `duplicate` without changing anything.
-- Stock is changed by **difference**: the cloud compares the stock effect of its copy (`inventoryUpdated && !inventoryRestockedAt`) with the incoming copy and applies only the delta, using the existing `updateInventoryForSale` / `reverseInventoryForRefund` (pack/child rules included), inside a MongoDB transaction with the record write.
-- Matching falls back to `externalId` / `dedupeKey`, so the same sale stored under another id is a duplicate, not a second sale.
-
-Tested: a lost response followed by a retry leaves one sale and one stock decrement; an older revision arriving late changes nothing.
-
-### 3.3 Cloud → local (pull)
-
-All of these are pulled on each sync.
+### Cloud → local (pull)
 
 | Data | Strategy |
 |---|---|
-| store (locations, receipt settings), tenders, categories, promotions, staff, system theme | Snapshot with ETag: nothing is sent when unchanged. These models have no reliable `updatedAt`, so a cursor could miss edits. Records deleted in the cloud are removed locally. |
-| customers | Snapshot with ETag; customers with unsent local changes are left alone |
-| products | `(updatedAt, _id)` cursor with a 2-minute overlap; first sync pages by `_id`. At most once a day, a manifest (ids + `updatedAt`) removes deleted products and refetches any that differ. |
+| store, tenders, categories, promotions, staff, theme, customers | Whole collection read; written locally only when its fingerprint changed; records deleted in the cloud removed locally (store/staff/tenders are never emptied) |
+| products | `(updatedAt, _id)` cursor using the database server's clock, 2-minute overlap; daily manifest check for deleted or missed products |
 
-Products are pulled only when no sales are waiting to sync, and each write is conditional on the local version read just before, so a sale made during a pull is never overwritten. Pulled data is written with the raw driver: cloud timestamps are preserved and the writes are not captured as local changes.
+Products are pulled only when no sales are waiting to sync, and each write is conditional on the local version,
+so a sale made during a pull is not overwritten. Staff records are reduced to login/permission fields
+(no bank, salary, guarantor or onboarding data) and passcodes are always stored locally as bcrypt hashes.
 
-**Staff data minimisation.** Only login/permission fields and the last 50 clock records are sent. Bank details, salary, penalties, guarantor and onboarding data never leave the cloud. Passcodes stored in plaintext in the cloud (legacy accounts) are bcrypt-hashed before sending.
-
-**Not pulled:** sales, tills and reports from other terminals, web-shop orders, petty cash. The desktop's sales history is the sales made on that installation.
+Not pulled: sales, tills and reports of other terminals. Inventory management stays online-only.
 
 ---
 
@@ -134,106 +139,102 @@ Products are pulled only when no sales are waiting to sync, and each write is co
 
 | Record | Rule |
 |---|---|
-| Sale | Owned by the installation that recorded it (or whose till it was recorded against). Completed sales are transactional records: another installation's attempt to change one is a **conflict**. If the cloud copy was changed elsewhere after the till sent it — for example a refund approved or a credit payment recorded in the management app — the cloud keeps its version and the push is a **conflict** (detected with a fingerprint of status, totals, items, stock flags and credit payments). |
-| Till, end-of-day report | Owned by the installation that opened the till; its copy replaces the cloud copy. Web terminals never pick up a desktop-owned till as "the open till" (`webTillScope`). |
-| Customer | Created at the till → inserted (a different customer with the same email → conflict). Edited at the till → only the fields the cashier changed are applied. `creditBalance` is always recalculated in the cloud from cloud transactions. Customers with unsent changes are not overwritten by pulls. |
-| Clock record | Appended once, by record id. Unsent records are kept locally when staff are pulled. |
+| Sale | Owned by the installation that recorded it (or whose till it was recorded against). Another installation's attempt to change it is a **conflict**. If the cloud copy was changed elsewhere after the till sent it (e.g. refund or credit payment in the management app), the cloud keeps its version and the change is a **conflict**. |
+| Till, end-of-day report | Owned by the installation that opened the till; its copy replaces the cloud copy. Web terminals do not adopt desktop-owned tills (`webTillScope`). |
+| Customer | Created at the till → inserted (same email already in the cloud → conflict). Edited at the till → only changed fields applied. `creditBalance` recalculated from cloud transactions. |
+| Clock record | Appended once by record id. |
 | UI settings | Last saved wins. |
-| Products, categories, promotions, tenders, staff, store | Cloud wins. Writes on the desktop are refused with a clear message; stock changes reach the cloud through the sales that caused them. |
+| Products, categories, promotions, tenders, staff, store | Cloud wins; desktop writes refused. Stock changes reach the cloud through the sales that caused them. |
 
-Conflicts and rejections are never deleted. They show as **SYNC ERROR** with a list and a *Retry these* button in the status popover (`/api/desktop/outbox`).
+Conflicts and rejections stay on the computer and appear as **SYNC ERROR** with *Retry these*.
 
 ---
 
-## 5. Cloud-only features
+## 5. Web-shop orders, petty cash, email
 
-Web-shop orders, petty cash and support email are shared with the management app and payment providers, so they stay in the cloud. When a staff member who can use them (online orders need *viewAdvancedOrders*, petty cash is in the sidebar) logs in with internet available, the local server also signs them in to the cloud in the background and keeps that staff session. Cashiers without those permissions cause no cloud call at login. On desktop, the Online Orders tab loads orders when it is opened, not every time the window regains focus. Those routes are then forwarded to the cloud with the staff member's own session, so cloud permissions apply exactly as for web terminals. Offline, they return a clear "needs an internet connection" message; the till keeps working.
-
-Completing an online order first makes sure this till exists in the cloud, lets the cloud record the sale (as today), then stores a copy on the till so Close Till includes it.
+- **Online orders** (list, process, complete, mark delivered) and **petty cash** (vendors, orders, receive,
+  mark paid) run their existing route logic on the desktop against the cloud database connection. Offline
+  they answer with "needs a connection to the cloud database"; sales keep working.
+- Completing an online order first sends this till to the cloud, records the sale in the cloud as today,
+  then keeps a copy on the till so Close Till includes it.
+- **Email:** the desktop has no mail account. Order-status emails report "skipped"; the support chat opens
+  the staff member's email app.
 
 ---
 
 ## 6. Security
 
-- **Enrolment** needs an active manager/admin passcode (rate-limited like login). The installation receives a random 256-bit token; the cloud stores only its SHA-256. Revoke with `POST /api/sync-admin/installations {installationId, action: "revoke"}` (manager session); the till keeps its data and reports SYNC ERROR until set up again.
-- **Local secrets** (database password, session secret, sync token) are encrypted with Windows DPAPI via Electron `safeStorage`; only that Windows user on that computer can read them.
-- **Local MongoDB** listens on 127.0.0.1 only with authentication on. Community Edition has no encryption at rest: enable BitLocker on till computers.
-- **Offline login** always checks the bcrypt passcode locally; roles and POS permissions come from the synced staff records. The web offline login that skips the passcode is disabled in the desktop app.
-- **Window hardening:** context isolation, sandbox, no Node in the page, external links open in the browser, IPC accepted only from the POS page.
-- **Build hygiene:** `scripts/desktop/build-server.js` deletes `.env*` files (Next's standalone output copies `.env`, which holds the Atlas credentials) and fails the build if any secret value from the env file appears in the output. The afterPack hook refuses to package `.env*` files.
+- The cloud connection string and local database password are DPAPI-encrypted; the page never receives
+  the connection string; logs never contain it; `.env` files are removed from the build and the build
+  fails if an env secret is found in it.
+- Anyone with administrator access to a till computer, or malware running as its Windows user, could
+  recover the stored credentials. Use a dedicated least-privilege database user, restrict Atlas network
+  access, and change that user's password if a computer is lost. Enable BitLocker on till computers.
+- **Disconnecting an installation:** set `revokedAt` on its document in `syncinstallations`; it stops
+  syncing (SYNC ERROR) and keeps its data. This is enforced by the app; to cut off a computer you do not
+  control, change the database user's password.
+- Local MongoDB listens on 127.0.0.1 only, with authentication.
+- Offline login always checks the bcrypt passcode locally with existing roles and permissions.
+- Window: context isolation, sandbox, no Node in the page, external links open in the browser, IPC only
+  from the POS page.
 
 ---
 
-## 7. Backups, migrations and updates
+## 7. Backups, migrations, updates
 
-**Backups** (`electron/lib/backup.js`) — gzip of canonical Extended JSON (exact BSON types and indexes kept), written to `*.partial` and renamed when complete, verified in full before any restore.
+Backups (`electron/lib/backup.js`): gzip canonical Extended JSON, exact BSON types and indexes, written
+atomically, fully verified before restore. Automatic daily (14 kept), before updates, before migrations,
+before restores; manual kept always. File → Restore From Backup…; a backup from another installation makes
+this computer take its place (set up again).
 
-| Kind | When | Kept |
-|---|---|---|
-| auto | daily while the app runs | 14 |
-| pre-update | when an update is installed (service stopped first) | 5 |
-| pre-migration | on first start of a new version / before migrations | 5 |
-| pre-restore | before a restore replaces data | 5 |
-| manual | File → Back Up Now | always |
-
-**Restore:** File → Restore From Backup… shows the backup date, warns about unsynced changes, takes a safety backup, replaces the database and restarts. A backup from another installation makes this computer take over that installation (it must be set up again), which is how to move to a new PC.
-
-**Migrations:** `electron/lib/migrations.js`, versioned, recorded after each step, run with a backup first.
-
-**Updates** (separate from sync): electron-updater downloads in the background and never installs during trading — staff choose *Restart Now*, or it installs on next close, after stopping the service and backing up. Enabled when the installer is built with `IBILE_POS_UPDATE_URL`.
+Updates (electron-updater) download in the background and install only on *Restart Now* or next close,
+after stopping the service and backing up. Enabled when built with `IBILE_POS_UPDATE_URL`.
 
 ---
 
-## 8. Build, release and support
-
-### Build the installer (Windows build machine)
+## 8. Build and support
 
 ```powershell
-npm install                      # POS dependencies (as today)
-npm run desktop:install          # Electron tooling, kept out of the Vercel install
-npm run desktop:fetch-mongodb    # MongoDB 8.0 Community (verified SHA-256); ~800 MB download, cached
-$env:IBILE_POS_UPDATE_URL = "https://updates.example.com/ibile-pos"   # optional, enables auto-update
-npm run desktop:dist             # builds the server, then dist-desktop\Ibile POS Setup <version>.exe
+npm install
+npm run desktop:install
+npm run desktop:fetch-mongodb    # MongoDB 8.0 Community, SHA-256 verified (~800 MB, cached)
+$env:IBILE_POS_UPDATE_URL = "https://updates.example.com/ibile-pos"   # optional
+npm run desktop:dist             # dist-desktop\Ibile POS Setup <version>.exe
 ```
 
-Release: bump `electron/package.json` version, build, upload the installer, `.blockmap` and `latest.yml` to `IBILE_POS_UPDATE_URL`. Sign the installer with a code-signing certificate (`CSC_LINK`, `CSC_KEY_PASSWORD`) to avoid SmartScreen warnings. Add `electron/build/icon.ico` (256×256) for a branded icon.
-
-Development: `npm run desktop:fetch-mongodb` once, then `npm run desktop:dev` (runs `next dev`). `POS_USER_DATA_DIR=<folder>` runs against a separate data folder; `POS_MONGOD_PATH` points at another `mongod.exe`.
-
-### Support runbook
+Icon: `electron/assets/icon.ico` (from `public/images/logo.png`). Sign installers with a code-signing
+certificate (`CSC_LINK`, `CSC_KEY_PASSWORD`). Development: `npm run desktop:dev`; `POS_USER_DATA_DIR`
+selects a separate data folder, `POS_MONGOD_PATH` another `mongod.exe`.
 
 | Situation | Action |
 |---|---|
-| OFFLINE | Nothing to do; sales are saved locally. Press Sync Products once the internet is back. |
-| ONLINE · number | Changes are waiting. Press Sync Products (e.g. at shift change and before closing the till) so the cloud and management app are up to date. |
-| SYNC ERROR, "not authorised" | Installation revoked or token invalid: Sync → Set Up This POS Again (manager passcode). Data is kept. |
-| SYNC ERROR, items listed | Read the reason. Fix the record in the management app if needed, then *Retry these*. |
-| App says the local database has credentials this computer no longer has | Close the app. Remove `secrets.mongoPassword` from `config.json`. Run `resources\mongodb\bin\mongod.exe --dbpath "%APPDATA%\Ibile POS\data\mongodb" --port 27517 --bind_ip 127.0.0.1` (no `--auth`), drop the `ibilepos` user in the `admin` database with any MongoDB shell, stop `mongod`, start the app (it creates a new user). |
-| New computer | Old PC: File → Back Up Now. New PC: install, File → Restore From Backup…, set up again. |
-| Logs | Help → Open Logs Folder. |
+| OFFLINE | Nothing to do; sales are saved and sync when the connection returns. |
+| SYNC ERROR "credentials" / "disconnected" | Sync → Set Up This POS Again with a current connection string and manager passcode. Data is kept. |
+| SYNC ERROR with items listed | Check the reason in the management app, then *Retry these*. |
+| Setup: "Could not reach the database" | Internet connection and Atlas Network Access for the shop's address. |
+| Local database credentials lost | Close the app; remove `secrets.mongoPassword` from `config.json`; start `mongod.exe --dbpath "%APPDATA%\Ibile POS\data\mongodb" --port 27517 --bind_ip 127.0.0.1` without `--auth`; drop user `ibilepos` in `admin`; stop it; start the app. |
+| New computer | Old PC: Back Up Now. New PC: install, Restore From Backup…, set up again. |
 
 ---
 
-## 9. Pre-existing issues found
+## 9. Pre-existing issues (web version, unchanged)
 
-Not changed for the web version (behaviour change needs a product decision), listed for follow-up:
-
-1. **Web offline login does not check the passcode** (`StaffLogin.js`, `attemptOfflineLogin`): offline, anyone can log in as any cached staff member, including admins. Disabled in the desktop app.
+1. Web offline login does not check the passcode (`StaffLogin.js attemptOfflineLogin`); disabled on desktop.
 2. `/api/staff/quick-login` issues a session without a passcode for role `staff`.
-3. Legacy staff passcodes are stored and compared in plaintext (`verifyPin` fallback) in the cloud database.
-4. The middleware forwards a client-supplied `x-auth-staff-id` header on public routes (no current handler reads it there; stripped on the new sync routes).
+3. Some legacy staff passcodes are stored in plaintext in the cloud database.
+4. The middleware forwards a client-supplied `x-auth-staff-id` on public routes (not read there today).
 5. The web offline queue gives up after 5 attempts and marks unmapped offline till closes older than 24 h as synced.
-6. `Transactions.js` declares the `externalId` index twice (Mongoose warning at startup).
-7. `src/lib/mongodb.js` is unused and throws on import without `MONGODB_URI`; `src/lib/offline/sync.js` contains a mocked backend call.
-8. POS and management app keep separate copies of the same models (e.g. `Staff`, `Till`), which can drift. The management app refunds/edits POS sales and records credit payments directly in the cloud; for desktop sales these are protected by the conflict rule in §4 but are not pulled back to the till.
+6. `Transactions.js` declares the `externalId` index twice.
+7. POS and management app keep separate copies of shared models, which can drift.
 
 ---
 
-## 10. Verification performed
+## 10. Verification
 
-- Web production build (`next build`) passes with all changes.
-- End-to-end test against a throwaway local replica set, one server as cloud and one as desktop: **63/63 checks**, including nothing sent until staff sync, enrolment rules, token hashing, initial sync, staff data minimisation, local passcode checks, sale → cloud with parent/child stock, lost-response retry (one sale, one decrement), stale revision ignored, refund restock and till totals, price/tender changes pulled, offline sale synced after reconnect, credit customer balance, clock records, management-app refund conflict, web till isolation, online orders forwarded, revocation.
-- Backup/restore/migrations: **11/11** (exact BSON types, partial/TTL indexes, damaged file rejected, retention).
-- Packaged `Ibile POS.exe` (unpacked build): **15/15** — database and service start, sandboxed bridge, enrolment through the app, DPAPI-encrypted token, initial sync, unauthenticated MongoDB access refused, clean shutdown.
+- Web production build and lint pass; the removed `/api/sync/*` endpoints no longer exist on the web.
+- Direct end-to-end test (local MongoDB + replica-set "customer cloud", desktop server and a web server): **56/56** — first sync, staff data minimisation, local login, automatic push without Sync, parent/child stock, duplicate-safe re-send, stale revision, refund, pull of price/tender changes, online orders (list/process/complete) and petty cash directly on the cloud database, POS working with the cloud database down, OFFLINE → SYNCED after reconnect, credit balance, clock records, management-app conflict, web login/till/orders/petty cash unchanged, Close Till sync, disconnected installation, no credentials in status.
+- Packaged `Ibile POS.exe` setup test: **18/18** — port 5150, database discovery, wrong passcode, installation registered in the cloud, DPAPI-encrypted connection string, first download, page and logs never contain the connection string, local MongoDB auth, clean shutdown.
+- Backup/restore: 11/11.
 
-Not yet run: the full NSIS installer, a signed build, auto-update against a real update server, and the downloaded MongoDB 8.0 binary (the packaged test used the locally installed 8.2 binary).
+Not yet run: full NSIS installer, signed build, updates from a real server, the downloaded MongoDB 8.0
+binary (tests used MongoDB 8.2), and a real Atlas cluster over the internet.

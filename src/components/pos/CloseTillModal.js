@@ -12,6 +12,7 @@ import { getTenderAmount, normalizeTenderBreakdown } from "../../lib/tenderKey";
 import { describeTillTerminals, mergeTillTransactions, summarizeTillTransactions } from "../../lib/tillReconciliation";
 import { getDeviceId, getDeviceName } from "../../lib/deviceIdentity";
 import NumKeypad from "../common/NumKeypad";
+import { showToast } from "../common/Toast";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
   faCashRegister,
@@ -629,6 +630,10 @@ export default function CloseTillModal({ isOpen, onClose, onTillClosed }) {
         const data = await response.json();
         setLoadingProgress(75);
         setLoadingStep("Till closed successfully...");
+        if (data.cloudSyncStarted) {
+          // Desktop app: the local service is sending the till and the day's sales to the cloud
+          showToast("Till closed. Sending the day's sales to the cloud — the sync status shows when it is done.", "success", 6000);
+        }
         onTillClosed(data.till);
       } else {
         const tillCloseData = {

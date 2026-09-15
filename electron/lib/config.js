@@ -3,7 +3,7 @@
 /**
  * Per-installation settings in %APPDATA%\Ibile POS\config.json.
  *
- * Secrets (local database password, session secret, cloud sync token) are encrypted with Electron
+ * Secrets (local database password, session secret, cloud database connection string) are encrypted with Electron
  * safeStorage, which on Windows uses DPAPI: they can only be read by this Windows user on this
  * computer. Copying the file elsewhere does not expose them.
  */
@@ -48,14 +48,20 @@ class DesktopConfig {
     const fresh = {
       installationId: crypto.randomUUID(),
       installationName: os.hostname(),
-      cloudUrl: defaults.cloudUrl || '',
-      serverPort: defaults.serverPort || 47321,
+      serverPort: defaults.serverPort || 5150,
       mongoPort: defaults.mongoPort || 27517,
       mongoUser: 'ibilepos',
       secrets: {},
       enrollment: null,
     };
     this.data = { ...fresh, ...this.data, secrets: { ...(this.data.secrets || {}) } };
+
+    // Earlier builds synced through the web deployment with a token; that setup is no longer used
+    if (this.data.secrets.syncToken || this.data.cloudUrl !== undefined) {
+      delete this.data.secrets.syncToken;
+      delete this.data.cloudUrl;
+      if (!this.data.secrets.cloudMongoUri) this.data.enrollment = null;
+    }
 
     if (!this.data.secrets.mongoPassword) this.data.secrets.mongoPassword = seal(crypto.randomBytes(24).toString('base64url'));
     if (!this.data.secrets.sessionSecret) this.data.secrets.sessionSecret = seal(crypto.randomBytes(48).toString('base64url'));
@@ -82,7 +88,7 @@ class DesktopConfig {
   }
 
   get isEnrolled() {
-    return Boolean(this.data.enrollment && this.data.secrets.syncToken && this.data.cloudUrl);
+    return Boolean(this.data.enrollment && this.data.secrets.cloudMongoUri && this.data.cloudDbName);
   }
 
   save() {

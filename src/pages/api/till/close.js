@@ -7,6 +7,8 @@ import Tender from "@/src/models/Tender";
 import Store from "@/src/models/Store";
 import mongoose from "mongoose";
 import { sanitizeBody } from '@/src/lib/apiValidation';
+import { isDesktopServer } from "@/src/lib/runtime";
+import { runSyncCycle } from "@/src/lib/desktop/syncEngine";
 
 /**
  * Bulletproof Mongoose Map → plain object extraction.
@@ -393,8 +395,15 @@ export default async function handler(req, res) {
     tillResponse.tenderBreakdown = tenderBreakdownObj;
     tillResponse.tenderVariances = tenderVariancesObj;
 
+    // Desktop: send the closed till, its report and the day's sales to the cloud now. Runs in the
+    // background on this computer, so closing never waits for the internet.
+    if (isDesktopServer()) {
+      runSyncCycle({ force: true }).catch((syncErr) => console.warn("⚠️ Sync after till close failed:", syncErr?.message));
+    }
+
     return res.status(200).json({
       message: "Till closed successfully",
+      cloudSyncStarted: isDesktopServer(),
       till: tillResponse,
       summary: {
         openingBalance: till.openingBalance,

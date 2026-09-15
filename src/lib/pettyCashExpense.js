@@ -25,13 +25,13 @@ function toObjectId(value) {
   return id && mongoose.Types.ObjectId.isValid(String(id)) ? new mongoose.Types.ObjectId(String(id)) : null;
 }
 
-async function ensureExpenseCategory() {
+async function ensureExpenseCategory(ExpenseCategoryModel) {
   const filter = { name: PETTY_CASH_EXPENSE_CATEGORY };
   try {
-    return await PosExpenseCategory.findOneAndUpdate(filter, { $setOnInsert: filter }, { upsert: true, new: true }).lean();
+    return await ExpenseCategoryModel.findOneAndUpdate(filter, { $setOnInsert: filter }, { upsert: true, new: true }).lean();
   } catch (err) {
     // Category names are unique; another request may have created it at the same moment
-    if (err?.code === 11000) return PosExpenseCategory.findOne(filter).lean();
+    if (err?.code === 11000) return ExpenseCategoryModel.findOne(filter).lean();
     throw err;
   }
 }
@@ -39,11 +39,15 @@ async function ensureExpenseCategory() {
 /**
  * Create or update the expense for a paid petty cash transaction.
  * Safe to call more than once for the same order: it is matched by the order id.
+ * models: optional { PosExpense, PosExpenseCategory } for another connection (the desktop app's
+ * direct cloud connection); without them this app's models are used.
  * @returns the expense _id
  */
-export async function recordPettyCashExpense(transaction) {
+export async function recordPettyCashExpense(transaction, models = {}) {
+  const ExpenseModel = models.PosExpense || PosExpense;
+  const ExpenseCategoryModel = models.PosExpenseCategory || PosExpenseCategory;
   const sourceId = String(transaction._id);
-  const category = await ensureExpenseCategory();
+  const category = await ensureExpenseCategory(ExpenseCategoryModel);
   const paidBy = transaction.paidBy || transaction.requestedBy || null;
 
   const payload = {
@@ -66,14 +70,14 @@ export async function recordPettyCashExpense(transaction) {
 
   const linkedExpenseId = toObjectId(transaction.expense);
   const existing =
-    (linkedExpenseId && (await PosExpense.findById(linkedExpenseId).select("_id").lean())) ||
-    (await PosExpense.findOne({ sourceType: "petty-cash-transaction", sourceId }).select("_id").lean());
+    (linkedExpenseId && (await ExpenseModel.findById(linkedExpenseId).select("_id").lean())) ||
+    (await ExpenseModel.findOne({ sourceType: "petty-cash-transaction", sourceId }).select("_id").lean());
 
   if (existing) {
-    await PosExpense.updateOne({ _id: existing._id }, { $set: payload });
+    await ExpenseModel.updateOne({ _id: existing._id }, { $set: payload });
     return existing._id;
   }
 
-  const created = await PosExpense.create(payload);
+  const created = await ExpenseModel.create(payload);
   return created._id;
 }

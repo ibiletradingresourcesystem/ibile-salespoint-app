@@ -1,13 +1,9 @@
 import mongoose from 'mongoose';
-import { mongooseConnect } from '@/src/lib/mongoose';
-import Customer from '@/src/models/Customer';
-import Order from '@/src/models/Order';
+import { cloudDataModels } from '@/src/lib/dataModels';
 import { sanitizeBody } from '@/src/lib/apiValidation';
 import { sendOrderProcessingEmail } from '@/src/lib/orderStatusEmail';
-import { isDesktopServer } from '@/src/lib/runtime';
-import { proxyToCloud } from '@/src/lib/desktop/cloudProxy';
 
-const hydrateOrderCustomer = async (order) => {
+const hydrateOrderCustomer = async (order, Customer) => {
   if (!order) return null;
 
   const customerRef = order.customer;
@@ -33,8 +29,6 @@ const hydrateOrderCustomer = async (order) => {
 };
 
 export default async function handler(req, res) {
-  if (isDesktopServer()) return proxyToCloud(req, res);
-
   if (req.method !== 'POST') {
     return res.status(405).json({ success: false, error: 'Method not allowed' });
   }
@@ -42,7 +36,7 @@ export default async function handler(req, res) {
   req.body = sanitizeBody(req.body);
 
   try {
-    await mongooseConnect();
+    const { Order, Customer } = await cloudDataModels();
 
     const { id } = req.query;
     const { locationId, locationName } = req.body || {};
@@ -52,7 +46,7 @@ export default async function handler(req, res) {
     }
 
     const baseOrder = await Order.findById(id).lean();
-    const order = await hydrateOrderCustomer(baseOrder);
+    const order = await hydrateOrderCustomer(baseOrder, Customer);
     if (!order) {
       return res.status(404).json({ success: false, error: 'Order not found' });
     }
@@ -82,7 +76,7 @@ export default async function handler(req, res) {
       { new: true, runValidators: true }
     ).lean();
 
-    const updatedOrder = await hydrateOrderCustomer(updatedOrderRaw);
+    const updatedOrder = await hydrateOrderCustomer(updatedOrderRaw, Customer);
 
     const emailState = shouldSendProcessingEmail
       ? await sendOrderProcessingEmail(updatedOrder)

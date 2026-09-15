@@ -4,9 +4,6 @@ import Store from "@/src/models/Store";
 import { setSessionCookie } from "@/src/lib/sessionAuth";
 import { sanitizeString } from "@/src/lib/apiValidation";
 import { verifyPin } from "@/src/lib/staffPin";
-import { isDesktopServer } from "@/src/lib/runtime";
-import { captureCloudSession } from "@/src/lib/desktop/cloudProxy";
-import { hasPosPermission } from "@/src/lib/posPermissions";
 
 const sendError = (res, status, code, message, details = {}) =>
   res.status(status).json({
@@ -138,15 +135,6 @@ export default async function handler(req, res) {
 
     // Set session cookie for API auth
     setSessionCookie(res, String(staffMember._id));
-
-    // Desktop: also sign this staff member in to the cloud (in the background) so cloud-only
-    // features work while the internet is available. Only for staff who can open them (online
-    // orders need viewAdvancedOrders, petty cash is in the sidebar), to keep cloud calls down.
-    const usesCloudFeatures =
-      hasPosPermission(staffMember, "viewAdvancedOrders") || hasPosPermission(staffMember, "sidebarAccess");
-    if (isDesktopServer() && usesCloudFeatures) {
-      captureCloudSession({ staffId: String(staffMember._id), pin, location: requestedLocation }).catch(() => {});
-    }
 
     return res.status(200).json({
       success: true,

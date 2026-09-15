@@ -12,6 +12,7 @@
     "dist:dir": "electron-builder --config electron-builder.config.js --win --x64 --dir"
   },
   "dependencies": {
+    "bcryptjs": "^3.0.2",
     "electron-updater": "^6.8.9",
     "mongodb": "^6.21.0"
   },

@@ -17,8 +17,9 @@
  * deriveChildQty(productId):
  *   Recalculates children qty from the parent. Use after any non-sale qty change.
  *
- * Each function accepts an optional { session } so cloud sync can apply stock changes inside
- * the same MongoDB transaction as the synced sale (src/lib/sync/cloudApply.js).
+ * Each function accepts optional { session, Product } so desktop sync can apply stock changes to the
+ * cloud database connection, inside the same MongoDB transaction as the synced sale
+ * (src/lib/sync/cloudApply.js). Without them the app's own Product model is used.
  */
 
 import Product from "@/src/models/Product";
@@ -27,7 +28,7 @@ import { childQtyToParentQty, deriveChildQuantity, isDerivedChild } from "@/src/
 
 const CHILD_FILTER = { isChildProduct: true, packType: { $ne: "pack" } };
 
-async function applyInventoryChange(items, sign, { session = null } = {}) {
+async function applyInventoryChange(items, sign, { session = null, Product: ProductModel = Product } = {}) {
   if (!items || items.length === 0) return;
 
   const validItems = items.filter(i => i.productId && Number(i.qty) && !isRoomProduct(i));
@@ -35,7 +36,7 @@ async function applyInventoryChange(items, sign, { session = null } = {}) {
 
   // Pre-fetch all products to know which are children/parents
   const productIds = validItems.map(i => i.productId);
-  const products = await Product.find({ _id: { $in: productIds } })
+  const products = await ProductModel.find({ _id: { $in: productIds } })
     .select("_id isChildProduct parentProduct packType qtyPerPack unitsPerChild productType")
     .session(session)
     .lean();
@@ -64,7 +65,7 @@ async function applyInventoryChange(items, sign, { session = null } = {}) {
 
   // 1. Normal/parent products change directly
   for (const item of directChanges) {
-    const result = await Product.findByIdAndUpdate(
+    const result = await ProductModel.findByIdAndUpdate(
       item.productId,
       { $inc: { quantity: sign * item.qty } },
       { new: true, session }
@@ -76,7 +77,7 @@ async function applyInventoryChange(items, sign, { session = null } = {}) {
 
   // 2. Parents change by each child's share of a pack
   if (childItemsByParent.size > 0) {
-    const parents = await Product.find({ _id: { $in: [...childItemsByParent.keys()] } })
+    const parents = await ProductModel.find({ _id: { $in: [...childItemsByParent.keys()] } })
       .select("_id qtyPerPack")
       .session(session)
       .lean();
@@ -84,7 +85,7 @@ async function applyInventoryChange(items, sign, { session = null } = {}) {
       const childItems = childItemsByParent.get(String(parent._id));
       const packs = childItems.reduce((sum, { child, qty }) => sum + childQtyToParentQty(qty, child, parent), 0);
       if (!packs) continue;
-      const updated = await Product.findByIdAndUpdate(
+      const updated = await ProductModel.findByIdAndUpdate(
         parent._id,
         { $inc: { quantity: sign * packs } },
         { new: true, session }
@@ -102,7 +103,7 @@ async function applyInventoryChange(items, sign, { session = null } = {}) {
   }
 
   for (const parentId of affectedParentIds) {
-    await deriveChildrenForParent(parentId, { session });
+    await deriveChildrenForParent(parentId, { session, Product: ProductModel });
   }
 }
 
@@ -125,10 +126,10 @@ export async function reverseInventoryForRefund(items, options) {
 /**
  * Set every child's qty from its parent's current stock.
  */
-export async function deriveChildrenForParent(parentId, { session = null } = {}) {
+export async function deriveChildrenForParent(parentId, { session = null, Product: ProductModel = Product } = {}) {
   const [parent, children] = await Promise.all([
-    Product.findById(parentId).select("_id quantity qtyPerPack").session(session).lean(),
-    Product.find({ parentProduct: parentId, ...CHILD_FILTER }).select("_id quantity unitsPerChild").session(session).lean(),
+    ProductModel.findById(parentId).select("_id quantity qtyPerPack").session(session).lean(),
+    ProductModel.find({ parentProduct: parentId, ...CHILD_FILTER }).select("_id quantity unitsPerChild").session(session).lean(),
   ]);
   if (!parent || children.length === 0) return;
 
@@ -140,7 +141,7 @@ export async function deriveChildrenForParent(parentId, { session = null } = {})
     }));
 
   if (bulkOps.length > 0) {
-    await Product.bulkWrite(bulkOps, { session });
+    await ProductModel.bulkWrite(bulkOps, { session });
   }
 }
 

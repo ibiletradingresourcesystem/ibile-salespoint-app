@@ -1,9 +1,10 @@
 /**
- * Cloud: applies changes pushed by a desktop installation.
+ * Applies this desktop installation's local changes to the customer's cloud MongoDB, over the
+ * direct connection (models from src/lib/dataModels.js bound to that connection).
  *
  * Every operation carries the record's latest local state and a monotonic revision. Applying is
- * idempotent: a revision the cloud already holds is acknowledged as a duplicate, so a push whose
- * response was lost can simply be sent again.
+ * idempotent: a revision the cloud already holds is acknowledged as a duplicate, so a change whose
+ * confirmation was lost (connection dropped mid-write) can simply be applied again.
  *
  * Rules per record type (see docs/DESKTOP.md "Conflict rules"):
  *   transactions      owned by the installation that recorded them; stock changes are applied as the
@@ -16,13 +17,6 @@
  *   store_ui_settings last saved settings win
  */
 
-import mongoose from 'mongoose';
-import { Transaction } from '@/src/models/Transactions';
-import Till from '@/src/models/Till';
-import EndOfDayReport from '@/src/models/EndOfDayReport';
-import Customer from '@/src/models/Customer';
-import Staff from '@/src/models/Staff';
-import Store from '@/src/models/Store';
 import { updateInventoryForSale, reverseInventoryForRefund } from '@/src/lib/syncPackQty';
 import { appliedStockItems, saleStateFingerprint, sameStockEffect } from '@/src/lib/sync/stockEffects';
 import { recalculateCustomerCreditBalance } from '@/src/lib/creditBalance';
@@ -47,8 +41,8 @@ const isTransactionUnsupported = (error) =>
   error?.code === 20 || /Transaction numbers are only allowed|replica set member/i.test(error?.message || '');
 
 /** Runs work inside a MongoDB transaction where the deployment supports it (Atlas always does). */
-async function runAtomic(work) {
-  const session = await mongoose.startSession();
+async function runAtomic(connection, work) {
+  const session = await connection.startSession();
   try {
     let result;
     await session.withTransaction(async () => {
@@ -74,18 +68,18 @@ function prepareDocument(op, label) {
   const _id = toObjectId(doc._id);
   if (!_id || String(_id) !== String(op.entityId)) throw rejected(`${label} id does not match`);
 
-  // Sync metadata is set by the cloud, never taken from the installation
+  // Sync metadata is set here from the installation, never taken from the stored local copy
   const { _id: _ignoredId, __v, installationId, syncRev, syncedFrom, syncedAt, syncFingerprint, ...fields } = doc;
   return { _id, fields };
 }
 
-async function assertOwnsTransaction(existing, installation, session) {
+async function assertOwnsTransaction(existing, installation, models, session) {
   if (existing.installationId === installation.installationId) return;
   if (existing.installationId) throw conflict('This sale was recorded by another installation');
 
   // Online-order sales are created in the cloud against this installation's till
   if (existing.tillId) {
-    const till = await Till.collection.findOne(
+    const till = await models.Till.collection.findOne(
       { _id: existing.tillId },
       { session, projection: { installationId: 1 } }
     );
@@ -94,17 +88,17 @@ async function assertOwnsTransaction(existing, installation, session) {
   throw conflict('This sale was recorded in the cloud and cannot be changed by this installation');
 }
 
-async function applyTransaction(installation, op) {
+async function applyTransaction(installation, op, models) {
   const { _id, fields } = prepareDocument(op, 'Sale');
   if (!Array.isArray(fields.items) || fields.items.length === 0) throw rejected('Sale has no items');
   if (typeof fields.total !== 'number' || !Number.isFinite(fields.total)) throw rejected('Sale total is not valid');
   if (!TRANSACTION_STATUSES.has(fields.status)) throw rejected(`Sale status "${fields.status}" is not valid`);
 
-  const collection = Transaction.collection;
+  const { collection } = models.Transaction;
   let outcome;
 
   try {
-    outcome = await runAtomic(async (session) => {
+    outcome = await runAtomic(models.connection, async (session) => {
       let existing = await collection.findOne({ _id }, { session });
       if (!existing && fields.externalId) {
         existing = await collection.findOne({ externalId: fields.externalId }, { session });
@@ -114,7 +108,7 @@ async function applyTransaction(installation, op) {
         if (existing.installationId === installation.installationId && Number(existing.syncRev || 0) >= op.rev) {
           return { status: 'duplicate', cloudId: existing._id };
         }
-        await assertOwnsTransaction(existing, installation, session);
+        await assertOwnsTransaction(existing, installation, models, session);
         if (existing.syncFingerprint && saleStateFingerprint(existing) !== existing.syncFingerprint) {
           throw conflict('This sale was changed in the cloud (for example a refund or credit payment in the management app) after this till sent it');
         }
@@ -124,8 +118,8 @@ async function applyTransaction(installation, op) {
       const before = appliedStockItems(existing);
       const after = appliedStockItems(fields);
       if (!sameStockEffect(before, after)) {
-        if (before.length > 0) await reverseInventoryForRefund(before, { session });
-        if (after.length > 0) await updateInventoryForSale(after, { session });
+        if (before.length > 0) await reverseInventoryForRefund(before, { session, Product: models.Product });
+        if (after.length > 0) await updateInventoryForSale(after, { session, Product: models.Product });
       }
 
       const set = { ...fields, ...syncMeta(installation, op.rev), syncFingerprint: saleStateFingerprint(fields) };
@@ -159,16 +153,16 @@ async function applyTransaction(installation, op) {
   }
 
   for (const customerId of new Set((outcome.creditCustomerIds || []).map(String))) {
-    await recalculateCustomerCreditBalance(customerId);
+    await recalculateCustomerCreditBalance(customerId, models);
   }
   return outcome;
 }
 
-async function applyTill(installation, op) {
+async function applyTill(installation, op, models) {
   const { _id, fields } = prepareDocument(op, 'Till');
   if (!toObjectId(fields.storeId) || !toObjectId(fields.locationId)) throw rejected('Till is missing its store or location');
 
-  const collection = Till.collection;
+  const { collection } = models.Till;
   const existing = await collection.findOne({ _id }, { projection: { installationId: 1, syncRev: 1 } });
 
   if (existing) {
@@ -185,16 +179,16 @@ async function applyTill(installation, op) {
   return { status: 'applied', cloudId: _id };
 }
 
-async function applyEndOfDayReport(installation, op) {
+async function applyEndOfDayReport(installation, op, models) {
   const { _id, fields } = prepareDocument(op, 'End of day report');
   const tillId = toObjectId(fields.tillId);
   if (!tillId) throw rejected('End of day report is missing its till');
 
-  const till = await Till.collection.findOne({ _id: tillId }, { projection: { installationId: 1 } });
+  const till = await models.Till.collection.findOne({ _id: tillId }, { projection: { installationId: 1 } });
   if (!till) throw retryLater('The till for this report has not reached the cloud yet');
   if (till.installationId !== installation.installationId) throw conflict('This report belongs to another terminal');
 
-  const collection = EndOfDayReport.collection;
+  const { collection } = models.EndOfDayReport;
   const existing = await collection.findOne(
     { $or: [{ _id }, { tillId }] },
     { projection: { installationId: 1, syncRev: 1 } }
@@ -213,9 +207,9 @@ async function applyEndOfDayReport(installation, op) {
   return { status: 'applied', cloudId: _id };
 }
 
-async function applyCustomer(installation, op) {
+async function applyCustomer(installation, op, models) {
   const { _id, fields } = prepareDocument(op, 'Customer');
-  const collection = Customer.collection;
+  const { collection } = models.Customer;
   const existing = await collection.findOne({ _id }, { projection: { isCreditCustomer: 1 } });
   const now = new Date();
 
@@ -241,12 +235,12 @@ async function applyCustomer(installation, op) {
   }
 
   if (existing?.isCreditCustomer || fields.isCreditCustomer) {
-    await recalculateCustomerCreditBalance(_id);
+    await recalculateCustomerCreditBalance(_id, models);
   }
   return { status: 'applied', cloudId: _id };
 }
 
-async function applyStaffClock(installation, op) {
+async function applyStaffClock(installation, op, models) {
   const payload = op.payload || {};
   const record = payload.record || {};
   const staffId = toObjectId(payload.staffId);
@@ -261,24 +255,25 @@ async function applyStaffClock(installation, op) {
   if (record.locationName) entry.locationName = String(record.locationName);
   if (record.notes) entry.notes = String(record.notes);
 
-  const staff = await Staff.collection.findOne({ _id: staffId }, { projection: { _id: 1 } });
+  const { collection } = models.Staff;
+  const staff = await collection.findOne({ _id: staffId }, { projection: { _id: 1 } });
   if (!staff) throw rejected('This staff member no longer exists in the cloud');
 
-  await Staff.collection.updateOne(
+  await collection.updateOne(
     { _id: staffId, 'clockRecords._id': { $ne: recordId } },
     { $push: { clockRecords: entry }, $set: { updatedAt: new Date() } }
   );
   return { status: 'applied', cloudId: recordId };
 }
 
-async function applyStoreUiSettings(installation, op) {
+async function applyStoreUiSettings(installation, op, models) {
   const storeId = toObjectId(op.payload?.storeId);
   const settings = op.payload?.settings;
   if (!storeId || !settings || typeof settings !== 'object' || Array.isArray(settings)) {
     throw rejected('UI settings are not valid');
   }
 
-  const result = await Store.collection.updateOne(
+  const result = await models.Store.collection.updateOne(
     { _id: storeId },
     { $set: { uiSettings: settings, updatedAt: new Date() } }
   );
@@ -300,10 +295,15 @@ function describeFailure(error) {
   if (error?.name === 'ValidationError' || error?.name === 'CastError' || error?.name === 'BSONError') {
     return { status: 'rejected', message: error.message };
   }
-  return { status: 'error', message: error?.message || 'Unexpected error while applying change' };
+  return { status: 'error', message: error?.message || 'Unexpected error while applying change', error };
 }
 
-export async function applyPushOps(installation, ops) {
+/**
+ * @param installation { installationId }
+ * @param ops          [{ opId, entity, entityId, rev, fields, doc | payload }]
+ * @param models       models bound to the cloud connection (modelsFor(connection))
+ */
+export async function applyPushOps(installation, ops, models) {
   const ordered = [...ops].sort(
     (left, right) => (PUSH_ENTITIES[left?.entity]?.priority ?? 999) - (PUSH_ENTITIES[right?.entity]?.priority ?? 999)
   );
@@ -316,10 +316,10 @@ export async function applyPushOps(installation, ops) {
       if (!handler) throw rejected(`Unknown record type "${op?.entity}"`);
       if (!Number.isInteger(op.rev) || op.rev < 1) throw rejected('Change revision is missing');
 
-      const outcome = await handler(installation, op);
+      const outcome = await handler(installation, op, models);
       results.push({ opId, status: outcome.status, cloudId: String(outcome.cloudId || '') });
     } catch (error) {
-      if (!error?.syncStatus) console.error(`[sync] Failed to apply ${op?.entity} ${op?.entityId}:`, error);
+      if (!error?.syncStatus) console.error(`[sync] Failed to apply ${op?.entity} ${op?.entityId}:`, error?.message || error);
       results.push({ opId, ...describeFailure(error) });
     }
   }

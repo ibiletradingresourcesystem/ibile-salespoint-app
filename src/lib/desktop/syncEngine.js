@@ -1,13 +1,16 @@
 /**
- * Desktop only: moves data between this installation's local MongoDB and the cloud.
+ * Desktop only: moves data between this computer's local MongoDB and the customer's cloud MongoDB,
+ * over a direct database connection (no Vercel or other server in between).
  *
  * One cycle:
- *   1. push the outbox, oldest and most-depended-on first, in batches
- *   2. pull cloud data (snapshots by ETag, products by updatedAt cursor)
+ *   1. connect to the cloud database and confirm it answers; stop if this installation was revoked
+ *   2. push the outbox, oldest and most-depended-on first, in batches
+ *   3. pull cloud data that is due (whole small collections, products by updatedAt cursor)
  *
- * Cycles run only when staff ask (Sync Products, Sync now, Retry, completing an online order), so
- * the cloud deployment is never called in the background. Sales are committed locally first and
- * wait in the outbox until then. Everything needed to resume (outbox, cursors) is in MongoDB.
+ * The till never waits for this. Sales are committed locally first. Cycles start automatically a
+ * few seconds after a local change, every 30 s while changes are waiting or data is due, and
+ * immediately on Sync Products / Sync now / Close Till. While the cloud cannot be reached, automatic
+ * attempts back off (up to 5 minutes). Everything needed to resume (outbox, cursors) is in MongoDB.
  */
 
 import mongoose from 'mongoose';
@@ -17,10 +20,13 @@ import { Transaction } from '@/src/models/Transactions';
 import Till from '@/src/models/Till';
 import EndOfDayReport from '@/src/models/EndOfDayReport';
 import Customer from '@/src/models/Customer';
+import { modelsFor } from '@/src/lib/dataModels';
 import { PULL_ENTITIES, PUSH_ENTITIES } from '@/src/lib/sync/entities';
 import { toObjectId } from '@/src/lib/sync/ejson';
-import { getDesktopConfig, isDesktopEnrolled, isDesktopServer } from '@/src/lib/runtime';
-import { CloudRequestError, cloudRequest } from '@/src/lib/desktop/cloudClient';
+import { applyPushOps } from '@/src/lib/sync/cloudApply';
+import { readProductChanges, readProductManifest, readProductsByIds, readSnapshot } from '@/src/lib/sync/cloudPull';
+import { cloudDatabaseHost, getDesktopConfig, isDesktopEnrolled, isDesktopServer } from '@/src/lib/runtime';
+import { CloudDatabaseError, classifyCloudError, describeCloudError, pingCloudDatabase } from '@/src/lib/desktop/cloudDb';
 import {
   applyProductPage,
   applySnapshot,
@@ -28,6 +34,7 @@ import {
   localProductVersions,
 } from '@/src/lib/desktop/pullApply';
 import { recordLocalChange } from '@/src/lib/desktop/outbox';
+import { registerSyncRunner } from '@/src/lib/desktop/syncSignal';
 
 const STATE_ID = 'engine';
 const OPEN_STATUSES = ['pending', 'processing'];
@@ -36,9 +43,12 @@ const PUSH_BATCH_SIZE = 25;
 const CYCLE_BUDGET_MS = 45 * 1000;
 const STALE_CLAIM_MS = 5 * 60 * 1000;
 const MAX_RETRY_DELAY_MS = 15 * 60 * 1000;
+const BACKGROUND_TICK_MS = 30 * 1000;
+const MAX_OFFLINE_BACKOFF_MS = 5 * 60 * 1000;
 const PRODUCT_CURSOR_OVERLAP_MS = 2 * 60 * 1000;
 const SWEEP_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const SWEEP_WINDOW_MS = 25 * 24 * 60 * 60 * 1000;
+const INSTALLATIONS = 'syncinstallations';
 
 // Records only ever created on this installation; the sweep re-queues any that were never recorded
 const LOCALLY_AUTHORED = {
@@ -54,8 +64,11 @@ const runtime = () => {
       running: null,
       phase: 'idle',
       progress: null,
+      nextAttemptAt: 0,
+      offlineStreak: 0,
       recoveredClaims: false,
       lastSweepAt: 0,
+      loopStarted: false,
     };
   }
   return globalThis.__ibilePosSyncEngine;
@@ -126,7 +139,7 @@ async function recoverClaims() {
 
 /* ------------------------------------------------------------------ push */
 
-async function buildWireOp(entry) {
+async function buildOp(entry) {
   const definition = PUSH_ENTITIES[entry.entity];
   const base = {
     opId: String(entry._id),
@@ -142,14 +155,18 @@ async function buildWireOp(entry) {
   return doc ? { ...base, doc } : null;
 }
 
-async function pushPending(deadline) {
+async function pushPending(models, installation, { deadline, force }) {
   const summary = { sent: 0, synced: 0, retry: 0, failed: 0, conflict: 0 };
-  // Staff asked for this sync, so everything waiting is sent now, but each entry at most once per cycle
+  // Each entry is tried at most once per cycle; staff-started syncs also retry entries in backoff
   const attempted = [];
 
   while (Date.now() < deadline) {
     const now = new Date();
-    const candidates = await SyncOutbox.find({ status: 'pending', _id: { $nin: attempted } })
+    const candidates = await SyncOutbox.find({
+      status: 'pending',
+      _id: { $nin: attempted },
+      ...(force ? {} : { nextRetryAt: { $lte: now } }),
+    })
       .sort({ priority: 1, createdAt: 1 })
       .limit(PUSH_BATCH_SIZE)
       .lean();
@@ -172,7 +189,7 @@ async function pushPending(deadline) {
     const sendable = [];
     const ops = [];
     for (const entry of claimed) {
-      const op = await buildWireOp(entry);
+      const op = await buildOp(entry);
       if (op) {
         sendable.push(entry);
         ops.push(op);
@@ -182,16 +199,9 @@ async function pushPending(deadline) {
     }
     if (ops.length === 0) continue;
 
-    let response;
-    try {
-      response = await cloudRequest('/api/sync/push', { body: { ops }, timeoutMs: 45 * 1000 });
-    } catch (error) {
-      for (const entry of sendable) await releaseForRetry(entry, error.message);
-      throw error;
-    }
-
+    const results = new Map((await applyPushOps(installation, ops, models)).map((result) => [result.opId, result]));
     summary.sent += ops.length;
-    const results = new Map((response?.results || []).map((result) => [String(result.opId), result]));
+    let lostConnection = null;
 
     for (const entry of sendable) {
       const result = results.get(String(entry._id));
@@ -210,9 +220,15 @@ async function pushPending(deadline) {
           summary.failed += 1;
           break;
         default:
-          await releaseForRetry(entry, result?.message || 'The cloud did not confirm this change');
+          if (result?.error && classifyCloudError(result.error) !== 'error') lostConnection = result.error;
+          await releaseForRetry(entry, result?.error ? describeCloudError(result.error) : result?.message || 'Not confirmed by the cloud');
           summary.retry += 1;
       }
+    }
+
+    // The connection dropped part-way: stop here; the entries are safely back in the queue
+    if (lostConnection) {
+      throw new CloudDatabaseError(describeCloudError(lostConnection), { kind: classifyCloudError(lostConnection), cause: lostConnection });
     }
   }
 
@@ -224,51 +240,33 @@ async function pushPending(deadline) {
 const hasUnsentSales = async () =>
   (await SyncOutbox.countDocuments({ entity: 'transactions', status: { $in: OPEN_STATUSES } })) > 0;
 
-async function pullSnapshotEntity(definition, cursor) {
-  let afterId = null;
-  let etag = null;
-  const docs = [];
-
-  for (let page = 0; page < 200; page += 1) {
-    const data = await cloudRequest('/api/sync/pull', {
-      body: {
-        entity: definition.name,
-        mode: 'snapshot',
-        ...(afterId ? { afterId: String(afterId) } : { etag: cursor.etag || undefined }),
-        limit: 1000,
-      },
-      timeoutMs: 60 * 1000,
-    });
-
-    if (data?.unchanged) {
-      await writeState({ [`pull.${definition.name}.lastPulledAt`]: new Date() });
-      return { unchanged: true };
-    }
-    if (!afterId) etag = data?.etag || null;
-    docs.push(...(data?.docs || []));
-    if (!data?.nextAfterId) break;
-    afterId = data.nextAfterId;
+async function pullSnapshotEntity(definition, cursor, models) {
+  const snapshot = await readSnapshot(definition.name, models);
+  if (cursor.etag && cursor.etag === snapshot.etag) {
+    await writeState({ [`pull.${definition.name}.lastPulledAt`]: new Date() });
+    return { unchanged: true };
   }
 
-  const applied = await applySnapshot(definition.name, docs);
+  const applied = await applySnapshot(definition.name, await snapshot.prepare());
   await writeState({
-    [`pull.${definition.name}`]: { etag, lastPulledAt: new Date(), count: docs.length },
+    [`pull.${definition.name}`]: { etag: snapshot.etag, lastPulledAt: new Date(), count: snapshot.docs.length },
   });
-  return { count: docs.length, ...applied };
+  return { count: snapshot.docs.length, ...applied };
 }
 
-async function reconcileProducts() {
-  const cloudVersions = new Map();
-  let afterId = null;
-  do {
-    const data = await cloudRequest('/api/sync/pull', {
-      body: { entity: 'products', mode: 'manifest', ...(afterId ? { afterId: String(afterId) } : {}) },
-      timeoutMs: 60 * 1000,
-    });
-    for (const entry of data?.entries || []) cloudVersions.set(String(entry._id), entry.updatedAt ?? null);
-    afterId = data?.nextAfterId || null;
-  } while (afterId);
+async function cloudClock(models) {
+  try {
+    const hello = await models.connection.db.admin().command({ hello: 1 });
+    if (hello?.localTime instanceof Date) return hello.localTime;
+  } catch {
+    // fall back to this computer's clock
+  }
+  return new Date();
+}
 
+async function reconcileProducts(models) {
+  const manifest = await readProductManifest(models);
+  const cloudVersions = new Map(manifest.map((entry) => [String(entry._id), entry.updatedAt ?? null]));
   const locals = await localProductVersions();
   const time = (value) => (value ? new Date(value).getTime() : null);
 
@@ -281,19 +279,13 @@ async function reconcileProducts() {
     .map(([id]) => id);
 
   const removed = await deleteLocalProducts(removedIds);
-  let refreshed = 0;
   for (let index = 0; index < staleIds.length; index += 500) {
-    const data = await cloudRequest('/api/sync/pull', {
-      body: { entity: 'products', mode: 'ids', ids: staleIds.slice(index, index + 500) },
-      timeoutMs: 60 * 1000,
-    });
-    await applyProductPage(data?.docs || [], { force: true });
-    refreshed += data?.docs?.length || 0;
+    await applyProductPage(await readProductsByIds(models, staleIds.slice(index, index + 500)), { force: true });
   }
-  return { removed, refreshed };
+  return { removed, refreshed: staleIds.length };
 }
 
-async function pullProducts(definition, cursor, deadline) {
+async function pullProducts(definition, cursor, models, deadline) {
   const cursorKey = `pull.${definition.name}`;
   let since = cursor.since ? new Date(cursor.since) : null;
   let afterId = cursor.afterId || null;
@@ -302,14 +294,10 @@ async function pullProducts(definition, cursor, deadline) {
 
   const saveProgress = (extra = {}) =>
     writeState({
-      [cursorKey]: {
-        ...cursor,
-        since,
-        afterId: afterId ? String(afterId) : null,
-        runStartedAt,
-        ...extra,
-      },
+      [cursorKey]: { ...cursor, since, afterId: afterId ? String(afterId) : null, runStartedAt, ...extra },
     });
+
+  if (!runStartedAt) runStartedAt = await cloudClock(models);
 
   for (;;) {
     if (Date.now() > deadline) {
@@ -317,17 +305,7 @@ async function pullProducts(definition, cursor, deadline) {
       return { count, incomplete: true };
     }
 
-    const data = await cloudRequest('/api/sync/pull', {
-      body: {
-        entity: 'products',
-        mode: 'changes',
-        ...(since ? { since: since.toISOString() } : {}),
-        ...(afterId ? { afterId: String(afterId) } : {}),
-        limit: 500,
-      },
-      timeoutMs: 60 * 1000,
-    });
-    if (!runStartedAt) runStartedAt = new Date(data.serverTime);
+    const page = await readProductChanges(models, { since, afterId });
 
     // A sale made while pulling must reach the cloud before products are overwritten
     if (await hasUnsentSales()) {
@@ -335,12 +313,12 @@ async function pullProducts(definition, cursor, deadline) {
       return { count, incomplete: true, reason: 'sales-waiting-to-sync' };
     }
 
-    await applyProductPage(data?.docs || []);
-    count += data?.docs?.length || 0;
+    await applyProductPage(page.docs);
+    count += page.docs.length;
 
-    if (data?.hasMore && data?.next) {
-      since = data.next.since ? new Date(data.next.since) : since;
-      afterId = data.next.afterId;
+    if (page.hasMore && page.next) {
+      since = page.next.since ? new Date(page.next.since) : since;
+      afterId = page.next.afterId;
       await saveProgress();
       continue;
     }
@@ -354,7 +332,7 @@ async function pullProducts(definition, cursor, deadline) {
     const lastManifestAt = cursor.lastManifestAt ? new Date(cursor.lastManifestAt).getTime() : 0;
     let manifestAt = cursor.lastManifestAt || null;
     if (Date.now() - lastManifestAt >= definition.manifestIntervalMs && !(await hasUnsentSales())) {
-      reconciled = await reconcileProducts();
+      reconciled = await reconcileProducts(models);
       manifestAt = new Date();
     }
 
@@ -363,15 +341,19 @@ async function pullProducts(definition, cursor, deadline) {
   }
 }
 
-async function pullAll(state, { deadline }) {
+const isPullDue = (definition, cursor) => {
+  const lastPulledAt = cursor.lastPulledAt ? new Date(cursor.lastPulledAt).getTime() : 0;
+  return !lastPulledAt || Date.now() - lastPulledAt >= definition.intervalMs;
+};
+
+async function pullData(state, models, { force, deadline }) {
   const results = {};
   let completedAll = true;
   const rt = runtime();
 
   for (const definition of PULL_ENTITIES) {
     const cursor = state.pull?.[definition.name] || {};
-    const lastPulledAt = cursor.lastPulledAt ? new Date(cursor.lastPulledAt).getTime() : 0;
-
+    if (!force && !isPullDue(definition, cursor)) continue;
     if (Date.now() > deadline) {
       completedAll = false;
       break;
@@ -379,18 +361,39 @@ async function pullAll(state, { deadline }) {
 
     rt.progress = { step: 'pull', entity: definition.name };
     if (definition.strategy === 'snapshot') {
-      results[definition.name] = await pullSnapshotEntity(definition, cursor);
+      results[definition.name] = await pullSnapshotEntity(definition, cursor, models);
     } else if (await hasUnsentSales()) {
       results[definition.name] = { skipped: 'sales-waiting-to-sync' };
-      if (!lastPulledAt) completedAll = false;
+      if (!cursor.lastPulledAt) completedAll = false;
     } else {
-      results[definition.name] = await pullProducts(definition, cursor, deadline);
+      results[definition.name] = await pullProducts(definition, cursor, models, deadline);
       if (results[definition.name].incomplete) completedAll = false;
     }
   }
 
   rt.progress = null;
   return { results, completedAll };
+}
+
+/* ------------------------------------------------------------------ installation */
+
+/** Records this installation in the cloud and stops syncing if a manager revoked it there. */
+async function checkInstallation(models) {
+  const { installationId, installationName, appVersion } = getDesktopConfig();
+  const installations = models.connection.collection(INSTALLATIONS);
+  const record = await installations.findOne({ installationId }, { projection: { revokedAt: 1 } });
+  if (record?.revokedAt) {
+    throw new CloudDatabaseError('This POS has been disconnected from the cloud by a manager. Set it up again from the app menu.', { kind: 'auth' });
+  }
+  await installations.updateOne(
+    { installationId },
+    {
+      $set: { lastSeenAt: new Date(), ...(appVersion ? { appVersion } : {}) },
+      $setOnInsert: { installationId, name: installationName, enrolledAt: new Date(), revokedAt: null },
+    },
+    { upsert: true }
+  );
+  return { installationId };
 }
 
 /* ------------------------------------------------------------------ sweep */
@@ -421,7 +424,7 @@ async function sweepUnrecordedChanges() {
 
 /* ------------------------------------------------------------------ cycle */
 
-async function runCycle({ pushOnly }) {
+async function runCycle({ force, pushOnly }) {
   const rt = runtime();
   await mongooseConnect();
 
@@ -436,14 +439,20 @@ async function runCycle({ pushOnly }) {
   rt.phase = 'syncing';
 
   try {
-    // No separate reachability check: the first real request shows whether the cloud can be reached
+    rt.progress = { step: 'connect' };
+    const models = modelsFor(await pingCloudDatabase());
+    const installation = await checkInstallation(models);
+
     rt.progress = { step: 'push' };
-    const push = await pushPending(startedAt + CYCLE_BUDGET_MS);
+    const push = await pushPending(models, installation, { deadline: startedAt + CYCLE_BUDGET_MS, force });
 
     let pull = null;
     const state = await readState();
     if (!pushOnly) {
-      pull = await pullAll(state, { deadline: startedAt + CYCLE_BUDGET_MS * 2 });
+      pull = await pullData(state, models, {
+        force: force || !state.initialSyncComplete,
+        deadline: startedAt + CYCLE_BUDGET_MS * 2,
+      });
     }
 
     const set = {
@@ -461,39 +470,80 @@ async function runCycle({ pushOnly }) {
     await writeState(set);
 
     rt.phase = 'idle';
+    rt.offlineStreak = 0;
+    rt.nextAttemptAt = 0;
     return { push, pull };
   } catch (error) {
-    const isAuth = error instanceof CloudRequestError && (error.status === 401 || error.status === 403);
-    const isNetwork = Boolean(error?.network);
-    rt.phase = isAuth ? 'auth_error' : isNetwork ? 'offline' : 'error';
+    const kind = classifyCloudError(error);
+    const message = error instanceof CloudDatabaseError ? error.message : describeCloudError(error);
+    rt.phase = kind === 'auth' ? 'auth_error' : kind === 'offline' ? 'offline' : 'error';
 
-    console.error('[sync] Cycle failed:', error?.message || error);
+    if (kind === 'offline') {
+      rt.offlineStreak += 1;
+      rt.nextAttemptAt = Date.now() + Math.min(MAX_OFFLINE_BACKOFF_MS, 30 * 1000 * 2 ** (rt.offlineStreak - 1));
+    } else {
+      rt.nextAttemptAt = Date.now() + (kind === 'auth' ? MAX_OFFLINE_BACKOFF_MS : 60 * 1000);
+    }
+
+    if (kind === 'error') console.error('[sync] Cycle failed:', error?.message || error);
     await writeState({
+      cloudReachable: kind !== 'offline',
       lastCheckAt: new Date(),
-      lastError: String(error?.message || 'Sync failed').slice(0, 500),
-      lastErrorCode: error?.code || '',
+      lastError: message.slice(0, 500),
+      lastErrorCode: kind,
       lastErrorAt: new Date(),
-      ...(isNetwork ? { cloudReachable: false } : { cloudReachable: true }),
     });
-    return { error: error?.message, offline: isNetwork };
+    return { error: message, offline: kind === 'offline' };
   } finally {
     rt.progress = null;
   }
 }
 
 /**
- * Runs a sync cycle now, or joins the one already running. pushOnly: send changes without pulling.
+ * Runs a sync cycle now, or joins the one already running.
+ * force: staff asked for it — ignore offline backoff, retry everything waiting, pull all data.
+ * pushOnly: send changes without pulling.
  */
-export function runSyncCycle({ pushOnly = false } = {}) {
+export function runSyncCycle({ force = false, pushOnly = false } = {}) {
   const rt = runtime();
   if (!isDesktopServer()) return Promise.resolve({ skipped: 'not-desktop' });
   if (rt.running) return rt.running;
+  if (!force && Date.now() < rt.nextAttemptAt) return Promise.resolve({ skipped: 'waiting-to-retry' });
 
-  rt.running = runCycle({ pushOnly }).finally(() => {
+  rt.running = runCycle({ force, pushOnly }).finally(() => {
     rt.running = null;
   });
   return rt.running;
 }
+
+/* ------------------------------------------------------------------ automatic sync */
+
+async function backgroundTick() {
+  const rt = runtime();
+  if (!isDesktopEnrolled() || rt.running || Date.now() < rt.nextAttemptAt) return;
+  await mongooseConnect();
+
+  const pendingDue = await SyncOutbox.countDocuments({ status: 'pending', nextRetryAt: { $lte: new Date() } });
+  const state = await readState();
+  const pullDue = PULL_ENTITIES.some((definition) => isPullDue(definition, state.pull?.[definition.name] || {}));
+  if (pendingDue === 0 && !pullDue) return;
+
+  await runSyncCycle({ pushOnly: !pullDue });
+}
+
+function startBackgroundSync() {
+  const rt = runtime();
+  if (rt.loopStarted || !isDesktopServer()) return;
+  rt.loopStarted = true;
+  const timer = setInterval(() => backgroundTick().catch(() => {}), BACKGROUND_TICK_MS);
+  timer.unref?.();
+}
+
+// A local change (sale, till, customer) asks for a push a few seconds later
+registerSyncRunner(() => runSyncCycle({ pushOnly: true }));
+startBackgroundSync();
+
+/* ------------------------------------------------------------------ helpers for other modules */
 
 /**
  * Makes sure one record has reached the cloud (used before cloud actions that depend on it, such
@@ -514,7 +564,7 @@ export async function flushRecord(entity, entityId) {
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const rt = runtime();
     if (rt.running) await rt.running.catch(() => {});
-    const result = await runSyncCycle({ pushOnly: true });
+    const result = await runSyncCycle({ force: true, pushOnly: true });
     if ((await unresolved()) === 0) return { ok: true };
     if (result?.error) break;
   }
@@ -539,7 +589,7 @@ export async function retryEntries(ids = []) {
     }
   }
 
-  runSyncCycle().catch(() => {});
+  runSyncCycle({ force: true }).catch(() => {});
   return entries.length;
 }
 
@@ -563,31 +613,23 @@ export async function getSyncStatus() {
 
   let phase;
   if (!enrolled) phase = 'not_enrolled';
-  else if (rt.phase === 'auth_error') phase = 'auth_error';
   else if (rt.running && rt.phase === 'syncing') phase = 'syncing';
+  else if (rt.phase === 'auth_error' || state.lastErrorCode === 'auth') phase = 'auth_error';
   else if (state.cloudReachable === false) phase = 'offline';
-  else if (state.cloudReachable === undefined) phase = 'online';
   else if (failed > 0 || conflicts > 0 || state.lastError) phase = 'error';
-  else if (pending === 0) phase = 'synced';
+  else if (pending === 0 && state.lastSuccessAt) phase = 'synced';
   else phase = 'online';
 
   const pull = Object.fromEntries(
     PULL_ENTITIES.map(({ name }) => [name, state.pull?.[name]?.lastPulledAt || null])
   );
 
-  let cloudHost = '';
-  try {
-    cloudHost = config.cloudUrl ? new URL(config.cloudUrl).host : '';
-  } catch {
-    cloudHost = config.cloudUrl;
-  }
-
   return {
     runtime: 'desktop',
     enrolled,
     installationId: config.installationId,
     installationName: config.installationName,
-    cloudHost,
+    cloudHost: cloudDatabaseHost(),
     phase,
     cloudReachable: state.cloudReachable ?? null,
     pending,
@@ -595,6 +637,7 @@ export async function getSyncStatus() {
     conflicts,
     initialSyncComplete: Boolean(state.initialSyncComplete),
     progress: rt.progress,
+    nextAttemptAt: rt.nextAttemptAt ? new Date(rt.nextAttemptAt) : null,
     lastCheckAt: state.lastCheckAt || null,
     lastSuccessAt: state.lastSuccessAt || null,
     lastError: state.lastError || '',

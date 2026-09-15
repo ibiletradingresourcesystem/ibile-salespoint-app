@@ -1,22 +1,8 @@
 /**
- * Extended JSON for sync payloads, so ObjectIds and Dates survive the trip between the
- * desktop and the cloud (plain JSON would turn them into strings).
+ * Small helpers for sync documents moving between the local and cloud databases.
  */
 
 import mongoose from 'mongoose';
-
-const { EJSON } = mongoose.mongo.BSON;
-
-export const stringifyWire = (value) => EJSON.stringify(value, { relaxed: true });
-export const parseWire = (text) => EJSON.parse(text, { relaxed: true });
-export const fromWireObject = (value) => EJSON.deserialize(value, { relaxed: true });
-
-export function sendWire(res, status, payload) {
-  res.status(status);
-  res.setHeader('Content-Type', 'application/json; charset=utf-8');
-  res.setHeader('Cache-Control', 'no-store');
-  res.end(stringifyWire(payload));
-}
 
 export const toObjectId = (value) => {
   if (value instanceof mongoose.Types.ObjectId) return value;

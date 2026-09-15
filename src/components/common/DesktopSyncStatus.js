@@ -2,8 +2,8 @@
  * Desktop app only: connection and sync state in the POS top bar.
  * ONLINE · OFFLINE · SYNCING · SYNCED · SYNC ERROR, with details and "Sync now" on click.
  *
- * Nothing here contacts the cloud: status comes from the local server and the internet state from
- * this computer. Data is exchanged with the cloud only when staff sync.
+ * Status comes from the local server and the internet state from this computer; this component
+ * itself never contacts the cloud database.
  */
 
 import React, { useCallback, useEffect, useState } from 'react';
@@ -169,8 +169,8 @@ export default function DesktopSyncStatus() {
           </dl>
 
           <p className="mt-3 text-xs text-gray-600">
-            Sales are saved on this computer. They are sent to the cloud, and product changes come
-            back, when you press Sync Products or Sync now.
+            Sales are saved on this computer first and sent to the cloud database automatically
+            whenever the internet is available. Sync now sends and refreshes everything immediately.
           </p>
           {status.phase === 'auth_error' && (
             <p className="mt-3 text-xs text-red-700">

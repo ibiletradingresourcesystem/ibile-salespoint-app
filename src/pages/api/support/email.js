@@ -1,11 +1,12 @@
 import nodemailer from 'nodemailer';
 import { sanitizeBody } from '@/src/lib/apiValidation';
 import { isDesktopServer } from '@/src/lib/runtime';
-import { proxyToCloud } from '@/src/lib/desktop/cloudProxy';
 
 export default async function handler(req, res) {
-  // Mail credentials exist only on the cloud deployment
-  if (isDesktopServer()) return proxyToCloud(req, res);
+  // The desktop app has no mail account; the support chat then opens the staff member's email app
+  if (isDesktopServer()) {
+    return res.status(503).json({ error: 'Email sending is not available on the desktop app' });
+  }
 
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });

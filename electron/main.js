@@ -9,12 +9,14 @@
  * (src/lib/desktop/syncEngine.js). Sync runs only when staff ask for it (Sync Products, Sync Now),
  * so the cloud deployment is not called in the background.
  *
- * There is no server PC: every installation is self-contained and talks only to the cloud.
+ * There is no server PC and no server in the cloud path: every installation is self-contained and
+ * syncs directly with the customer's cloud MongoDB. The connection string stays in this process
+ * (DPAPI-encrypted on disk) and the local POS server; it is never given to the page.
  */
 
 const path = require('path');
 const crypto = require('crypto');
-const { app, BrowserWindow, dialog, ipcMain, net, shell } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, net, powerMonitor, safeStorage, shell } = require('electron');
 
 const { getPaths } = require('./lib/paths');
 const { createLogger } = require('./lib/logger');
@@ -68,9 +70,9 @@ function serverEnv() {
     DESKTOP_APP_VERSION: app.getVersion(),
     SYNC_INSTALLATION_ID: config.get('installationId'),
     SYNC_INSTALLATION_NAME: config.get('installationName'),
-    SYNC_CLOUD_URL: enrolled ? config.get('cloudUrl') : '',
-    SYNC_TOKEN: enrolled ? config.secret('syncToken') : '',
     SYNC_LOCATION_ID: config.get('enrollment')?.locationId || '',
+    CLOUD_MONGODB_URI: enrolled ? config.secret('cloudMongoUri') : '',
+    CLOUD_MONGODB_DB: enrolled ? config.get('cloudDbName') : '',
   };
 }
 
@@ -107,7 +109,24 @@ async function restartServer() {
   await server.restart(serverEnv());
 }
 
-/** Runs one sync cycle in the POS server. Only called from staff actions (menu, setup). */
+/**
+ * Automatic sync runs inside the POS server. This only wakes it straight away when the computer's
+ * internet comes back or it resumes from sleep, instead of waiting for the next offline retry.
+ */
+function watchConnectivity() {
+  let wasOnline = net.isOnline();
+  setInterval(() => {
+    const online = net.isOnline();
+    if (online && !wasOnline) {
+      log.info('Internet connection restored; syncing');
+      syncNow();
+    }
+    wasOnline = online;
+  }, 10 * 1000).unref?.();
+  powerMonitor.on('resume', () => syncNow());
+}
+
+/** Runs a sync cycle in the POS server now (menu, setup, reconnect). */
 async function syncNow() {
   try {
     const response = await fetch(`${server.origin}/api/desktop/sync`, {
@@ -132,6 +151,7 @@ function createWindow() {
     minHeight: 640,
     show: false,
     title: 'Ibile POS',
+    icon: path.join(__dirname, 'assets', 'icon.ico'),
     backgroundColor: '#0e7490',
     autoHideMenuBar: true,
     webPreferences: {
@@ -242,6 +262,7 @@ async function startApp() {
   server.onUnexpectedExit = () => recoverFromCrash('server');
 
   await loadPos();
+  watchConnectivity();
   scheduleAutoBackups();
   updater.init();
 }
@@ -319,13 +340,33 @@ async function shutdown({ installUpdate = false } = {}) {
 
 /* ------------------------------------------------------------------ actions */
 
+// Connection string checked by the setup page's first step, held here until the manager authorises
+let pendingCloud = null;
+
+async function lookupCloudDatabase({ connectionString }) {
+  try {
+    const result = await cloud.lookupCloud(connectionString);
+    pendingCloud = { connectionString: String(connectionString).trim(), dbName: result.dbName, host: result.host };
+    return { ok: true, host: result.host, storeName: result.storeName, locations: result.locations, managers: result.managers };
+  } catch (error) {
+    pendingCloud = null;
+    return { ok: false, error: error.message };
+  }
+}
+
 async function enrollThisInstallation(payload = {}) {
   if (busy) return { ok: false, error: 'Another operation is in progress. Try again shortly.' };
+  if (!pendingCloud) return { ok: false, error: 'Enter the cloud database connection string first.' };
+  if (!safeStorage.isEncryptionAvailable()) {
+    return { ok: false, error: 'Windows cannot encrypt the database credentials for this user, so they cannot be saved.' };
+  }
+
   busy = true;
   try {
     const name = String(payload.installationName || '').trim().slice(0, 80) || config.get('installationName');
     const result = await cloud.enrollInstallation({
-      cloudUrl: payload.cloudUrl,
+      connectionString: pendingCloud.connectionString,
+      dbName: pendingCloud.dbName,
       installationId: config.get('installationId'),
       installationName: name,
       locationId: payload.locationId,
@@ -334,9 +375,10 @@ async function enrollThisInstallation(payload = {}) {
       appVersion: app.getVersion(),
     });
 
-    config.setSecret('syncToken', result.token);
+    config.setSecret('cloudMongoUri', pendingCloud.connectionString);
     config.set({
-      cloudUrl: result.cloudUrl,
+      cloudDbName: result.dbName,
+      cloudHost: result.host,
       installationName: result.installation?.name || name,
       enrollment: {
         locationId: result.installation?.locationId || payload.locationId,
@@ -345,7 +387,8 @@ async function enrollThisInstallation(payload = {}) {
         enrolledAt: new Date().toISOString(),
       },
     });
-    log.info(`Enrolled with ${result.cloudUrl} for ${result.installation?.locationName}`);
+    pendingCloud = null;
+    log.info(`Connected to cloud database ${result.host}/${result.dbName} for ${result.installation?.locationName}`);
 
     await restartServer();
     setTimeout(() => mainWindow?.loadURL(`${server.origin}/desktop-setup`), 200);
@@ -367,13 +410,13 @@ async function reenroll() {
     title: 'Set up this POS again',
     message: 'Connect this POS to the cloud again?',
     detail:
-      'Use this if the POS was revoked, or its cloud access needs renewing. ' +
+      'Use this if the POS was disconnected by a manager, or the cloud database credentials changed. ' +
       'All data on this computer is kept, and anything not yet synced is sent once it is set up.',
   });
   if (response !== 0) return;
 
-  config.setSecret('syncToken', '');
-  config.set({ enrollment: null });
+  config.setSecret('cloudMongoUri', '');
+  config.set({ enrollment: null, cloudDbName: '', cloudHost: '' });
   await restartServer();
   await mainWindow.loadURL(`${server.origin}/desktop-setup`);
 }
@@ -454,8 +497,10 @@ async function restoreFromBackup() {
     await backups.restoreBackup({ uri: mongo.uri(), file, log });
 
     if (fromOtherInstallation) {
-      config.setSecret('syncToken', '');
+      config.setSecret('cloudMongoUri', '');
       config.set({
+        cloudDbName: '',
+        cloudHost: '',
         installationId: manifest.installationId,
         installationName: manifest.installationName || config.get('installationName'),
         enrollment: null,
@@ -537,7 +582,7 @@ const menuActions = {
       detail: [
         `Computer name: ${config.get('installationName')}`,
         `Installation ID: ${config.get('installationId')}`,
-        `Cloud: ${config.isEnrolled ? config.get('cloudUrl') : 'not set up'}`,
+        `Cloud database: ${config.isEnrolled ? `${config.get('cloudHost')} / ${config.get('cloudDbName')}` : 'not set up'}`,
         `Location: ${config.get('enrollment')?.locationName || '—'}`,
         `Data folder: ${paths.userData}`,
       ].join('\n'),
@@ -560,19 +605,14 @@ function registerIpc() {
     appVersion: app.getVersion(),
     installationId: config.get('installationId'),
     installationName: config.get('installationName'),
-    cloudUrl: config.get('cloudUrl') || appDefaults.cloudUrl || '',
+    // Host only; the connection string itself is never sent to the page
+    cloudHost: config.isEnrolled ? config.get('cloudHost') : '',
     enrolled: config.isEnrolled,
     locationName: config.get('enrollment')?.locationName || '',
     storeName: config.get('enrollment')?.storeName || '',
     update: updater?.state || null,
   }));
-  handle('desktop:cloud-lookup', async ({ cloudUrl }) => {
-    try {
-      return await cloud.lookupCloud(cloudUrl);
-    } catch (error) {
-      return { ok: false, error: error.message };
-    }
-  });
+  handle('desktop:cloud-lookup', (payload) => lookupCloudDatabase(payload));
   handle('desktop:enroll', (payload) => enrollThisInstallation(payload));
   handle('desktop:sync-now', () => syncNow());
   // Internet connection of this computer, without contacting the cloud

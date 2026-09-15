@@ -1,9 +1,10 @@
 /**
  * Where this server is running.
  *
- * - Cloud (default): the existing Vercel deployment talking to the cloud MongoDB.
+ * - Cloud (default): the existing Vercel deployment talking to the customer's cloud MongoDB.
  * - Desktop: the same Next.js app started by the Electron shell (electron/main.js) on the
- *   customer's computer with POS_RUNTIME=desktop, talking to the local MongoDB.
+ *   customer's computer with POS_RUNTIME=desktop. Its own database is the local MongoDB; it also
+ *   connects directly to the customer's cloud MongoDB to sync (no Vercel or other server between).
  *
  * Server-side only. Browser code should use src/lib/desktopClient.js.
  */
@@ -14,17 +15,25 @@ export function getDesktopConfig() {
   return {
     installationId: process.env.SYNC_INSTALLATION_ID || '',
     installationName: process.env.SYNC_INSTALLATION_NAME || '',
-    cloudUrl: String(process.env.SYNC_CLOUD_URL || '').replace(/\/+$/, ''),
-    token: process.env.SYNC_TOKEN || '',
     locationId: process.env.SYNC_LOCATION_ID || '',
+    // Customer's cloud MongoDB. Set only in this server process by Electron; never sent to the page.
+    cloudMongoUri: process.env.CLOUD_MONGODB_URI || '',
+    cloudDbName: process.env.CLOUD_MONGODB_DB || '',
     internalToken: process.env.DESKTOP_INTERNAL_TOKEN || '',
     appVersion: process.env.DESKTOP_APP_VERSION || '',
   };
 }
 
 export function isDesktopEnrolled() {
-  const { installationId, cloudUrl, token } = getDesktopConfig();
-  return Boolean(installationId && cloudUrl && token);
+  const { installationId, cloudMongoUri } = getDesktopConfig();
+  return Boolean(installationId && cloudMongoUri);
+}
+
+/** Host of the cloud database for display, without credentials. */
+export function cloudDatabaseHost() {
+  const { cloudMongoUri } = getDesktopConfig();
+  const match = /^mongodb(?:\+srv)?:\/\/(?:[^@/]*@)?([^/?]+)/i.exec(cloudMongoUri);
+  return match ? match[1] : '';
 }
 
 /**

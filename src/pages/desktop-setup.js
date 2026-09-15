@@ -1,12 +1,12 @@
 /**
  * Desktop app first-run setup.
  *
- * 1. Connect: the cloud address of the existing System POS deployment
- * 2. Authorise: location + a manager/admin passcode (enrols this installation)
+ * 1. Connect: the connection string of the customer's cloud MongoDB
+ * 2. Authorise: location + a manager/admin passcode (registers this installation)
  * 3. Prepare: download store, staff, products and settings into the local database
  *
- * Cloud calls go through the Electron main process (window.posDesktop), which keeps the
- * installation token out of the browser.
+ * The connection string is handed to the Electron main process (window.posDesktop), which tests
+ * it, keeps it encrypted, and never gives it back to this page. The page clears it straight away.
  */
 
 import React, { useCallback, useEffect, useState } from "react";
@@ -45,7 +45,7 @@ export default function DesktopSetup() {
   const [status, setStatus] = useState(null);
   const [step, setStep] = useState("loading");
 
-  const [cloudUrl, setCloudUrl] = useState("");
+  const [connectionString, setConnectionString] = useState("");
   const [installationName, setInstallationName] = useState("");
   const [lookup, setLookup] = useState(null);
   const [locationId, setLocationId] = useState("");
@@ -61,7 +61,6 @@ export default function DesktopSetup() {
     if (!desktop) return;
     desktop.getInfo().then((details) => {
       setInfo(details);
-      setCloudUrl(details.cloudUrl || "");
       setInstallationName(details.installationName || "");
     });
   }, []);
@@ -110,8 +109,10 @@ export default function DesktopSetup() {
     setError("");
     setBusy(true);
     try {
-      const result = await bridge.cloudLookup({ cloudUrl });
-      if (!result?.ok) throw new Error(result?.error || "Could not reach the cloud");
+      const result = await bridge.cloudLookup({ connectionString });
+      if (!result?.ok) throw new Error(result?.error || "Could not reach the cloud database");
+      // The app keeps the connection string now; do not hold it in the page any longer
+      setConnectionString("");
       setLookup(result);
       setLocationId(result.locations[0]?._id || "");
       setStaffId("");
@@ -129,7 +130,7 @@ export default function DesktopSetup() {
     setError("");
     setBusy(true);
     try {
-      const result = await bridge.enroll({ cloudUrl, installationName, locationId, staffId, pin });
+      const result = await bridge.enroll({ installationName, locationId, staffId, pin });
       if (!result?.ok) throw new Error(result?.error || "Setup failed");
       setPin("");
       setStep("sync");
@@ -159,19 +160,24 @@ export default function DesktopSetup() {
 
   if (step === "connect") {
     return (
-      <Card title="Set up this POS" subtitle="Connect this computer to your existing System POS.">
+      <Card title="Set up this POS" subtitle="Connect this computer directly to your cloud database.">
         {errorBox}
         <form onSubmit={connect} className="space-y-4">
           <label className="block">
-            <span className="text-sm font-medium text-gray-700">Cloud address</span>
+            <span className="text-sm font-medium text-gray-700">Cloud database connection string</span>
             <input
               className={inputClass}
-              type="url"
+              type="password"
               required
-              placeholder="https://your-pos.vercel.app"
-              value={cloudUrl}
-              onChange={(event) => setCloudUrl(event.target.value.trim())}
+              autoComplete="off"
+              spellCheck={false}
+              placeholder="mongodb+srv://user:password@cluster.mongodb.net/"
+              value={connectionString}
+              onChange={(event) => setConnectionString(event.target.value.trim())}
             />
+            <span className="mt-1 block text-xs text-gray-500">
+              From MongoDB Atlas (Connect → Drivers). It is stored encrypted on this computer only.
+            </span>
           </label>
           <label className="block">
             <span className="text-sm font-medium text-gray-700">Name for this computer</span>

@@ -5,23 +5,15 @@
  * POST: Create a petty cash vendor order with product entries
  * PUT: Update an existing order's product entries
  */
-import { mongooseConnect } from "@/src/lib/mongoose";
-import mongoose from "mongoose";
 import { recordPettyCashExpense } from "@/src/lib/pettyCashExpense";
-import { isDesktopServer } from "@/src/lib/runtime";
-import { proxyToCloud } from "@/src/lib/desktop/cloudProxy";
-
-const PettyCashTransactionSchema = new mongoose.Schema({}, { strict: false, collection: "pettycashtransactions" });
-const PettyCashTransaction = mongoose.models.PettyCashTransaction || mongoose.model("PettyCashTransaction", PettyCashTransactionSchema);
-
-const VendorSchema = new mongoose.Schema({}, { strict: false, collection: "vendors" });
-const Vendor = mongoose.models.Vendor || mongoose.model("Vendor", VendorSchema);
+import { cloudDataModelsOrRespond } from "@/src/lib/dataModels";
 
 export default async function handler(req, res) {
-  // Petty cash is approved and paid through the management app, so it stays in the cloud
-  if (isDesktopServer()) return proxyToCloud(req, res);
-
-  await mongooseConnect();
+  // Petty cash is approved and paid through the management app, so it lives in the cloud database
+  // (the desktop app reads and writes it directly)
+  const models = await cloudDataModelsOrRespond(res);
+  if (!models) return;
+  const { PettyCashTransaction } = models;
 
   if (req.method === "GET") {
     try {
@@ -119,7 +111,7 @@ export default async function handler(req, res) {
         // Record the expense first: if it fails, the order stays Received and Mark Paid can be retried
         let expenseId;
         try {
-          expenseId = await recordPettyCashExpense({ ...transaction.toObject(), status: "Paid", paidAt, paidBy });
+          expenseId = await recordPettyCashExpense({ ...transaction.toObject(), status: "Paid", paidAt, paidBy }, models);
         } catch (expenseErr) {
           console.error("Petty cash expense could not be recorded:", expenseErr);
           return res.status(500).json({ error: `Could not record the expense: ${expenseErr.message}` });

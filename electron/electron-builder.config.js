@@ -17,7 +17,7 @@ module.exports = {
   directories: {
     output: '../dist-desktop',
   },
-  files: ['main.js', 'preload.js', 'splash.html', 'app-config.json', 'lib/**/*', 'package.json'],
+  files: ['main.js', 'preload.js', 'splash.html', 'app-config.json', 'lib/**/*', 'assets/**/*', 'package.json'],
   extraResources: [
     { from: '../build/desktop/app-server', to: 'app-server', filter: ['**/*'] },
     { from: '../build/desktop/mongodb', to: 'mongodb', filter: ['**/*'] },
@@ -25,9 +25,13 @@ module.exports = {
   afterPack: './scripts/after-pack.js',
   asar: true,
   win: {
+    // Ibile logo (from public/images/logo.png): app executable, taskbar and desktop shortcut
+    icon: 'assets/icon.ico',
     target: [{ target: 'nsis', arch: ['x64'] }],
   },
   nsis: {
+    installerIcon: 'assets/icon.ico',
+    uninstallerIcon: 'assets/icon.ico',
     oneClick: false,
     perMachine: false,
     allowToChangeInstallationDirectory: false,

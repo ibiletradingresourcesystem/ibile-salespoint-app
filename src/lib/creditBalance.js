@@ -15,17 +15,23 @@ export const getCreditBalance = (transaction = {}) => {
   return Math.max(0, total - getCreditPaidTotal(transaction));
 };
 
-export const recalculateCustomerCreditBalance = async (customerId) => {
+/**
+ * models: optional { Transaction, Customer } for another connection (desktop sync to the cloud
+ * database). Without them the app's own models are used.
+ */
+export const recalculateCustomerCreditBalance = async (customerId, models = {}) => {
   if (!customerId || !mongoose.Types.ObjectId.isValid(String(customerId))) return;
+  const TransactionModel = models.Transaction || Transaction;
+  const CustomerModel = models.Customer || Customer;
 
-  const openCredits = await Transaction.find({
+  const openCredits = await TransactionModel.find({
     status: 'credit',
     creditCustomerId: new mongoose.Types.ObjectId(String(customerId)),
     creditStatus: { $nin: ['paid', 'written_off'] },
   }).select('creditBalance total creditOriginalTotal creditPaidAmount creditPayments');
 
   const creditBalance = openCredits.reduce((sum, transaction) => sum + getCreditBalance(transaction), 0);
-  await Customer.findByIdAndUpdate(customerId, {
+  await CustomerModel.findByIdAndUpdate(customerId, {
     type: 'CREDIT',
     isCreditCustomer: true,
     creditBalance,

@@ -33,11 +33,9 @@ const PUBLIC_GET_PATHS = [
   '/api/till/active',
 ];
 
-// Routes that authenticate callers themselves instead of with the staff session cookie:
-// /api/sync/*    desktop installations (installation token, src/lib/sync/installationAuth.js)
-// /api/desktop/* the desktop app's local server only (internal token or session, 404 on the cloud)
-const SELF_AUTHENTICATED_PREFIXES = ['/api/sync/', '/api/desktop/'];
-const RATE_LIMIT_MAX_ENROLL = 5;
+// The desktop app's local routes check their own caller (Electron's internal token or the staff
+// session) and answer 404 on the web deployment
+const SELF_AUTHENTICATED_PREFIXES = ['/api/desktop/'];
 
 function isPublicGetPath(pathname) {
   return PUBLIC_GET_PATHS.some((path) => pathname === path || pathname.startsWith(`${path}/`));
@@ -164,27 +162,6 @@ export async function middleware(request) {
           success: false,
           code: 'RATE_LIMITED',
           message: `Too many login attempts. Try again in ${retryAfter}s.`,
-        },
-        { status: 429, headers: { 'Retry-After': String(retryAfter) } }
-      );
-    }
-  }
-
-  // Enrolment checks a manager passcode, so it gets the same brute-force protection as login
-  if (pathname === '/api/sync/enroll' && request.method === 'POST') {
-    const ip = getClientIp(request);
-    const { allowed, retryAfter } = checkRateLimit(
-      `enroll:${ip}`,
-      RATE_LIMIT_MAX_ENROLL,
-      RATE_LIMIT_WINDOW
-    );
-
-    if (!allowed) {
-      return NextResponse.json(
-        {
-          success: false,
-          code: 'RATE_LIMITED',
-          message: `Too many attempts. Try again in ${retryAfter}s.`,
         },
         { status: 429, headers: { 'Retry-After': String(retryAfter) } }
       );

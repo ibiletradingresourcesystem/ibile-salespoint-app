@@ -1,5 +1,4 @@
 {
-  "cloudUrl": "",
-  "serverPort": 47321,
+  "serverPort": 5150,
   "mongoPort": 27517
 }

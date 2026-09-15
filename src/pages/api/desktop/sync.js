@@ -1,7 +1,8 @@
 /**
  * POST /api/desktop/sync  (desktop app only)
- * Runs a sync cycle: the only way the desktop contacts the cloud sync API. Called by Sync Products
- * and Sync now (staff session), and by the app menu and first-run setup (internal token).
+ * Syncs with the customer's cloud database now, retrying anything waiting and pulling all data.
+ * Called by Sync Products and Sync now (staff session), and by the app menu and first-run setup
+ * (internal token). Automatic sync runs without this route.
  * Body: { wait?: boolean }
  */
 
@@ -18,7 +19,7 @@ export default async function handler(req, res) {
   }
 
   const { wait = false } = req.body || {};
-  const cycle = runSyncCycle();
+  const cycle = runSyncCycle({ force: true });
 
   if (!wait) {
     cycle.catch(() => {});
