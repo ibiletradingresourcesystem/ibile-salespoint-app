@@ -345,3 +345,17 @@ button {
   border-radius: var(--radius-2xl) !important;
 }
 
+
+/* Desktop app: the window has no Windows title bar, so the POS header bars move the window.
+   Browsers ignore -webkit-app-region, so this has no effect on the web version. */
+.desktop-drag {
+  -webkit-app-region: drag;
+}
+
+.desktop-drag button,
+.desktop-drag a,
+.desktop-drag input,
+.desktop-drag select,
+.desktop-no-drag {
+  -webkit-app-region: no-drag;
+}

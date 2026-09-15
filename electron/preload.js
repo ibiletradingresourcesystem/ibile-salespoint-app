@@ -33,10 +33,16 @@ contextBridge.exposeInMainWorld('posDesktop', {
   syncNow: () => ipcRenderer.invoke('desktop:sync-now'),
   getNetworkStatus: () => ipcRenderer.invoke('desktop:network-status'),
   backupNow: () => ipcRenderer.invoke('desktop:backup-now'),
-  restoreBackup: () => ipcRenderer.invoke('desktop:restore-backup'),
+  // { staffId, pin } of a manager or admin, checked by the app before anything happens
+  restoreBackup: (manager) => ipcRenderer.invoke('desktop:restore-backup', manager),
+  reenroll: (manager) => ipcRenderer.invoke('desktop:reenroll', manager),
   openBackupsFolder: () => ipcRenderer.invoke('desktop:open-backups-folder'),
+  openLogsFolder: () => ipcRenderer.invoke('desktop:open-logs-folder'),
   checkForUpdates: () => ipcRenderer.invoke('desktop:check-for-updates'),
   installUpdate: () => ipcRenderer.invoke('desktop:install-update'),
+  minimize: () => ipcRenderer.invoke('desktop:window-minimize'),
+  toggleMaximize: () => ipcRenderer.invoke('desktop:window-toggle-maximize'),
+  quit: () => ipcRenderer.invoke('desktop:quit'),
   onUpdateStatus: (callback) => {
     const listener = (_event, status) => callback(status);
     ipcRenderer.on('desktop:update-status', listener);

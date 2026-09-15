@@ -16,7 +16,7 @@
 
 const path = require('path');
 const crypto = require('crypto');
-const { app, BrowserWindow, dialog, ipcMain, net, powerMonitor, safeStorage, shell } = require('electron');
+const { app, BrowserWindow, Menu, dialog, ipcMain, net, powerMonitor, safeStorage, shell } = require('electron');
 
 const { getPaths } = require('./lib/paths');
 const { createLogger } = require('./lib/logger');
@@ -27,7 +27,6 @@ const backups = require('./lib/backup');
 const migrations = require('./lib/migrations');
 const { Updater } = require('./lib/updater');
 const cloud = require('./lib/cloud');
-const { buildMenu } = require('./lib/menu');
 const appDefaults = require('./app-config.json');
 
 // Testing and support: run against a separate data folder without touching the real installation
@@ -153,7 +152,8 @@ function createWindow() {
     title: 'Ibile POS',
     icon: path.join(__dirname, 'assets', 'icon.ico'),
     backgroundColor: '#0e7490',
-    autoHideMenuBar: true,
+    // No Windows title bar or menu: help, system actions, minimize and exit are buttons in the POS itself
+    frame: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -180,6 +180,14 @@ function createWindow() {
     event.preventDefault();
     if (/^(https?:|mailto:)/i.test(url)) shell.openExternal(url);
   });
+
+  // Developer tools only when running from source (F12 or Ctrl+Shift+I)
+  if (!app.isPackaged) {
+    mainWindow.webContents.on('before-input-event', (_event, input) => {
+      const toggle = input.type === 'keyDown' && (input.key === 'F12' || (input.control && input.shift && input.key.toLowerCase() === 'i'));
+      if (toggle) mainWindow.webContents.toggleDevTools();
+    });
+  }
 
   mainWindow.webContents.session.setPermissionRequestHandler((_contents, permission, callback) => {
     callback(['clipboard-sanitized-write', 'fullscreen'].includes(permission));
@@ -243,7 +251,7 @@ async function startApp() {
 
   config = new DesktopConfig(paths.configFile, appDefaults);
   await createWindow();
-  buildMenu(menuActions, { isDev: paths.isDev });
+  Menu.setApplicationMenu(null);
   registerIpc();
 
   mongo = new LocalMongo({ paths, config, log });
@@ -566,28 +574,50 @@ function onUpdateStatus(state) {
     });
 }
 
-const menuActions = {
-  backupNow: () => backupNow(),
-  restoreBackup: () => restoreFromBackup(),
-  openBackupsFolder: () => shell.openPath(paths.backupsDir),
-  syncNow: () => syncNow(),
-  reenroll: () => reenroll(),
-  checkForUpdates: () => checkForUpdates(),
-  openLogsFolder: () => shell.openPath(paths.logsDir),
-  about: () =>
-    dialog.showMessageBox(mainWindow, {
-      type: 'info',
-      title: 'About Ibile POS',
-      message: `Ibile POS ${app.getVersion()}`,
-      detail: [
-        `Computer name: ${config.get('installationName')}`,
-        `Installation ID: ${config.get('installationId')}`,
-        `Cloud database: ${config.isEnrolled ? `${config.get('cloudHost')} / ${config.get('cloudDbName')}` : 'not set up'}`,
-        `Location: ${config.get('enrollment')?.locationName || '—'}`,
-        `Data folder: ${paths.userData}`,
-      ].join('\n'),
-    }),
-};
+/**
+ * Restore and "set up again" can replace data or stop syncing, so a manager or admin confirms them
+ * with their passcode. The check runs here (against the local staff records), not in the page.
+ */
+const managerChecks = { failures: 0, lockedUntil: 0 };
+
+async function verifyManager({ staffId, pin } = {}) {
+  if (Date.now() < managerChecks.lockedUntil) {
+    throw new Error('Too many wrong passcodes. Try again in a few minutes.');
+  }
+  let data = {};
+  try {
+    const response = await fetch(`${server.origin}/api/desktop/verify-manager`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-desktop-internal-token': internalToken },
+      body: JSON.stringify({ staffId, pin }),
+      signal: AbortSignal.timeout(10 * 1000),
+    });
+    data = await response.json().catch(() => ({}));
+    if (response.ok && data.ok) {
+      managerChecks.failures = 0;
+      return data;
+    }
+  } catch {
+    throw new Error('The POS service is not responding.');
+  }
+
+  managerChecks.failures += 1;
+  if (managerChecks.failures >= 5) {
+    managerChecks.failures = 0;
+    managerChecks.lockedUntil = Date.now() + 5 * 60 * 1000;
+  }
+  throw new Error(data.message || 'The manager or passcode is not correct.');
+}
+
+async function withManager(payload, action) {
+  try {
+    const manager = await verifyManager(payload);
+    log.info(`${action.name} confirmed by ${manager.name}`);
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+  return action();
+}
 
 /* ------------------------------------------------------------------ IPC */
 
@@ -608,8 +638,10 @@ function registerIpc() {
     // Host only; the connection string itself is never sent to the page
     cloudHost: config.isEnrolled ? config.get('cloudHost') : '',
     enrolled: config.isEnrolled,
+    cloudDbName: config.isEnrolled ? config.get('cloudDbName') : '',
     locationName: config.get('enrollment')?.locationName || '',
     storeName: config.get('enrollment')?.storeName || '',
+    dataFolder: paths.userData,
     update: updater?.state || null,
   }));
   handle('desktop:cloud-lookup', (payload) => lookupCloudDatabase(payload));
@@ -618,13 +650,23 @@ function registerIpc() {
   // Internet connection of this computer, without contacting the cloud
   handle('desktop:network-status', () => ({ online: net.isOnline() }));
   handle('desktop:backup-now', () => backupNow());
-  handle('desktop:restore-backup', () => restoreFromBackup());
+  handle('desktop:restore-backup', (payload) => withManager(payload, function restoreBackup() { return restoreFromBackup(); }));
+  handle('desktop:reenroll', (payload) => withManager(payload, async function setUpAgain() { await reenroll(); return { ok: true }; }));
   handle('desktop:open-backups-folder', () => shell.openPath(paths.backupsDir));
-  handle('desktop:check-for-updates', () => updater.check());
+  handle('desktop:open-logs-folder', () => shell.openPath(paths.logsDir));
+  handle('desktop:check-for-updates', () => checkForUpdates());
   handle('desktop:install-update', () => {
     if (updater.isReady) shutdown({ installUpdate: true });
     return updater.state;
   });
+  // Window controls (the window has no Windows title bar)
+  handle('desktop:window-minimize', () => mainWindow?.minimize());
+  handle('desktop:window-toggle-maximize', () => {
+    if (!mainWindow) return;
+    if (mainWindow.isMaximized()) mainWindow.unmaximize();
+    else mainWindow.maximize();
+  });
+  handle('desktop:quit', () => shutdown());
 }
 
 /* ------------------------------------------------------------------ lifecycle */

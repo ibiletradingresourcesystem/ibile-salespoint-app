@@ -6,7 +6,7 @@ import OpenTillModal from "../pos/OpenTillModal";
 import ClockInOutModal from "../common/ClockInOutModal";
 import { syncCategories, syncProducts } from "../../lib/indexedDB";
 import { syncPendingTillOpens, syncPendingTillCloses, syncPendingTransactions } from "../../lib/offlineSync";
-import { getStoreLogo, setStoreLogo } from "../../lib/logoCache";
+import { getBrandFallbackLogo, getDisplayLogo, setStoreLogo } from "../../lib/logoCache";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
   faArrowLeft,
@@ -23,7 +23,8 @@ import {
 } from "@fortawesome/free-solid-svg-icons";
 import { normalizeStaffList, normalizeStaffMember } from "@/src/lib/posPermissions";
 import { getUiSettings } from "@/src/lib/uiSettings";
-import { isDesktopApp } from "@/src/lib/desktopClient";
+import { getDesktopBridge, isDesktopApp } from "@/src/lib/desktopClient";
+import DesktopSystemMenu from "../desktop/DesktopSystemMenu";
 import { primePosBootstrapFromCache, primePosBootstrapFromLiveData } from "@/src/lib/posBootstrap";
 
 const normalizeLocationToken = (value) => String(value || "").trim().toLowerCase();
@@ -1168,6 +1169,12 @@ export default function StaffLogin() {
 
   // Handle exit/close system
   const handleExitSystem = () => {
+    // Desktop app: close properly (stops the POS service and local database first)
+    const desktop = getDesktopBridge();
+    if (desktop) {
+      desktop.quit();
+      return;
+    }
     if (typeof window !== 'undefined') {
       // Try to close window (works if opened as popup)
       window.close();
@@ -1214,7 +1221,7 @@ export default function StaffLogin() {
       )}
 
       {/* Top Header Bar */}
-      <div className="bg-cyan-700 px-4 py-2 flex items-center justify-between border-b-4 border-cyan-800 flex-shrink-0">
+      <div className="bg-cyan-700 px-4 py-2 flex items-center justify-between border-b-4 border-cyan-800 flex-shrink-0 desktop-drag">
         {/* Clock In/Out Button */}
         {loginSettings.showClockInOut !== false && (
           <button
@@ -1230,14 +1237,14 @@ export default function StaffLogin() {
         {/* Center Logo */}
         <div className="text-center flex flex-col items-center">
           <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center mx-auto mb-1 shadow-lg overflow-hidden relative">
-            <Image 
-              src={getStoreLogo()} 
-              alt="Store Logo" 
+            <Image
+              src={getDisplayLogo()}
+              alt="Store Logo"
               width={32}
               height={32}
               className="object-contain"
               onError={(e) => {
-                e.target.src = '/images/placeholder.jpg';
+                e.target.src = getBrandFallbackLogo();
               }}
               unoptimized
             />
@@ -1247,6 +1254,8 @@ export default function StaffLogin() {
 
         {/* Right Buttons */}
         <div className="flex items-center gap-3">
+          {/* Desktop app: system actions (the window has no title bar or menu); hidden on the web */}
+          <DesktopSystemMenu variant="login" />
           <button
             type="button"
             onClick={() => openHelpChat("login")}
@@ -1321,15 +1330,15 @@ export default function StaffLogin() {
               <div className="bg-gradient-to-br from-cyan-600 to-cyan-700 rounded-xl shadow-2xl p-8 text-center w-full max-w-md">
                 {/* Logo */}
                 <div className="w-24 h-24 bg-white rounded-full flex items-center justify-center mx-auto mb-6 shadow-lg overflow-hidden">
-                  <Image 
-                    src={getStoreLogo()} 
-                    alt="Store Logo" 
+                  <Image
+                    src={getDisplayLogo()}
+                    alt="Store Logo"
                     width={90}
                     height={90}
                     className="object-contain"
                     onError={(e) => {
                       e.target.onerror = null;
-                      e.target.src = '/images/placeholder.jpg';
+                      e.target.src = getBrandFallbackLogo();
                     }}
                     unoptimized
                   />

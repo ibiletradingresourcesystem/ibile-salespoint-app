@@ -49,6 +49,21 @@ the same computer; existing POS code therefore always uses its online paths agai
 The top-bar pill shows the real state: **ONLINE · OFFLINE · SYNCING · SYNCED · SYNC ERROR** (internet
 state from the computer, sync state from `/api/desktop/status`).
 
+**Window and controls.** The window has no Windows title bar or menu; it opens maximised and the POS
+header drags it. Desktop-only buttons in the POS itself replace the menu (hidden on the web):
+
+| Where | Buttons |
+|---|---|
+| Login screen header | **SYSTEM** · **HELP** · **EXIT** (EXIT stops the POS service and local database, then closes) |
+| SYSTEM (login screen) | Sync now · Back up now · Open backups folder · Restore from backup… · Check for updates · Set up this POS again… · Open logs folder · About Ibile POS · Minimize |
+| SYSTEM (setup screen) | Open logs folder · About Ibile POS · Minimize |
+| POS top bar | Sync pill · Minimize · Logout |
+
+*Restore from backup…* and *Set up this POS again…* need a manager or admin passcode, checked in the
+main process against the local staff records (`/api/desktop/verify-manager`, internal token only; five
+wrong attempts lock these actions for five minutes). The login and setup screens show the store logo, or
+the Ibile logo when none is cached.
+
 **Local persistence.** A sale is written to IndexedDB and immediately posted to the local server, which
 commits it to local MongoDB before the sale shows as complete. IndexedDB is only a short buffer; local
 MongoDB is the POS database and survives app restarts, Windows restarts and outages.
@@ -184,7 +199,7 @@ Conflicts and rejections stay on the computer and appear as **SYNC ERROR** with 
 
 Backups (`electron/lib/backup.js`): gzip canonical Extended JSON, exact BSON types and indexes, written
 atomically, fully verified before restore. Automatic daily (14 kept), before updates, before migrations,
-before restores; manual kept always. File → Restore From Backup…; a backup from another installation makes
+before restores; manual kept always. SYSTEM → Restore from backup… (manager passcode); a backup from another installation makes
 this computer take its place (set up again).
 
 Updates (electron-updater) download in the background and install only on *Restart Now* or next close,
@@ -209,11 +224,12 @@ selects a separate data folder, `POS_MONGOD_PATH` another `mongod.exe`.
 | Situation | Action |
 |---|---|
 | OFFLINE | Nothing to do; sales are saved and sync when the connection returns. |
-| SYNC ERROR "credentials" / "disconnected" | Sync → Set Up This POS Again with a current connection string and manager passcode. Data is kept. |
+| SYNC ERROR "credentials" / "disconnected" | SYSTEM → Set up this POS again… (manager passcode), then setup with a current connection string and manager passcode. Data is kept. |
 | SYNC ERROR with items listed | Check the reason in the management app, then *Retry these*. |
 | Setup: "Could not reach the database" | Internet connection and Atlas Network Access for the shop's address. |
 | Local database credentials lost | Close the app; remove `secrets.mongoPassword` from `config.json`; start `mongod.exe --dbpath "%APPDATA%\Ibile POS\data\mongodb" --port 27517 --bind_ip 127.0.0.1` without `--auth`; drop user `ibilepos` in `admin`; stop it; start the app. |
-| New computer | Old PC: Back Up Now. New PC: install, Restore From Backup…, set up again. |
+| New computer | Old PC: SYSTEM → Back up now. New PC: install, set up, SYSTEM → Restore from backup…, set up again if asked. |
+| Logs | SYSTEM → Open logs folder (`%APPDATA%\Ibile POS\logs`). Developer tools: F12 in development builds only. |
 
 ---
 
@@ -233,7 +249,7 @@ selects a separate data folder, `POS_MONGOD_PATH` another `mongod.exe`.
 
 - Web production build and lint pass; the removed `/api/sync/*` endpoints no longer exist on the web.
 - Direct end-to-end test (local MongoDB + replica-set "customer cloud", desktop server and a web server): **56/56** — first sync, staff data minimisation, local login, automatic push without Sync, parent/child stock, duplicate-safe re-send, stale revision, refund, pull of price/tender changes, online orders (list/process/complete) and petty cash directly on the cloud database, POS working with the cloud database down, OFFLINE → SYNCED after reconnect, credit balance, clock records, management-app conflict, web login/till/orders/petty cash unchanged, Close Till sync, disconnected installation, no credentials in status.
-- Packaged `Ibile POS.exe` setup test: **18/18** — port 5150, database discovery, wrong passcode, installation registered in the cloud, DPAPI-encrypted connection string, first download, page and logs never contain the connection string, local MongoDB auth, clean shutdown.
+- Packaged `Ibile POS.exe` setup test: **25/25** — port 5150, frameless window, Ibile logo with SYSTEM/HELP/EXIT on the setup and login screens, draggable header, SYSTEM menu items, database discovery, wrong passcode, installation registered in the cloud, DPAPI-encrypted connection string, first download, page and logs never contain the connection string, local MongoDB auth, manager passcode required for restore and set up again, EXIT button closes cleanly.
 - Backup/restore: 11/11.
 
 Not yet run: full NSIS installer, signed build, updates from a real server, the downloaded MongoDB 8.0

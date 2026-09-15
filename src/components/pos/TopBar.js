@@ -20,6 +20,7 @@ import {
 } from '@fortawesome/free-solid-svg-icons';
 import { useCart } from '../../context/CartContext';
 import DesktopSyncStatus from '../common/DesktopSyncStatus';
+import { DesktopMinimizeButton } from '../desktop/DesktopSystemMenu';
 
 export default function TopBar({ activeTab, onTabChange, onLogout, storeData, staffData, onToggleSidebar }) {
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -112,7 +113,7 @@ export default function TopBar({ activeTab, onTabChange, onLogout, storeData, st
       )}
 
       {/* Main Top Bar - Primary Section with Store Info */}
-      <div className="px-2.5 py-2 sm:px-3 sm:py-3 flex items-center justify-between gap-2 sm:gap-3">
+      <div className="px-2.5 py-2 sm:px-3 sm:py-3 flex items-center justify-between gap-2 sm:gap-3 desktop-drag">
         {/* Left: Hamburger + Store & Staff Info */}
         <div className="flex items-center gap-3 flex-1">
           {/* Hamburger - Visible only for senior staff */}
@@ -162,6 +163,8 @@ export default function TopBar({ activeTab, onTabChange, onLogout, storeData, st
               </span>
             )}
           </div>
+          {/* Desktop app: the window has no title bar, so minimize is here (hidden on the web) */}
+          <DesktopMinimizeButton />
           <button
             onClick={onLogout}
             className="p-1.5 sm:p-2 hover:bg-white/20 rounded transition-colors duration-base touch-manipulation min-h-9 min-w-9 sm:min-h-10 sm:min-w-10"

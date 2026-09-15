@@ -12,7 +12,7 @@ import POSLayout from "./POSLayout";
 import HelpChatBot from "../common/HelpChatBot";
 import UnsyncedDataModal from "../common/UnsyncedDataModal";
 import { useStaff } from "../../context/StaffContext";
-import { getStoreLogo } from "../../lib/logoCache";
+import { getBrandFallbackLogo, getDisplayLogo } from "../../lib/logoCache";
 
 const Layout = ({ children }) => {
   const { staff, location } = useStaff();
@@ -38,14 +38,14 @@ const Layout = ({ children }) => {
           {/* Logo */}
           <div className="w-24 h-24 bg-white rounded-full flex items-center justify-center mx-auto mb-6 shadow-lg overflow-hidden">
             <Image 
-              src={getStoreLogo()} 
-              alt="Store Logo" 
+              src={getDisplayLogo()}
+              alt="Store Logo"
               width={90}
               height={90}
               className="object-contain"
               onError={(e) => {
                 e.target.onerror = null;
-                e.target.src = '/images/placeholder.jpg';
+                e.target.src = getBrandFallbackLogo();
               }}
               unoptimized
             />
