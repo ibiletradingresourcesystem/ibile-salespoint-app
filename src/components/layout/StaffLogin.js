@@ -22,7 +22,7 @@ import {
   faTriangleExclamation,
 } from "@fortawesome/free-solid-svg-icons";
 import { normalizeStaffList, normalizeStaffMember } from "@/src/lib/posPermissions";
-import { getUiSettings } from "@/src/lib/uiSettings";
+import { getUiSettings, uiSettingsAreLocal } from "@/src/lib/uiSettings";
 import { getDesktopBridge, isDesktopApp } from "@/src/lib/desktopClient";
 import DesktopSystemMenu from "../desktop/DesktopSystemMenu";
 import { primePosBootstrapFromCache, primePosBootstrapFromLiveData } from "@/src/lib/posBootstrap";
@@ -197,7 +197,8 @@ export default function StaffLogin() {
     primePosBootstrapFromCache({ staff: normalizedStaffData, location: locationData });
 
     try {
-      const settingsRequest = normalizedStaffData?.storeId
+      // Desktop app: this computer keeps its own settings, so the store's copy is not fetched
+      const settingsRequest = normalizedStaffData?.storeId && !uiSettingsAreLocal()
         ? fetch(`/api/ui-settings?storeId=${encodeURIComponent(normalizedStaffData.storeId)}`)
         : Promise.resolve(null);
 

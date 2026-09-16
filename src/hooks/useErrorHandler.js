@@ -69,11 +69,16 @@ export function useErrorHandler() {
       forceLogout = false 
     } = options;
 
-    console.error(`❌ [${context}] Error:`, error);
+    const sessionEnded = shouldRedirectToLogin(error, statusCode);
+    if (sessionEnded) {
+      // Expected after the app restarts: the staff session is gone, so the login screen is shown
+      console.info(`[${context}] Staff session has ended; showing the login screen`);
+    } else {
+      console.error(`❌ [${context}] Error:`, error);
+    }
 
     // Check if we should redirect to login
-    if (forceLogout || shouldRedirectToLogin(error, statusCode)) {
-      console.log('🔒 Critical error detected - redirecting to login');
+    if (forceLogout || sessionEnded) {
       
       // Show alert if needed
       if (showAlert) {

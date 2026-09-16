@@ -17,8 +17,7 @@ import CartPanel from "../pos/CartPanel";
 import TillHandoverWatcher from "../pos/TillHandoverWatcher";
 import { CartProvider } from "../../context/CartContext";
 import { useErrorHandler } from "../../hooks/useErrorHandler";
-import { saveUiSettings } from "@/src/lib/uiSettings";
-import { getUiSettings } from "@/src/lib/uiSettings";
+import { getUiSettings, saveUiSettings, uiSettingsAreLocal } from "@/src/lib/uiSettings";
 import { getStoreLogo, setStoreLogo } from "@/src/lib/logoCache";
 import { hasPosPermission } from "@/src/lib/posPermissions";
 import { getOptimisticStoreData, primePosBootstrapFromLiveData, readPosBootstrap } from "@/src/lib/posBootstrap";
@@ -153,7 +152,8 @@ export default function POSLayout({ children }) {
 
   useEffect(() => {
     const fetchUiSettings = async () => {
-      if (!staff?.storeId) return;
+      // Desktop app: settings belong to this computer, so the store's copy is not applied here
+      if (!staff?.storeId || uiSettingsAreLocal()) return;
       try {
         const res = await fetch(`/api/ui-settings?storeId=${staff.storeId}`);
         if (!res.ok) return;

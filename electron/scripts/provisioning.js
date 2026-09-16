@@ -42,7 +42,7 @@ function findConnectionString() {
     return { uri: process.env.IBILE_POS_CLOUD_MONGODB_URI.trim(), source: 'IBILE_POS_CLOUD_MONGODB_URI' };
   }
   const fromEnv = readDotEnvValue(path.join(POS_ROOT, '.env'), 'MONGODB_URI');
-  return { uri: fromEnv, source: '.env MONGODB_URI' };
+  return { uri: fromEnv, source: fromEnv ? '.env MONGODB_URI' : 'no IBILE_POS_CLOUD_MONGODB_URI, and no MONGODB_URI in .env' };
 }
 
 const hostOf = (uri) => /^mongodb(?:\+srv)?:\/\/(?:[^@/]*@)?([^/?]+)/i.exec(uri)?.[1] || '';
@@ -57,7 +57,7 @@ function prepareProvisioning({ log = console.log } = {}) {
 
   const { uri, source } = findConnectionString();
   if (!uri) {
-    log(`Cloud database: not pre-filled (${source} not set); setup will ask for the connection string.`);
+    log(`Cloud database: not pre-filled (${source}); setup will ask for the connection string.`);
     return null;
   }
   if (!/^mongodb(\+srv)?:\/\/\S+$/i.test(uri)) throw new Error(`${source} is not a MongoDB connection string`);

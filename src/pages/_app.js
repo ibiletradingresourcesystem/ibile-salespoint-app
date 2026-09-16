@@ -5,7 +5,7 @@ import { useRouter } from "next/router";
 import Layout from "@/src/components/layout/Layout";
 import { StaffProvider } from "@/src/context/StaffContext";
 import POSErrorBoundary from "@/src/components/common/POSErrorBoundary";
-import { getUiSettings } from "@/src/lib/uiSettings";
+import { getUiSettings, loadDesktopUiSettings } from "@/src/lib/uiSettings";
 import { applyRadiusScale } from "@/src/lib/radiusScale";
 import { ToastContainer } from "@/src/components/common/Toast";
 import { ConfirmDialogContainer } from "@/src/components/common/ConfirmDialog";
@@ -28,8 +28,11 @@ export default function App({ Component, pageProps }) {
           console.error('❌ Service Worker registration failed:', error);
         });
     }
-    // Desktop app: this till's printer settings are kept by the app
-    if (window.posDesktop) loadDesktopPrinterSettings();
+    // Desktop app: this computer's printer and screen settings are kept by the app itself
+    if (window.posDesktop) {
+      loadDesktopPrinterSettings();
+      loadDesktopUiSettings();
+    }
   }, []);
 
   useEffect(() => {
@@ -39,8 +42,9 @@ export default function App({ Component, pageProps }) {
       const scale = clamped / 100;
 
       if (document?.documentElement) {
+        // The stylesheet multiplies its base size by this, so text, spacing and rem-sized
+        // boxes all scale together (globals.css)
         document.documentElement.style.setProperty('--content-scale', String(scale));
-        document.documentElement.style.fontSize = `${scale * 16}px`;
         applyRadiusScale(settings?.layout?.borderRadius, document.documentElement);
       }
     };
@@ -64,7 +68,6 @@ export default function App({ Component, pageProps }) {
       window.removeEventListener("uiSettings:updated", handleUiSettingsUpdate);
       if (document?.documentElement) {
         document.documentElement.style.removeProperty('--content-scale');
-        document.documentElement.style.fontSize = '';
       }
     };
   }, []);

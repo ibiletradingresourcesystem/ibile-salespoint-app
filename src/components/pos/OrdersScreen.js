@@ -958,7 +958,7 @@ export default function OrdersScreen({ onNavigateToMenu }) {
             </div>
 
             {/* Actions */}
-            <div className={`p-3 bg-white border-t border-gray-200 grid gap-2 flex-shrink-0 ${detailOrder.source === 'E-Commerce' ? 'grid-cols-1 sm:grid-cols-4' : 'grid-cols-1 sm:grid-cols-3'}`}>
+            <div className={`p-3 bg-white border-t border-gray-200 grid gap-2 flex-shrink-0 ${detailOrder.source === 'E-Commerce' ? 'grid-cols-1 sm:grid-cols-3' : 'grid-cols-1 sm:grid-cols-3'}`}>
               {detailOrder.source === 'E-Commerce' && (
                 <button
                   onClick={() => handleProcessOnlineOrder(detailOrder, { finalStatus: 'Processing' })}
@@ -974,24 +974,26 @@ export default function OrdersScreen({ onNavigateToMenu }) {
                     : 'Process in POS'}
                 </button>
               )}
-              {detailOrder.source === 'E-Commerce' && !detailOrder.hasPosTransaction && detailOrder.status !== 'Delivered' && (
-                <button
-                  onClick={() => handleProcessOnlineOrder(detailOrder, { finalStatus: 'Delivered' })}
-                  disabled={processingOrderId === detailOrder.id}
-                  className="px-3 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-sm font-semibold transition-colors active:scale-95 disabled:opacity-60"
-                >
-                  {processingOrderId === detailOrder.id ? 'Opening...' : 'Process as Delivered'}
-                </button>
-              )}
-              {detailOrder.source === 'E-Commerce' && detailOrder.hasPosTransaction && detailOrder.status !== 'Delivered' && (
-                <button
-                  onClick={() => handleMarkDelivered(detailOrder)}
-                  disabled={deliveringOrderId === detailOrder.id}
-                  className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-semibold transition-colors active:scale-95 disabled:opacity-60"
-                >
-                  {deliveringOrderId === detailOrder.id ? 'Sending...' : 'Mark Delivered'}
-                </button>
-              )}
+              {/* Delivery only after the sale exists: recorded at a till, or the order processed in the management app */}
+              {detailOrder.source === 'E-Commerce' && detailOrder.status !== 'Delivered' && (() => {
+                const saleProcessed = detailOrder.hasPosTransaction || ['Processing', 'Shipped'].includes(detailOrder.status);
+                return (
+                  <button
+                    onClick={() => handleMarkDelivered(detailOrder)}
+                    disabled={!saleProcessed || deliveringOrderId === detailOrder.id}
+                    title={saleProcessed
+                      ? 'Tell the customer the order has been delivered'
+                      : 'Record the sale first: process the order in the POS, or process it in the management app'}
+                    className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-semibold transition-colors active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed"
+                  >
+                    {deliveringOrderId === detailOrder.id
+                      ? 'Sending...'
+                      : saleProcessed
+                      ? 'Mark Delivered'
+                      : 'Mark Delivered (process the sale first)'}
+                  </button>
+                );
+              })()}
               {detailOrder.source !== 'E-Commerce' && (
                 <button
                   onClick={() => handlePrintOrder(detailOrder)}

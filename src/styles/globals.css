@@ -6,6 +6,10 @@
 :root {
   --pos-radius: 6px;
 
+  /* Base text size and the Settings → Content scale factor (see src/pages/_app.js) */
+  --root-font-size: 18px;
+  --content-scale: 1;
+
   /* Colors */
   --color-primary-50: #f0f9ff;
   --color-primary-100: #e0f2fe;
@@ -153,7 +157,9 @@ body {
     radial-gradient(circle at top right, var(--panel-glow-primary), transparent 28%),
     linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, var(--background) 46%, var(--background-elevated) 100%);
   color: var(--foreground);
-  font-size: 18px;
+  /* One base size for the whole app, scaled by Settings → Content scale (--content-scale).
+     Sizes in rem follow it; fixed px sizes do not, so keep px out of layout and text. */
+  font-size: calc(var(--root-font-size) * var(--content-scale));
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -276,30 +282,31 @@ button {
 
 /* Responsive utilities */
 @media (max-width: 640px) {
-  body {
-    font-size: 15px;
+  :root {
+    --root-font-size: 14px;
   }
-  
+
   h1 {
     @apply text-2xl;
   }
-  
+
   h2 {
     @apply text-xl;
   }
-  
+
   h3 {
     @apply text-lg;
   }
 }
 
 /* Mobile scale adjustments */
-@media (max-width: 768px) {
-  html,
-  body {
-    font-size: 14px;
+@media (min-width: 641px) and (max-width: 768px) {
+  :root {
+    --root-font-size: 15px;
   }
+}
 
+@media (max-width: 768px) {
   input,
   textarea,
   select {

@@ -191,6 +191,8 @@ function createWindow() {
       nodeIntegration: false,
       sandbox: true,
       spellcheck: false,
+      // A till that is minimised or behind another window keeps running at full speed
+      backgroundThrottling: false,
     },
   });
 
@@ -887,13 +889,18 @@ function registerIpc() {
       return { ok: false, error: error.message };
     }
   });
-  handle('desktop:get-printer-settings', () => config.get('printerSettings') || null);
-  handle('desktop:set-printer-settings', (payload) => {
-    const text = JSON.stringify(payload || {});
-    if (text.length > 10000) throw new Error('Printer settings are too large');
-    config.set({ printerSettings: JSON.parse(text) });
-    return { ok: true };
-  });
+  // Printer and screen/till settings belong to this computer, not to the store
+  const settingsHandlers = (channel, key, label) => {
+    handle(`desktop:get-${channel}`, () => config.get(key) || null);
+    handle(`desktop:set-${channel}`, (payload) => {
+      const text = JSON.stringify(payload || {});
+      if (text.length > 20000) throw new Error(`${label} are too large`);
+      config.set({ [key]: JSON.parse(text) });
+      return { ok: true };
+    });
+  };
+  settingsHandlers('printer-settings', 'printerSettings', 'Printer settings');
+  settingsHandlers('ui-settings', 'uiSettings', 'Settings');
   // Window controls (the window has no Windows title bar)
   handle('desktop:window-minimize', () => mainWindow?.minimize());
   handle('desktop:window-toggle-maximize', () => {

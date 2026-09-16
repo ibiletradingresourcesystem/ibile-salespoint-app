@@ -38,6 +38,24 @@ import { getUiSettings } from '../../lib/uiSettings';
 import AlphaKeyboardModal from '../common/AlphaKeyboardModal';
 import { isDesktopApp } from '../../lib/desktopClient';
 
+// Product name sizes (Settings → Layout). In rem so they follow the content scale.
+const PRODUCT_NAME_SIZES = {
+  small: 'text-[0.62rem] sm:text-[0.68rem]',
+  standard: 'text-[0.72rem] sm:text-xs',
+  large: 'text-sm sm:text-base',
+  'extra-large': 'text-base sm:text-lg',
+};
+
+/** Prices keep their kobo when they have any, e.g. ₦1,250 and ₦1,250.50 */
+const formatProductPrice = (value) => {
+  const amount = Number(value) || 0;
+  const hasKobo = Math.abs(amount - Math.trunc(amount)) >= 0.005;
+  return `₦${amount.toLocaleString('en-NG', {
+    minimumFractionDigits: hasKobo ? 2 : 0,
+    maximumFractionDigits: 2,
+  })}`;
+};
+
 // Color mapping for categories
 const CATEGORY_COLORS = {
   'Bakery': 'from-amber-500 to-amber-600',
@@ -169,15 +187,6 @@ const getCategoryIcon = (category) => {
   const nameKey = normalizeIconToken(category?.name);
   return CATEGORY_ICON_BY_KEY[nameKey] || CATEGORY_ICONS[category?.name] || faBook;
 };
-
-// Default categories to show if API fails and no cache exists
-const DEFAULT_CATEGORIES = [
-  { _id: '1', name: 'Bakery' },
-  { _id: '2', name: 'Drinks' },
-  { _id: '3', name: 'Food' },
-  { _id: '4', name: 'Hotel' },
-  { _id: '5', name: 'Wine' },
-];
 
 export default function MenuScreen() {
   const [categories, setCategories] = useState([]);
@@ -497,10 +506,9 @@ export default function MenuScreen() {
                 // Auto-select first category
                 setSelectedCategory(filtered[0] || null);
               } else {
-                console.warn("⚠️ No categories found for this location, using defaults");
-                const filtered = filterCategoriesForLocation(DEFAULT_CATEGORIES);
-                setCategories(filtered);
-                setSelectedCategory(filtered[0] || null);
+                console.warn("⚠️ No categories are linked to this location");
+                setCategories([]);
+                setSelectedCategory(null);
               }
             } else {
               console.warn(`⚠️ API returned ${response.status}, trying local cache...`);
@@ -512,10 +520,9 @@ export default function MenuScreen() {
                 setCategories(filtered);
                 setSelectedCategory(filtered[0] || null);
               } else {
-                console.log("📦 Using default categories as fallback");
-                const filtered = filterCategoriesForLocation(DEFAULT_CATEGORIES);
-                setCategories(filtered);
-                setSelectedCategory(filtered[0] || null);
+                console.warn("⚠️ No categories could be loaded for this location");
+                setCategories([]);
+                setSelectedCategory(null);
               }
             }
           } catch (fetchErr) {
@@ -528,10 +535,9 @@ export default function MenuScreen() {
               setCategories(filtered);
               setSelectedCategory(filtered[0] || null);
             } else {
-              console.log("📦 Using default categories as fallback");
-              const filtered = filterCategoriesForLocation(DEFAULT_CATEGORIES);
-              setCategories(filtered);
-              setSelectedCategory(filtered[0] || null);
+              console.warn("⚠️ No categories could be loaded for this location");
+              setCategories([]);
+              setSelectedCategory(null);
             }
           }
         } else {
@@ -584,27 +590,23 @@ export default function MenuScreen() {
                   setSelectedCategory(filtered[0]);
                 }
               } else {
-                console.log("📦 Using default categories as fallback");
-                const filtered = filterCategoriesForLocation(DEFAULT_CATEGORIES);
-                setCategories(filtered);
-                setSelectedCategory(filtered[0] || null);
+                console.warn("⚠️ No categories could be loaded for this location");
+                setCategories([]);
+                setSelectedCategory(null);
               }
             } catch (fetchErr) {
-              console.warn("⚠️ Fetch error, using default categories");
-              const filtered = filterCategoriesForLocation(DEFAULT_CATEGORIES);
-              setCategories(filtered);
-              setSelectedCategory(filtered[0] || null);
+              console.warn("⚠️ No categories could be loaded for this location");
+              setCategories([]);
+              setSelectedCategory(null);
             }
           }
         }
         setLoadingCategories(false);
       } catch (err) {
         console.error('❌ Failed to fetch categories:', err);
-        // Fallback to default categories
-        console.log("📦 Using default categories as fallback");
-        const filtered = filterCategoriesForLocation(DEFAULT_CATEGORIES);
-        setCategories(filtered);
-        setSelectedCategory(filtered[0] || null);
+                console.warn("⚠️ No categories could be loaded for this location");
+        setCategories([]);
+        setSelectedCategory(null);
         setError(null); // Clear error - we have a fallback
         setLoadingCategories(false);
       }
@@ -709,14 +711,19 @@ export default function MenuScreen() {
               p.category === categoryId ||
               p.categoryId === categoryId
             );
-            setProducts(categoryFiltered);
-            setLoadingProducts(false);
-            return;
+            // Only stop here when this category is actually in the cache; otherwise ask the POS
+            // service below, so a category opened for the first time is not shown as empty
+            if (categoryFiltered.length > 0) {
+              setProducts(categoryFiltered);
+              setLoadingProducts(false);
+              return;
+            }
           }
         }
 
-        // No local data at all - fetch the active location's products from the API when online.
-        if (isOnline) {
+        // No local data yet - fetch this location's products from the POS service.
+        // The desktop app's service runs on this computer, so it is always worth asking.
+        if (isOnline || isDesktopApp()) {
           console.log("📥 No local products found, fetching from API (first load)...");
           let url = `/api/products?category=${encodeURIComponent(categoryId)}`;
           if (location?._id) url += `&locationId=${encodeURIComponent(location._id)}`;
@@ -1140,8 +1147,23 @@ export default function MenuScreen() {
                 </div>
               </div>
             </div>
+          ) : categories.length === 0 ? (
+            /* Nothing is invented here: the till says what is missing and where to put it right */
+            <div className="rounded-lg border-2 border-dashed border-amber-300 bg-amber-50 p-4 text-center">
+              <div className="text-sm font-bold text-amber-900">No categories for {location?.name || 'this location'} yet</div>
+              <p className="mt-1 text-xs text-amber-800">
+                Add categories to this location in the management app (Setup → Locations), then tap Sync Products here.
+              </p>
+              <button
+                onClick={handleManualSync}
+                disabled={isSyncing || !isOnline}
+                className="mt-3 px-4 py-2 bg-amber-600 hover:bg-amber-700 disabled:opacity-60 text-white text-xs font-bold rounded-lg transition-colors"
+              >
+                {isSyncing ? 'Syncing…' : 'Sync Products'}
+              </button>
+            </div>
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-1.5 sm:gap-3 auto-rows-max">
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(8rem,1fr))] gap-1.5 sm:gap-3 auto-rows-max">
               {categories.map(category => {
                 const categoryKey = String(category._id || category.id || category.name);
                 const color = CATEGORY_COLORS[category.name] || 'from-neutral-500 to-neutral-600';
@@ -1328,8 +1350,10 @@ export default function MenuScreen() {
                   })
                 : searchSource;
               
+              // Columns follow the card size in rem, so the content scale changes how many fit
+              // instead of stretching the cards out of shape
               return filteredProducts.length > 0 ? (
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2 auto-rows-max">
+              <div className="grid grid-cols-[repeat(auto-fill,minmax(9rem,1fr))] gap-2 auto-rows-max">
                 {filteredProducts.map(product => {
                   const productKey = product._id || product.id;
                   const productImage = getProductImageUrl(product);
@@ -1340,30 +1364,34 @@ export default function MenuScreen() {
                     key={productKey}
                     onClick={() => handleProductSelect(product)}
                     disabled={false}
-                    className="relative bg-white rounded border border-gray-200 hover:border-cyan-400 hover:shadow-md transition-all shadow-sm touch-manipulation overflow-hidden active:scale-[0.98] w-full"
+                    className="relative bg-white rounded border border-gray-200 hover:border-cyan-400 hover:shadow-md transition-all shadow-sm touch-manipulation overflow-hidden active:scale-[0.98] w-full flex flex-col text-left"
                   >
-                    {/* Top Row: Image + Details Side by Side */}
-                    <div className="flex h-14 sm:h-16">
-                      {/* Product Image */}
-                      <div className="w-14 h-14 sm:w-16 sm:h-16 bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center overflow-hidden flex-shrink-0 relative" style={{ minWidth: 56, maxWidth: 64, minHeight: 56, maxHeight: 64 }}>
+                    {/* Name first, across the whole card, so long names are never hidden behind the image */}
+                    <div className={`px-1.5 pt-1.5 font-bold text-gray-800 leading-tight line-clamp-2 min-h-[2.4em] break-words ${PRODUCT_NAME_SIZES[productCardTextSize] || PRODUCT_NAME_SIZES.standard}`}>
+                      {product.name}
+                    </div>
+
+                    <div className="flex items-center gap-1.5 px-1.5 py-1">
+                      {/* Product Image — sized in rem so it follows the content scale */}
+                      <div className="w-10 h-10 sm:w-12 sm:h-12 rounded bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center overflow-hidden flex-shrink-0 relative">
                         {!isOnline && (
                           <div className="absolute inset-0 flex items-center justify-center bg-gray-100 z-20">
                             <div className="text-xl">📦</div>
                           </div>
                         )}
-                        
+
                         {isOnline && loadingImages[productKey] && !failedImages.has(productKey) && (
                           <div className="absolute inset-0 flex items-center justify-center bg-gray-100 z-10">
                             <div className="animate-pulse text-lg">⏳</div>
                           </div>
                         )}
-                        
+
                         {showProductImage ? (
                           <Image
                             src={productImage}
                             alt={product.name}
                             fill
-                            sizes="64px"
+                            sizes="96px"
                             quality={62}
                             style={{ objectFit: 'cover', width: '100%', height: '100%' }}
                             unoptimized={shouldBypassImageOptimization(productImage)}
@@ -1376,32 +1404,22 @@ export default function MenuScreen() {
                         )}
                       </div>
 
-                      {/* Product Details */}
-                      <div className="flex-1 p-1 flex flex-col justify-between min-w-0">
-                        <div className={`font-bold text-gray-800 leading-tight line-clamp-2 ${
-                          { small: 'text-[9px] sm:text-[10px]', standard: 'text-[11px] sm:text-xs', large: 'text-sm sm:text-base', 'extra-large': 'text-base sm:text-lg' }[productCardTextSize] || 'text-[11px] sm:text-xs'
+                      {/* Stock Badge */}
+                      {product.quantity !== undefined && (
+                        <span className={`ml-auto px-1.5 py-0.5 rounded text-[0.65rem] sm:text-xs font-bold whitespace-nowrap ${
+                          product.quantity <= 0 ? 'bg-red-100 text-red-700' :
+                          product.quantity <= 5 ? 'bg-yellow-100 text-yellow-700' :
+                          'bg-green-100 text-green-700'
                         }`}>
-                          {product.name}
-                        </div>
-                        <div className="flex items-center justify-end mt-0.5">
-                          {/* Stock Badge - Right Aligned */}
-                          {product.quantity !== undefined && (
-                            <span className={`px-1 py-0.5 rounded text-[10px] sm:text-xs font-bold ${
-                              product.quantity <= 0 ? 'bg-red-100 text-red-700' :
-                              product.quantity <= 5 ? 'bg-yellow-100 text-yellow-700' :
-                              'bg-green-100 text-green-700'
-                            }`}>
-                              {product.quantity <= 0 ? 'Out' : `${parseFloat(product.quantity.toFixed(2))}`}
-                            </span>
-                          )}
-                        </div>
-                      </div>
+                          {product.quantity <= 0 ? 'Out' : `${parseFloat(product.quantity.toFixed(2))}`}
+                        </span>
+                      )}
                     </div>
 
                     {/* Bottom Row: Price Full Width */}
-                    <div className="bg-gradient-to-r from-cyan-500 to-cyan-600 px-2 py-1">
-                      <div className="text-sm sm:text-base font-black text-white text-center">
-                        ₦{Math.round(product.salePriceIncTax || 0).toLocaleString()}
+                    <div className="mt-auto bg-gradient-to-r from-cyan-500 to-cyan-600 px-2 py-1">
+                      <div className="text-sm sm:text-base font-black text-white text-center break-words">
+                        {formatProductPrice(product.salePriceIncTax)}
                       </div>
                     </div>
                   </button>
@@ -1409,8 +1427,10 @@ export default function MenuScreen() {
                 })}
               </div>
             ) : (
-              <div className="text-xs text-gray-400 py-2 text-center">
-                {searchTerm ? 'No products match your search' : 'No products in this category'}
+              <div className="text-xs text-gray-500 py-3 text-center">
+                {searchTerm
+                  ? 'No products match your search'
+                  : 'No products in this category yet — tap Sync Products, or check the category in the management app'}
               </div>
             );
             })()}

@@ -32,6 +32,7 @@ import {
   saveUiSettings,
   resetUiSettings,
   defaultUiSettings,
+  uiSettingsAreLocal,
   DIRECTOR_MEMO_ACCOUNT_OPTIONS,
 } from '@/src/lib/uiSettings';
 import { useStaff } from '@/src/context/StaffContext';
@@ -101,7 +102,7 @@ export default function SettingsPage() {
 
   useEffect(() => {
     const fetchServerSettings = async () => {
-      if (!staff?.storeId || !isOnline) return;
+      if (!staff?.storeId || !isOnline || uiSettingsAreLocal()) return;
       try {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 5000);
@@ -266,7 +267,8 @@ export default function SettingsPage() {
       // Always save locally first
       saveUiSettings(settings);
 
-      if (staff?.storeId && isOnline) {
+      // Desktop app: settings stay on this computer; every till keeps its own screen and till setup
+      if (staff?.storeId && isOnline && !uiSettingsAreLocal()) {
         try {
           const controller = new AbortController();
           const timeoutId = setTimeout(() => controller.abort(), 5000);

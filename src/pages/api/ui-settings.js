@@ -9,6 +9,7 @@ import Store from '@/src/models/Store';
 import { defaultUiSettings } from '@/src/lib/uiSettings';
 import { sanitizeBody } from '@/src/lib/apiValidation';
 import { recordLocalChange } from '@/src/lib/desktop/outbox';
+import { isDesktopServer } from '@/src/lib/runtime';
 
 const isObject = (value) => value && typeof value === 'object' && !Array.isArray(value);
 
@@ -53,10 +54,12 @@ export default async function handler(req, res) {
       const merged = mergeDeep(defaultUiSettings, incoming);
       store.uiSettings = merged;
       await store.save();
-      // Desktop: share the settings with the cloud (no-op on the cloud deployment)
-      await recordLocalChange('store_ui_settings', String(store._id), {
-        payload: { storeId: String(store._id), settings: merged },
-      });
+      // The desktop app keeps its settings on the till, so they are not sent to the store's copy
+      if (!isDesktopServer()) {
+        await recordLocalChange('store_ui_settings', String(store._id), {
+          payload: { storeId: String(store._id), settings: merged },
+        });
+      }
       return res.status(200).json({ success: true, settings: merged });
     }
 

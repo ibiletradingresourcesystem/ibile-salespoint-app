@@ -205,6 +205,29 @@ Conflicts and rejections stay on the computer and appear as **SYNC ERROR** with 
 - **Email:** the desktop has no mail account. Order-status emails report "skipped"; the support chat opens
   the staff member's email app.
 
+### Till screens
+
+- **Online orders:** *Mark Delivered* only once the sale exists — recorded at a till, or the order already
+  processed in the management app (status Processing/Shipped). Until then the button is disabled and says
+  so; the API refuses it as well. The old "Process as Delivered" shortcut is gone.
+- **Products:** the card shows the name first, across the card, then the picture and stock, then the price;
+  prices keep kobo when they have any (₦1,250.50, ₦2,500). Category and product grids fit as many columns
+  as the scaled card width allows.
+- **Categories:** a location with no categories shows what to do instead of five invented ones, and opening
+  a category the till has not cached yet asks the POS service instead of showing "no products".
+- **Complete Payment:** dark keypad with white digits.
+- **Close Till:** columns are in rem and stack on narrow or scaled-up screens; the cash-up table scrolls
+  rather than being cut off.
+
+### Settings per computer
+
+In the desktop app, Settings (screen, till, layout, content scale) and Printer Settings belong to that
+till only: they are kept in `config.json` (`uiSettings`, `printerSettings`) as well as the page's local
+storage, are not read from the store's copy, and are not pushed to it (`uiSettingsAreLocal()`). The web
+version keeps sharing them through the store. Content scale multiplies one base text size
+(`--content-scale` in globals.css), so text, spacing and rem-sized boxes scale together; product and
+category grids fit as many columns as the scaled card size allows.
+
 ### Printing
 
 Printer settings live in Settings → Printer Settings, and on the login screen under SYSTEM → Printer
@@ -297,6 +320,9 @@ showing the window (automated checks on a till someone is using).
 | Local database credentials lost | Close the app; remove `secrets.mongoPassword` from `config.json`; start `mongod.exe --dbpath "%APPDATA%\Ibile POS\data\mongodb" --port 27517 --bind_ip 127.0.0.1` without `--auth`; drop user `ibilepos` in `admin`; stop it; start the app. |
 | New computer | Old PC: SYSTEM → Back up now. New PC: install, set up, SYSTEM → Restore from backup…, set up again if asked. |
 | Logs | SYSTEM → Open logs folder (`%APPDATA%\Ibile POS\logs`). Developer tools: F12 in development builds only. |
+| Opening takes about 15 seconds | Normal: local database ~6 s, POS service ~5 s, first screen ~3 s (measured with 2,500 products). The first start after installing or updating is slower while Windows scans the new files. Logging in and opening a category are then about a second. |
+| POS shows "No categories for this location yet" | The location has no categories in the management app (Setup → Locations). The till no longer invents categories; add them there and tap Sync Products. |
+| Login screen appears after the app restarts | Staff sessions end when the app closes, so each start asks for a passcode; this is logged as "Staff session has ended", not as an error. |
 
 ---
 
@@ -335,6 +361,11 @@ The packaged test also passes with the downloaded MongoDB 8.0.32 binary (26/26, 
 - Pre-filled database: encryption round trip, tampered file refused, local database refused, no-prefill
   build (8/8); packaged app with a pre-filled test database connects on its own, the page never holds the
   string, setup completes (13/13 together with printing below).
+- Till screens in the packaged app (screenshots): product cards with the name first and kobo prices, menu at
+  75/100/130/140 % content scale, dark payment keypad, Close Till at 100 % and 140 %.
+- Startup with 2,500 products and 500 customers (window hidden): app start to setup screen 17 s, connect and
+  authorise 3-4 s, first download under 1 s, login screen 1.6 s, login to menu 1 s, category to products
+  under 0.5 s; no console errors and no failed requests after login.
 - Printing: printer list with the Windows default, unknown printer refused, silent / dialog options, 80 and
   58 mm page width, page length following the receipt (checked as PDF), jobs in order, temp files removed
   (13/13, print call captured, nothing sent to a printer); SYSTEM → Printer settings with manager passcode,

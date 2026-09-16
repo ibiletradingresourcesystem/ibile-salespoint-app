@@ -934,12 +934,12 @@ export default function CloseTillModal({ isOpen, onClose, onTillClosed }) {
         <div className="bg-primary-700 border border-primary-800 rounded-lg shadow-2xl w-full max-w-[1400px] h-[calc(100vh-1rem)] flex flex-col overflow-hidden">
 
         {/* Header + tabs */}
-        <div className="bg-primary-700 text-white flex items-stretch flex-shrink-0 border-b border-white/10">
-          <div className="flex items-center gap-2.5 px-4 border-r border-white/15">
+        <div className="bg-primary-700 text-white flex items-stretch flex-wrap flex-shrink-0 border-b border-white/10">
+          <div className="flex items-center gap-2.5 px-4 py-2 border-r border-white/15">
             <FontAwesomeIcon icon={faCashRegister} className="w-4 h-4" />
             <span className="text-sm font-bold uppercase tracking-wide whitespace-nowrap">Close Till</span>
           </div>
-          <nav className="flex-1 flex overflow-x-auto" aria-label="Close till sections">
+          <nav className="flex-1 min-w-0 flex overflow-x-auto" aria-label="Close till sections">
             {TABS.map(tab => (
               <button
                 key={tab.id}
@@ -978,11 +978,12 @@ export default function CloseTillModal({ isOpen, onClose, onTillClosed }) {
           </div>
         </div>
 
-        {/* Main Content — 3 white panels on the system colour */}
-        <div className="flex-1 grid grid-cols-[260px_1fr_360px] gap-2 p-2 min-h-0 overflow-hidden">
+        {/* Main Content — 3 white panels on the system colour.
+            Columns are in rem so they follow the content scale, and stack on narrow or scaled-up screens. */}
+        <div className="flex-1 grid gap-2 p-2 min-h-0 grid-cols-1 auto-rows-min overflow-y-auto lg:grid-cols-[16rem_minmax(0,1fr)] xl:grid-cols-[16rem_minmax(0,1fr)_22rem] lg:auto-rows-auto lg:overflow-hidden">
 
           {/* LEFT: Till info + actions */}
-          <aside className="bg-white rounded-md p-4 flex flex-col gap-4 overflow-y-auto">
+          <aside className="bg-white rounded-md p-4 flex flex-col gap-4 lg:overflow-y-auto">
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500">Till</p>
               <h3 className="text-base font-bold text-neutral-900 mt-0.5">{till?.tillNumber || till?.tillName || 'Till'}</h3>
@@ -1071,8 +1072,8 @@ export default function CloseTillModal({ isOpen, onClose, onTillClosed }) {
                 <FontAwesomeIcon icon={faPrint} className="w-4 h-4" />
                 Print Report
               </button>
-              {/* The Count column is hidden on small screens, so the hand-over button lives here instead */}
-              {handoverButton("sm:hidden")}
+              {/* The Count column is hidden on narrow screens, so the hand-over button lives here instead */}
+              {handoverButton("xl:hidden")}
               <button
                 type="button"
                 onClick={onClose}
@@ -1085,7 +1086,7 @@ export default function CloseTillModal({ isOpen, onClose, onTillClosed }) {
           </aside>
 
           {/* CENTER: Tab content */}
-          <main className="overflow-y-auto min-w-0">
+          <main className="min-w-0 lg:overflow-y-auto">
             {activeTab === 'summary' ? (
               <>
                 {/* Summary strip: one panel, values kept on one line */}
@@ -1103,7 +1104,9 @@ export default function CloseTillModal({ isOpen, onClose, onTillClosed }) {
                     <h3 className="text-sm font-bold text-neutral-800">Cash up</h3>
                     <span className="text-xs text-neutral-500">Tap a tender, then enter the amount counted</span>
                   </div>
-                  <table className="w-full text-sm">
+                  {/* Scrolls instead of being cut off when the content scale is raised */}
+                  <div className="overflow-x-auto">
+                  <table className="w-full text-sm min-w-[22rem]">
                     <thead>
                       <tr className="bg-neutral-100 border-b border-neutral-200">
                         <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-neutral-600 uppercase">Tender</th>
@@ -1172,6 +1175,7 @@ export default function CloseTillModal({ isOpen, onClose, onTillClosed }) {
                       </tr>
                     </tfoot>
                   </table>
+                  </div>
                 </div>
 
                 {showTerminals && (
@@ -1289,7 +1293,7 @@ export default function CloseTillModal({ isOpen, onClose, onTillClosed }) {
           </main>
 
           {/* RIGHT: Count keypad */}
-          <aside className="hidden sm:flex flex-col bg-white rounded-md p-4 gap-3 overflow-y-auto">
+          <aside className="hidden xl:flex flex-col bg-white rounded-md p-4 gap-3 overflow-y-auto">
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500">Count</p>
               <h3 className="text-base font-bold text-neutral-900">{activeTender?.name || 'Select a tender'}</h3>

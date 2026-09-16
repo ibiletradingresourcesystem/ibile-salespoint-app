@@ -144,6 +144,9 @@ export default function PaymentModal({ total, onConfirm, onCancel, inline = fals
   // Fit to screen: keys stretch to share the height instead of having a fixed size
   const keypadTextClass = { compact: "text-lg", standard: "text-2xl", large: "text-3xl" }[keypadSize] || "text-2xl";
   const keyClass = fitScreen ? `${keypadTextClass} min-h-0 h-full` : keypadButtonClass;
+  // Dark keys with white digits: easier on the eyes than a bright keypad under till lighting
+  const numberKeyClass =
+    'bg-neutral-700 hover:bg-neutral-600 active:bg-neutral-800 border border-neutral-800 text-white rounded-lg font-bold transition-all active:scale-95 shadow-sm';
   const quickAmountHeightClass = fitScreen ? "min-h-0 py-0.5" : "min-h-[2.25rem] py-2";
 
   // Format Nigerian Naira with comma separators
@@ -469,15 +472,15 @@ export default function PaymentModal({ total, onConfirm, onCancel, inline = fals
                   <button
                     key={num}
                     onClick={() => handleNumberClick(num)}
-                    className={`bg-gray-50 hover:bg-gray-100 border border-neutral-300 rounded-lg font-bold transition-all active:scale-95 active:bg-cyan-50 ${keyClass}`}
+                    className={`${numberKeyClass} ${keyClass}`}
                   >
                     {num}
                   </button>
                 ))}
-                <button onClick={handleDecimal} className={`bg-gray-50 hover:bg-gray-100 border border-neutral-300 rounded-lg font-bold transition-all active:scale-95 ${keyClass}`}>.</button>
-                <button onClick={() => handleNumberClick(0)} className={`bg-gray-50 hover:bg-gray-100 border border-neutral-300 rounded-lg font-bold transition-all active:scale-95 ${keyClass}`}>0</button>
-                <button onClick={handleBackspace} className={`bg-gray-50 hover:bg-gray-100 border border-neutral-300 rounded-lg font-bold transition-all active:scale-95 flex items-center justify-center ${keyClass}`}>
-                  <FontAwesomeIcon icon={faBackspace} className="w-5 h-5 text-gray-500" />
+                <button onClick={handleDecimal} className={`${numberKeyClass} ${keyClass}`}>.</button>
+                <button onClick={() => handleNumberClick(0)} className={`${numberKeyClass} ${keyClass}`}>0</button>
+                <button onClick={handleBackspace} className={`${numberKeyClass} flex items-center justify-center ${keyClass}`}>
+                  <FontAwesomeIcon icon={faBackspace} className="w-5 h-5 text-white" />
                 </button>
               </div>
 

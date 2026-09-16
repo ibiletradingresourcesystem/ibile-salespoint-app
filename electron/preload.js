@@ -50,6 +50,9 @@ contextBridge.exposeInMainWorld('posDesktop', {
   confirmManager: (manager) => ipcRenderer.invoke('desktop:confirm-manager', manager),
   getPrinterSettings: () => ipcRenderer.invoke('desktop:get-printer-settings'),
   setPrinterSettings: (settings) => ipcRenderer.invoke('desktop:set-printer-settings', settings),
+  // Screen, till and layout settings, kept per computer
+  getUiSettings: () => ipcRenderer.invoke('desktop:get-ui-settings'),
+  setUiSettings: (settings) => ipcRenderer.invoke('desktop:set-ui-settings', settings),
   minimize: () => ipcRenderer.invoke('desktop:window-minimize'),
   toggleMaximize: () => ipcRenderer.invoke('desktop:window-toggle-maximize'),
   quit: () => ipcRenderer.invoke('desktop:quit'),

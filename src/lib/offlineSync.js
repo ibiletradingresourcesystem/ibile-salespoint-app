@@ -647,14 +647,14 @@ export async function getPendingTransactionsCount() {
       const txStore = db.transaction(['transactions'], 'readonly')
         .objectStore('transactions');
 
-      const index = txStore.index('synced');
-      const countRequest = index.count(new IDBKeyRange.only(false));
+      // `synced` is true/false, which IndexedDB cannot index, so the records are counted here
+      const request = txStore.getAll();
 
-      countRequest.onsuccess = () => {
-        resolve(countRequest.result);
+      request.onsuccess = () => {
+        resolve((request.result || []).filter((transaction) => transaction && transaction.synced !== true).length);
       };
 
-      countRequest.onerror = () => reject(countRequest.error);
+      request.onerror = () => reject(request.error);
     });
   } catch (err) {
     console.error('❌ Error getting pending transactions count:', err);

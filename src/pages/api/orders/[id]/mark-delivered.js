@@ -68,14 +68,17 @@ export default async function handler(req, res) {
       ],
     }).lean();
 
-    if (!transaction) {
+    // Delivery needs the sale to exist: recorded at a till, or the order already processed in the
+    // management app (status moved past Pending there)
+    const processedElsewhere = ['Processing', 'Shipped'].includes(order.status);
+    if (!transaction && !processedElsewhere) {
       return res.status(400).json({
         success: false,
-        error: 'Record the POS sale before marking this order as delivered',
+        error: 'Process the order first: record the sale in the POS, or process it in the management app',
       });
     }
 
-    const normalizedLocationName = String(locationName || order.locationName || transaction.location || '').trim();
+    const normalizedLocationName = String(locationName || order.locationName || transaction?.location || '').trim();
     const resolvedLocationId = mongoose.Types.ObjectId.isValid(String(locationId || ''))
       ? new mongoose.Types.ObjectId(String(locationId))
       : order.locationId || null;
@@ -106,20 +109,22 @@ export default async function handler(req, res) {
       { new: true, runValidators: true }
     ).lean();
 
-    await Transaction.findOneAndUpdate(
-      {
-        $or: [
-          { externalId },
-          { sourceOrderId: String(order._id) },
-        ],
-      },
-      {
-        $set: {
-          location: normalizedLocationName || transaction.location || 'online',
-          locationId: resolvedLocationId || transaction.locationId || null,
+    if (transaction) {
+      await Transaction.findOneAndUpdate(
+        {
+          $or: [
+            { externalId },
+            { sourceOrderId: String(order._id) },
+          ],
         },
-      }
-    );
+        {
+          $set: {
+            location: normalizedLocationName || transaction.location || 'online',
+            locationId: resolvedLocationId || transaction.locationId || null,
+          },
+        }
+      );
+    }
 
     const updatedOrder = await hydrateOrderCustomer(updatedOrderRaw, Customer);
 

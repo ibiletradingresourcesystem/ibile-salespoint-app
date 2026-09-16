@@ -1,3 +1,5 @@
+import { getDesktopBridge, isDesktopApp } from './desktopClient';
+
 const STORAGE_KEY = 'uiSettings';
 
 export const DIRECTOR_MEMO_ACCOUNT_OPTIONS = [
@@ -117,6 +119,8 @@ export const saveUiSettings = (settings) => {
 
   const merged = mergeDeep(defaultUiSettings, settings || {});
   localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
+  // Desktop app: these settings belong to this computer, so the app keeps its own copy
+  getDesktopBridge()?.setUiSettings?.(merged).catch((error) => console.warn('Could not save settings in the app:', error));
   window.dispatchEvent(
     new CustomEvent('uiSettings:updated', { detail: merged })
   );
@@ -124,3 +128,28 @@ export const saveUiSettings = (settings) => {
 };
 
 export const resetUiSettings = () => saveUiSettings(defaultUiSettings);
+
+/**
+ * Desktop app: screen, till and printing settings are per computer, not shared through the store,
+ * so a change on one till never moves another till's layout.
+ */
+export const uiSettingsAreLocal = () => isDesktopApp();
+
+/** Desktop app: settings kept by the app win over this browser's copy. Call once when the POS loads. */
+export const loadDesktopUiSettings = async () => {
+  const bridge = getDesktopBridge();
+  if (!bridge?.getUiSettings) return getUiSettings();
+  try {
+    const fromApp = await bridge.getUiSettings();
+    if (fromApp) {
+      const merged = mergeDeep(defaultUiSettings, fromApp);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
+      window.dispatchEvent(new CustomEvent('uiSettings:updated', { detail: merged }));
+    } else if (localStorage.getItem(STORAGE_KEY)) {
+      await bridge.setUiSettings(getUiSettings());
+    }
+  } catch (error) {
+    console.warn('Could not load settings from the app:', error);
+  }
+  return getUiSettings();
+};
