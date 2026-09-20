@@ -22,6 +22,54 @@ const MM_TO_MICRONS = 1000;
 const PX_TO_MICRONS = 25400 / 96;
 
 let queue = Promise.resolve();
+const printableWidthCache = new Map();
+
+/**
+ * How wide this printer can actually print, in mm ('' printer = the Windows default), or 0 when the
+ * driver does not say. A thermal printer keeps a margin at each edge its head cannot reach, and its
+ * paper size is often set to that printable width (72 mm for an 80 mm roll). Asking for a page wider
+ * than that makes Windows shrink the whole receipt to fit, so it comes out narrower than the paper
+ * with white down both sides. A page of exactly this width prints one-to-one and fills the roll.
+ *
+ * Drivers disagree about which of the two figures is which — this printer reports a printable area
+ * wider than its own paper — so the smaller of the two is used, and anything outside a sane roll
+ * width is ignored.
+ */
+function printableWidthMm(deviceName = '') {
+  if (process.platform !== 'win32') return Promise.resolve(0);
+  const key = deviceName || '(default)';
+  if (printableWidthCache.has(key)) return Promise.resolve(printableWidthCache.get(key));
+
+  const script = [
+    'Add-Type -AssemblyName System.Drawing;',
+    '$s = New-Object System.Drawing.Printing.PrinterSettings;',
+    deviceName ? `$s.PrinterName = '${deviceName.replace(/'/g, "''")}';` : '',
+    'if (-not $s.IsValid) { exit };',
+    // Both are in hundredths of an inch
+    "'{0} {1}' -f $s.DefaultPageSettings.PrintableArea.Width, $s.DefaultPageSettings.Bounds.Width",
+  ].join(' ');
+
+  return new Promise((resolve) => {
+    execFile(
+      'powershell.exe',
+      ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script],
+      { windowsHide: true, timeout: 8000 },
+      (error, stdout) => {
+        const figures = error
+          ? []
+          : String(stdout)
+              .trim()
+              .split(/\s+/)
+              .map(Number)
+              .filter((value) => Number.isFinite(value) && value > 0);
+        const mm = figures.length ? (Math.min(...figures) / 100) * 25.4 : 0;
+        const usable = mm >= 30 && mm <= 120 ? Math.round(mm * 10) / 10 : 0;
+        printableWidthCache.set(key, usable);
+        resolve(usable);
+      }
+    );
+  });
+}
 
 /** The Windows default printer for this user ('' if none), from HKCU\...\Windows "Device" ("Name,winspool,Ne01:"). */
 function windowsDefaultPrinter() {
@@ -68,7 +116,11 @@ function waitForImages(webContents) {
 }
 
 async function printOnce({ html, deviceName = '', silent = true, paperWidth = 80, fitToContent = true, log }) {
-  const width = Number(paperWidth) === 58 ? 58 : 80;
+  const roll = Number(paperWidth) === 58 ? 58 : 80;
+  // Lay out and print at what the printer can actually cover, so the receipt fills the paper
+  const printable = await printableWidthMm(deviceName).catch(() => 0);
+  const width = printable > 0 && printable <= roll ? printable : roll;
+  if (printable > 0 && printable !== roll) log?.info?.(`Printing at the printer's printable width: ${width} mm of ${roll} mm paper`);
   const file = path.join(os.tmpdir(), `ibile-pos-print-${crypto.randomBytes(8).toString('hex')}.html`);
   fs.writeFileSync(file, html, 'utf8');
 
@@ -102,7 +154,7 @@ async function printOnce({ html, deviceName = '', silent = true, paperWidth = 80
         )
         .catch(() => 0);
       const heightMicrons = Math.max(50 * MM_TO_MICRONS, Math.ceil(heightPx * PX_TO_MICRONS) + 5 * MM_TO_MICRONS);
-      options.pageSize = { width: width * MM_TO_MICRONS, height: heightMicrons };
+      options.pageSize = { width: Math.round(width * MM_TO_MICRONS), height: heightMicrons };
     }
 
     return await new Promise((resolve) => {
@@ -150,4 +202,4 @@ function printHtml(job, { log, webContents } = {}) {
   return result;
 }
 
-module.exports = { listPrinters, printHtml };
+module.exports = { listPrinters, printHtml, printableWidthMm };

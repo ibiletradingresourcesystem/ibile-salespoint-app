@@ -375,9 +375,9 @@ export default function PrinterSettingsPanel({ staff = null, location = null, on
         </div>
         {usesDesignedPrintout && (
           <p className="text-sm text-gray-500 mt-2">
-            Blank space kept on each side of {desktop ? 'the printed receipt design' : 'browser printouts'}. If text is cut off on one side,
-            raise that side&apos;s margin by 1–2 mm and print a test receipt; if there is too much blank space, lower it. The default is{' '}
-            {PAPER_PROFILES[settings.paperWidth].sideMargin} mm per side.
+            Blank space kept on each side of {desktop ? 'the printed receipt design' : 'browser printouts'}, on top of the edge the
+            printer cannot reach. At the default of {PAPER_PROFILES[settings.paperWidth].sideMargin} mm the printout is as wide as the
+            printer can print. If text is cut off on one side, raise that side&apos;s margin by 1–2 mm and print a test receipt.
           </p>
         )}
       </section>
@@ -407,6 +407,24 @@ export default function PrinterSettingsPanel({ staff = null, location = null, on
       {usesDirect && (
         <section className="p-4 border border-gray-200 rounded-lg space-y-4">
           <h2 className="text-lg font-bold text-gray-800">Thermal printer connection</h2>
+
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-1">Text size on direct printouts</label>
+            <select
+              value={settings.thermalTextSize || 'auto'}
+              onChange={(e) => update({ thermalTextSize: e.target.value })}
+              className={inputClass}
+            >
+              <option value="auto">Follow Receipt Settings</option>
+              <option value="standard">Standard (fewer, larger characters)</option>
+              <option value="small">Small (more characters per line)</option>
+            </select>
+            <p className="text-sm text-gray-500 mt-1">
+              A thermal printer has two built-in fonts, so direct printing cannot use every size. &quot;Follow Receipt
+              Settings&quot; uses the small font when the font size in the management app (Setup → Receipts) is under 7pt.
+              The store logo prints above the name on direct printouts as well.
+            </p>
+          </div>
 
           <div className="flex flex-wrap gap-6">
             {[

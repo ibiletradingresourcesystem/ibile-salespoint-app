@@ -2,7 +2,11 @@
  * Receipt as ESC/POS bytes for direct thermal printing. Same content and order as the browser
  * receipt (see receiptPrinting.js). Printers use their own fonts, so from the management app's
  * styling this applies font size (small sizes use the printer's compact font) and bold weight;
- * the logo and font family only appear on browser printouts.
+ * the font family only appears on browser printouts.
+ *
+ * The store logo is printed as dots when the page sends a bitmap with the job (escposImage.js).
+ * Text size: 'auto' follows the management app's receipt font size (under 7pt uses the printer's
+ * compact font); 'standard' and 'small' pick font A or font B for this till whatever that says.
  */
 import EscPosBuilder, { toPrinterText } from './escpos';
 import { buildReceiptViewModel, formatReceiptNaira, formatReceiptNairaCompact } from './receiptViewModel';
@@ -38,9 +42,10 @@ function pair(left, right, width) {
   return [...wrap(l, width), r.padStart(width)];
 }
 
-export function buildEscposReceipt(transaction, settings = {}, { paperWidth = 80 } = {}) {
+export function buildEscposReceipt(transaction, settings = {}, { paperWidth = 80, textSize = 'auto', logo = null } = {}) {
   const model = buildReceiptViewModel(transaction, settings);
-  const compact = model.fontSize < COMPACT_FONT_BELOW_PT;
+  const compact =
+    textSize === 'small' ? true : textSize === 'standard' ? false : model.fontSize < COMPACT_FONT_BELOW_PT;
   const width = (COLUMNS[paperWidth] || COLUMNS[80])[compact ? 1 : 0];
   const bodyBold = model.fontWeight === 'bold';
   const rule = '-'.repeat(width);
@@ -50,7 +55,9 @@ export function buildEscposReceipt(transaction, settings = {}, { paperWidth = 80
   const heading = (text) => p.bold(true).text(text).bold(bodyBold);
 
   // Header (no extra top feed: the printer already leaves a gap above the first line)
-  p.align(1).bold(true).size(1, 2);
+  p.align(1);
+  if (logo) p.raster(logo).text('');
+  p.bold(true).size(1, 2);
   lines(wrap(model.companyName.toUpperCase(), width));
   p.size(1, 1).bold(bodyBold);
   lines(wrap(model.locationName, width));

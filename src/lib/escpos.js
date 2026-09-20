@@ -69,6 +69,19 @@ export default class EscPosBuilder {
     return this.bytes(ESC, 0x64, Math.min(255, Math.max(0, lines)));
   }
 
+  /**
+   * Bitmap (GS v 0): `data` is a 1-bit image, row by row, 8 dots per byte, 1 = black dot.
+   * `width` is in dots and must be a multiple of 8, as each row starts on a byte boundary.
+   */
+  raster({ width, height, data } = {}) {
+    const bytesPerRow = Math.floor(Number(width) || 0) / 8;
+    const rows = Math.floor(Number(height) || 0);
+    if (!Number.isInteger(bytesPerRow) || bytesPerRow <= 0 || rows <= 0 || !data?.length) return this;
+    this.bytes(GS, 0x76, 0x30, 0, bytesPerRow & 0xff, (bytesPerRow >> 8) & 0xff, rows & 0xff, (rows >> 8) & 0xff);
+    this.chunks.push(data instanceof Uint8Array ? data : Uint8Array.from(data));
+    return this;
+  }
+
   /** QR code (model 2) using GS ( k */
   qrCode(data, moduleSize = 4) {
     const payload = Uint8Array.from(toPrinterText(data), (char) => char.charCodeAt(0));

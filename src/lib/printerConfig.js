@@ -13,24 +13,32 @@
  *   windowsPrinterName  desktop app: printer for designed printouts ('' = the Windows default printer)
  *   fitToReceipt   desktop app: page length follows the printout (thermal rolls); off for A4/Letter printers
  *   paperWidth     80 | 58 (mm roll)
- *   marginLeft     blank space, in mm, kept clear on the left of browser printouts
+ *   marginLeft     blank space, in mm, kept clear on the left of the printout (0 = as wide as the
+ *                  printer can print; its own unprintable edge is already left clear)
  *   marginRight    blank space, in mm, kept clear on the right (raise the side that gets cut off)
+ *   thermalTextSize  direct ESC/POS printing only: 'auto' follows the management app's receipt font
+ *                  size, 'standard' and 'small' pick the printer's own font A or B
  */
 
 import { getDesktopBridge, isDesktopApp } from './desktopClient';
+import { buildReceiptLogoRaster } from './escposImage';
 
 const STORAGE_KEY = 'printerSettings';
-const SETTINGS_VERSION = 3;
+const SETTINGS_VERSION = 4;
 
 export const PRINT_METHODS = ['browser', 'windows', 'direct', 'both'];
 export const PAPER_WIDTHS = [80, 58];
 export const MAX_SIDE_MARGIN = 12;
 
-// Default side margins and ESC/POS characters per line (Font A) per roll width
+// Default side margins and ESC/POS characters per line (Font A) per roll width.
+// The margins are 0: a thermal printer cannot print to the very edge anyway, and anything we keep
+// clear on top of that is printed paper left blank. Raise one side only if it is cut off.
 export const PAPER_PROFILES = {
-  80: { sideMargin: 4, columns: 48 },
-  58: { sideMargin: 3, columns: 32 },
+  80: { sideMargin: 0, columns: 48 },
+  58: { sideMargin: 0, columns: 32 },
 };
+
+export const THERMAL_TEXT_SIZES = ['auto', 'standard', 'small'];
 
 export function getDefaultPrinterSettings(paperWidth = 80) {
   const profile = PAPER_PROFILES[paperWidth] || PAPER_PROFILES[80];
@@ -47,6 +55,7 @@ export function getDefaultPrinterSettings(paperWidth = 80) {
     paperWidth: PAPER_PROFILES[paperWidth] ? paperWidth : 80,
     marginLeft: profile.sideMargin,
     marginRight: profile.sideMargin,
+    thermalTextSize: 'auto',
   };
 }
 
@@ -90,6 +99,7 @@ export function normalizePrinterSettings(raw = {}) {
     paperWidth,
     marginLeft: clampNumber(marginLeft, 0, MAX_SIDE_MARGIN, profile.sideMargin),
     marginRight: clampNumber(marginRight, 0, MAX_SIDE_MARGIN, profile.sideMargin),
+    thermalTextSize: THERMAL_TEXT_SIZES.includes(source.thermalTextSize) ? source.thermalTextSize : 'auto',
   };
 }
 
@@ -246,15 +256,21 @@ export async function getPrinterStatus(settings = getPrinterSettings()) {
 /** Send a receipt straight to the thermal printer through the POS server. */
 export async function sendDirectPrint(transaction, receiptSettings, settings = getPrinterSettings()) {
   const printer = normalizePrinterSettings(settings);
+  // The POS server cannot decode a picture, so the logo goes with the job as printer dots.
+  // receiptSettings already holds the store's logo, or nothing when it has none.
+  const logoSource = receiptSettings?.companyLogo || receiptSettings?.logo || '';
+  const logo = logoSource ? await buildReceiptLogoRaster(logoSource, { paperWidth: printer.paperWidth }) : null;
   const { data } = await postJson('/api/printer/print-direct', {
     transaction,
     receiptSettings,
+    logo,
     printer: {
       connectionMode: printer.connectionMode,
       printerName: printer.printerName,
       ip: printer.ip,
       port: printer.port,
       paperWidth: printer.paperWidth,
+      thermalTextSize: printer.thermalTextSize,
     },
   });
   return { success: data.success === true, message: data.message || 'Direct print failed' };

@@ -244,9 +244,29 @@ settings… (manager or admin passcode, same lockout as restore). The app keeps 
 | Method (desktop) | What happens |
 |---|---|
 | **Windows printer** (default) | The receipt design (logo, fonts, QR) prints through the printer's Windows driver to the chosen printer, or the Windows default, with no dialog. *Receipt roll* makes the page as long as the printout (thermal rolls); turn it off for A4/Letter printers. |
-| **Thermal direct (ESC/POS)** | Unchanged: raw commands to the USB printer's Windows queue or a network printer (IP:9100) from the POS server. |
+| **Thermal direct (ESC/POS)** | Raw commands to the USB printer's Windows queue or a network printer (IP:9100) from the POS server. The store logo prints as dots (see below) and *Text size on direct printouts* picks the printer's own font. |
 | **Thermal direct, Windows printer if it fails** | Direct first; otherwise the Windows printer. |
 | **Print dialog** | The Windows print dialog for every printout. |
+
+**Printing the full width of the roll.** A thermal printer cannot print to the edge of its paper: an
+80 mm roll usually prints 72 mm, and drivers often report that as the paper size. Asking for a page as
+wide as the roll makes Windows shrink the whole receipt to fit, which left white down both sides. The
+app now asks the driver how wide it can print (`printableWidthMm`, System.Drawing through PowerShell,
+cached per printer; the smaller of printable area and paper width, ignored outside 30–120 mm) and makes
+the page exactly that wide, so nothing is scaled. The side margins in Printer Settings therefore start
+at **0 mm** — the printer's own edge is margin enough — and only need raising if a side is cut off.
+
+**The logo on direct (ESC/POS) printouts.** Thermal printers have no fonts for pictures, and the POS
+server cannot decode a PNG or JPEG. The page, which already shows the logo, draws it to a canvas at the
+printer's 203 dpi (up to 30 x 12 mm, 4x4 ordered dither) and sends the dots with the print job
+(`src/lib/escposImage.js` → `GS v 0`). A logo held in cloud storage cannot be read back out of a
+canvas, so `/api/store/logo-data` hands the page the same image as a data URI — the address comes from
+the store record, never from the request. No logo simply means no logo on that receipt.
+
+**Text size on direct printouts.** A thermal printer has two built-in fonts, so it cannot follow every
+size in the management app. *Follow Receipt Settings* (the default) uses the compact font when Setup →
+Receipts is under 7pt; *Standard* and *Small* pick font A or font B for that till. Everything else about
+the receipt — logo, company details, font size, QR, messages — still comes from the management app.
 
 Designed printouts (`electron/lib/printing.js`) are loaded in a hidden sandboxed window without the app
 bridge and printed with `webContents.print`, one job at a time; the page waits for the logo/QR images
@@ -363,6 +383,15 @@ showing the window (automated checks on a till someone is using).
   SYSTEM → Printer settings behind a manager passcode, Windows printers listed, settings kept per
   computer, receipt preview naming the printer, and Settings → Receipt Preview Size resizing that
   preview (compact 504px · standard 576px · extra-large 1008px). Nothing is printed.
+- Printing through Windows drivers (hidden windows, `webContents.print` captured as PDF so nothing
+  reaches a printer): **13/13** — printer list with the default marked, unknown printer refused, empty
+  printout refused, silent print with no margins, Windows default when no printer is named, page width
+  set to the printable width and never wider than the roll (72.1 mm of an 80 mm roll on the test
+  machine), page length following the receipt, jobs queued one after another, printer default page size
+  for non-roll printouts, dialog mode, temp files removed, no windows left open.
+- Direct (ESC/POS) receipt: **10/10** — no bitmap when there is no logo, the logo sent as `GS v 0`
+  centred above the store name with the right size header, and the text size options picking font A or
+  font B ("auto" follows the management app's font size).
 - Backup/restore: 11/11.
 - Visual C++ runtime: installer check compiled with the bundled NSIS and run against bundled-newer,
   same-version, older-version and missing-file cases; a `mongod.exe` that cannot load its runtime
