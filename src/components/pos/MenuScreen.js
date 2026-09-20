@@ -37,6 +37,7 @@ import { cleanupOldTransactions } from '../../lib/indexedDBCleanup';
 import { getUiSettings } from '../../lib/uiSettings';
 import AlphaKeyboardModal from '../common/AlphaKeyboardModal';
 import { isDesktopApp } from '../../lib/desktopClient';
+import { getTillStockQuantity } from '../../lib/packUnits';
 
 // Product name sizes (Settings → Layout). In rem so they follow the content scale.
 const PRODUCT_NAME_SIZES = {
@@ -1291,15 +1292,19 @@ export default function MenuScreen() {
                           </div>
                           <div className="flex items-center justify-between mt-1">
                             {/* Stock Badge */}
-                            {product.quantity !== undefined && (
-                              <span className={`px-1.5 py-0.5 rounded text-[10px] sm:text-xs font-bold ${
-                                product.quantity <= 0 ? 'bg-red-100 text-red-700' :
-                                product.quantity <= 5 ? 'bg-yellow-100 text-yellow-700' :
-                                'bg-green-100 text-green-700'
-                              }`}>
-                                {product.quantity <= 0 ? 'Out' : `${product.quantity} left`}
-                              </span>
-                            )}
+                            {product.quantity !== undefined && (() => {
+                              // Whole packs for a pack product — the units in a part pack show on the unit card
+                              const stock = getTillStockQuantity(product);
+                              return (
+                                <span className={`px-1.5 py-0.5 rounded text-[10px] sm:text-xs font-bold ${
+                                  stock <= 0 ? 'bg-red-100 text-red-700' :
+                                  stock <= 5 ? 'bg-yellow-100 text-yellow-700' :
+                                  'bg-green-100 text-green-700'
+                                }`}>
+                                  {stock <= 0 ? 'Out' : `${stock} left`}
+                                </span>
+                              );
+                            })()}
                           </div>
                         </div>
                       </div>
@@ -1307,7 +1312,7 @@ export default function MenuScreen() {
                       {/* Bottom Row: Price Full Width */}
                       <div className="bg-gradient-to-r from-green-500 to-green-600 px-2 py-1">
                         <div className="text-sm sm:text-base font-black text-white text-center">
-                          ₦{Math.round(product.salePriceIncTax || 0).toLocaleString()}
+                          {formatProductPrice(product.salePriceIncTax)}
                         </div>
                       </div>
                     </button>
@@ -1405,15 +1410,18 @@ export default function MenuScreen() {
                       </div>
 
                       {/* Stock Badge */}
-                      {product.quantity !== undefined && (
-                        <span className={`ml-auto px-1.5 py-0.5 rounded text-[0.65rem] sm:text-xs font-bold whitespace-nowrap ${
-                          product.quantity <= 0 ? 'bg-red-100 text-red-700' :
-                          product.quantity <= 5 ? 'bg-yellow-100 text-yellow-700' :
-                          'bg-green-100 text-green-700'
-                        }`}>
-                          {product.quantity <= 0 ? 'Out' : `${parseFloat(product.quantity.toFixed(2))}`}
-                        </span>
-                      )}
+                      {product.quantity !== undefined && (() => {
+                        const stock = getTillStockQuantity(product);
+                        return (
+                          <span className={`ml-auto px-1.5 py-0.5 rounded text-[0.65rem] sm:text-xs font-bold whitespace-nowrap ${
+                            stock <= 0 ? 'bg-red-100 text-red-700' :
+                            stock <= 5 ? 'bg-yellow-100 text-yellow-700' :
+                            'bg-green-100 text-green-700'
+                          }`}>
+                            {stock <= 0 ? 'Out' : `${stock}`}
+                          </span>
+                        );
+                      })()}
                     </div>
 
                     {/* Bottom Row: Price Full Width */}

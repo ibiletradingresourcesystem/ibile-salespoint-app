@@ -17,6 +17,18 @@ import { printHtmlDocument } from '@/src/lib/printDocument';
 import { describeDesktopPrintTarget, getDesktopPrintTarget } from '@/src/lib/printerConfig';
 import { isDesktopApp } from '@/src/lib/desktopClient';
 import { showToast } from '@/src/components/common/Toast';
+import { getUiSettings } from '@/src/lib/uiSettings';
+
+/**
+ * Settings → Receipt preview size. Sizes are in rem so they follow Settings → Content scale,
+ * and the class names are written out in full so Tailwind keeps them.
+ */
+const PREVIEW_SIZES = {
+  compact: { card: 'max-w-md', body: 'max-h-[55vh]', sheet: 'min-h-[20rem]' },
+  standard: { card: 'max-w-lg', body: 'max-h-[70vh]', sheet: 'min-h-[28rem]' },
+  large: { card: 'max-w-2xl', body: 'max-h-[78vh]', sheet: 'min-h-[34rem]' },
+  'extra-large': { card: 'max-w-4xl', body: 'max-h-[86vh]', sheet: 'min-h-[40rem]' },
+};
 
 const formatNaira = (amount) =>
   `₦${(Number(amount) || 0).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -25,11 +37,21 @@ export default function PrintPreview() {
   const [current, setCurrent] = useState(null);
   const [queuedCount, setQueuedCount] = useState(0);
   const [desktop, setDesktop] = useState(false);
+  const [previewSize, setPreviewSize] = useState('standard');
   const currentRef = useRef(null);
   const queueRef = useRef([]);
 
   useEffect(() => {
     setDesktop(isDesktopApp());
+  }, []);
+
+  // Follow Settings → Receipt preview size, including while a preview is open
+  useEffect(() => {
+    const apply = (settings) => setPreviewSize(settings?.system?.receiptPreviewSize || 'standard');
+    apply(getUiSettings());
+    const onUpdate = (event) => apply(event.detail);
+    window.addEventListener('uiSettings:updated', onUpdate);
+    return () => window.removeEventListener('uiSettings:updated', onUpdate);
   }, []);
 
   const showNext = useCallback(() => {
@@ -58,6 +80,7 @@ export default function PrintPreview() {
 
   if (!current) return null;
 
+  const size = PREVIEW_SIZES[previewSize] || PREVIEW_SIZES.standard;
   const printerSettings = current.printerSettings || undefined;
   const silentTarget = desktop && getDesktopPrintTarget(printerSettings).silent;
 
@@ -74,7 +97,7 @@ export default function PrintPreview() {
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden border border-gray-200">
+      <div className={`bg-white rounded-2xl shadow-2xl w-full ${size.card} mx-4 overflow-hidden border border-gray-200`}>
         <div className="bg-gradient-to-r from-cyan-700 to-cyan-800 text-white px-5 py-4 flex items-center gap-3">
           <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center shadow overflow-hidden">
             <Image
@@ -108,10 +131,10 @@ export default function PrintPreview() {
         </div>
 
         <div className="p-4 bg-gray-50">
-          <div className="bg-white rounded-lg shadow-inner border border-gray-200 overflow-hidden max-h-[70vh] overflow-y-auto">
+          <div className={`bg-white rounded-lg shadow-inner border border-gray-200 overflow-hidden ${size.body} overflow-y-auto`}>
             <iframe
               srcDoc={current.receiptHTML}
-              className="w-full min-h-[500px] border-0"
+              className={`w-full ${size.sheet} border-0`}
               title="Receipt Preview"
               sandbox="allow-same-origin"
             />

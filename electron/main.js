@@ -18,7 +18,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { spawn } = require('child_process');
-const { app, BrowserWindow, Menu, dialog, ipcMain, net, powerMonitor, safeStorage, shell } = require('electron');
+const { app, BrowserWindow, Menu, dialog, ipcMain, net, powerMonitor, safeStorage, screen, shell } = require('electron');
 
 const { getPaths } = require('./lib/paths');
 const { createLogger } = require('./lib/logger');
@@ -185,6 +185,9 @@ function createWindow() {
     backgroundColor: '#0e7490',
     // No Windows title bar or menu: help, system actions, minimize and exit are buttons in the POS itself
     frame: false,
+    // The till owns the screen: staff can minimise it, but not drag it aside or resize it
+    movable: false,
+    fullscreenable: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -196,12 +199,51 @@ function createWindow() {
     },
   });
 
+  // The till fills the screen. It can be minimised to the taskbar, but it is never left part of
+  // the way across a monitor — a half-sized till hides the keypad and the cart at the same time.
+  // The window is fixed in size, so this only has to undo what Windows does on its own: a snap, a
+  // screen that changes resolution, or a monitor that is unplugged. maximize() is ignored while a
+  // window is not resizable, so resizing is allowed again for the moment it takes to put it back.
+  let restoringBounds = false;
+  const keepFullScreen = () => {
+    if (restoringBounds) return;
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    if (mainWindow.isMinimized() || !mainWindow.isVisible()) return;
+    const bounds = mainWindow.getBounds();
+    const { workArea } = screen.getDisplayMatching(bounds);
+    const fills = bounds.width >= workArea.width && bounds.height >= workArea.height;
+    if (mainWindow.isMaximized() && fills) return;
+    restoringBounds = true;
+    try {
+      mainWindow.setResizable(true);
+      mainWindow.setBounds(workArea);
+      mainWindow.maximize();
+    } finally {
+      mainWindow.setResizable(false);
+      // Windows reports the moves this caused a beat later; ignore those rather than loop on them
+      setTimeout(() => { restoringBounds = false; }, 250);
+    }
+  };
+
   mainWindow.once('ready-to-show', () => {
     // Support and automated checks: run without putting a window in front of the till user
     if (process.env.POS_WINDOW_HIDDEN === '1') return;
     mainWindow.maximize();
     mainWindow.show();
+    // Drop the resize borders only once it is maximised, so maximising itself still works
+    mainWindow.setResizable(false);
   });
+
+  // Snapping, a keyboard shortcut or a screen change can still leave it restored
+  mainWindow.on('unmaximize', keepFullScreen);
+  mainWindow.on('restore', keepFullScreen);
+  mainWindow.on('resize', keepFullScreen);
+  mainWindow.on('move', keepFullScreen);
+
+  // A monitor unplugged or a resolution change leaves the window sized for a screen that is gone
+  screen.on('display-metrics-changed', keepFullScreen);
+  screen.on('display-removed', keepFullScreen);
+  screen.on('display-added', keepFullScreen);
 
   const isLocal = (url) => Boolean(server?.port) && (url === server.origin || url.startsWith(`${server.origin}/`));
 
@@ -237,6 +279,9 @@ function createWindow() {
 
   mainWindow.on('session-end', () => shutdown());
   mainWindow.on('closed', () => {
+    screen.removeListener('display-metrics-changed', keepFullScreen);
+    screen.removeListener('display-removed', keepFullScreen);
+    screen.removeListener('display-added', keepFullScreen);
     mainWindow = null;
   });
 
@@ -903,10 +948,10 @@ function registerIpc() {
   settingsHandlers('ui-settings', 'uiSettings', 'Settings');
   // Window controls (the window has no Windows title bar)
   handle('desktop:window-minimize', () => mainWindow?.minimize());
+  // Kept for older builds of the front end: the till stays maximised, so this only restores it
   handle('desktop:window-toggle-maximize', () => {
     if (!mainWindow) return;
-    if (mainWindow.isMaximized()) mainWindow.unmaximize();
-    else mainWindow.maximize();
+    if (!mainWindow.isMaximized()) mainWindow.maximize();
   });
   handle('desktop:quit', () => shutdown());
 }

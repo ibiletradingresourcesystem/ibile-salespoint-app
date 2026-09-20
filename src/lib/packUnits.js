@@ -38,3 +38,19 @@ export function deriveChildQuantity(parentQty, parent, child) {
   const childQty = roundQty(((Number(parentQty) || 0) * getPackSize(parent)) / getUnitsPerChild(child));
   return Math.trunc(childQty) || 0;
 }
+
+/**
+ * The stock figure a till card shows.
+ *
+ * A pack product's stock moves in fractions as its units are sold — three and three-quarter packs
+ * of 24 is 3.75 — and a part pack is not something the till can sell as a pack. So a pack card
+ * shows whole packs only. The units left inside that part pack are not lost: they are on the
+ * unit product's card, which already counts every unit in the parent's stock.
+ *
+ * Display only — the stock held against the product is untouched.
+ */
+export function getTillStockQuantity(product) {
+  const quantity = roundQty(product?.quantity);
+  if (product?.packType === "pack") return Math.floor(quantity);
+  return quantity;
+}

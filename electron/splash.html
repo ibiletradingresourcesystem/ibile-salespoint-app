@@ -2,30 +2,83 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self' file:; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
   <title>Ibile POS</title>
   <style>
-    html, body { height: 100%; margin: 0; }
+    html, body { height: 100%; margin: 0; overflow: hidden; }
     body {
       display: flex; align-items: center; justify-content: center;
       font-family: "Segoe UI", system-ui, sans-serif;
-      background: linear-gradient(135deg, #0891b2, #155e75); color: #fff;
+      background:
+        radial-gradient(circle at 20% 15%, rgba(165, 243, 252, .22), transparent 42%),
+        radial-gradient(circle at 82% 85%, rgba(251, 146, 60, .18), transparent 46%),
+        linear-gradient(135deg, #0891b2, #155e75 62%, #082f49);
+      color: #fff;
+      user-select: none;
     }
-    .card { text-align: center; max-width: 440px; padding: 32px; }
-    h1 { margin: 0 0 8px; font-size: 28px; }
-    #status { margin: 0 0 24px; opacity: .9; min-height: 1.4em; }
-    .bar { height: 6px; background: rgba(255,255,255,.2); border-radius: 3px; overflow: hidden; }
-    .bar div { width: 35%; height: 100%; background: #a5f3fc; border-radius: 3px; animation: slide 1.4s ease-in-out infinite; }
-    @keyframes slide { 0% { transform: translateX(-100%); } 100% { transform: translateX(300%); } }
+    .card {
+      text-align: center;
+      width: 100%;
+      max-width: 560px;
+      padding: 40px 32px;
+    }
+
+    .logo {
+      width: 88px; height: 88px;
+      margin: 0 auto 20px;
+      display: flex; align-items: center; justify-content: center;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, .1);
+      border: 1px solid rgba(255, 255, 255, .28);
+      box-shadow: 0 18px 40px rgba(8, 47, 73, .45);
+      overflow: hidden;
+    }
+    .logo img { width: 64px; height: 64px; object-fit: contain; }
+
+    h1 { margin: 0 0 6px; font-size: 30px; font-weight: 700; letter-spacing: .4px; }
+    .tagline { margin: 0 0 26px; font-size: 13px; letter-spacing: 2.4px; text-transform: uppercase; opacity: .72; }
+
+    #status { margin: 0 0 18px; font-size: 15px; opacity: .92; min-height: 1.4em; }
+
+    /* A longer, calmer progress bar: it reads as "working", not as a percentage */
+    .bar {
+      height: 8px;
+      width: 100%;
+      max-width: 460px;
+      margin: 0 auto;
+      background: rgba(255, 255, 255, .16);
+      border-radius: 999px;
+      overflow: hidden;
+      box-shadow: inset 0 1px 2px rgba(8, 47, 73, .35);
+    }
+    .bar div {
+      width: 42%; height: 100%;
+      border-radius: 999px;
+      background: linear-gradient(90deg, rgba(165, 243, 252, .25), #a5f3fc 45%, #fff 70%, rgba(165, 243, 252, .25));
+      animation: slide 1.6s cubic-bezier(.45, .05, .55, .95) infinite;
+    }
+    @keyframes slide { 0% { transform: translateX(-110%); } 100% { transform: translateX(250%); } }
+
+    .powered {
+      margin: 30px 0 0;
+      font-size: 12px;
+      letter-spacing: 1.2px;
+      opacity: .68;
+    }
+    .powered strong { font-weight: 600; opacity: .95; }
+
     .error .bar { display: none; }
     .error #status { color: #fecaca; }
   </style>
 </head>
 <body>
   <div class="card" id="card">
+    <div class="logo"><img src="assets/bizsuits-logo.ico" alt="BizSuits"></div>
     <h1>Ibile POS</h1>
+    <p class="tagline">Point of Sale</p>
     <p id="status">Starting…</p>
     <div class="bar"><div></div></div>
+    <p class="powered">Powered by <strong>BizSuits</strong> Business Software</p>
   </div>
   <script>
     function setStatus(text, isError) {

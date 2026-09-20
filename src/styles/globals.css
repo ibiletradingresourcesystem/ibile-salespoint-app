@@ -353,16 +353,11 @@ button {
 }
 
 
-/* Desktop app: the window has no Windows title bar, so the POS header bars move the window.
-   Browsers ignore -webkit-app-region, so this has no effect on the web version. */
-.desktop-drag {
-  -webkit-app-region: drag;
-}
-
-.desktop-drag button,
-.desktop-drag a,
-.desktop-drag input,
-.desktop-drag select,
+/* Desktop app: the till window fills the screen and is never moved or resized, so no part of it
+   drags the window. Windows decides a drag region from the window shape, not from what is drawn on
+   top of it, so a draggable header also swallows clicks on a modal covering it (the Close Till tabs
+   sat in that strip). Everything stays no-drag, so a click always reaches what the user can see. */
+.desktop-drag,
 .desktop-no-drag {
   -webkit-app-region: no-drag;
 }

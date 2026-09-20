@@ -122,6 +122,7 @@ export default function CartPanel() {
     activeCart.customer?.isCreditCustomer || activeCart.customer?.type === "CREDIT"
   );
   const canViewResolvedHistory = hasPosPermission(staff, "viewAdvancedOrders");
+  const canAccessPettyCash = hasPosPermission(staff, "pettyCashAccess");
   // Discounts are for admins and managers only
   const canApplyDiscount = canStaffApplyDiscount(staff);
 
@@ -1278,7 +1279,7 @@ export default function CartPanel() {
                 <span>PRINT</span>
               </button>
               )}
-              {cartBtnSettings.pettyCash !== false && (
+              {cartBtnSettings.pettyCash !== false && canAccessPettyCash && (
               <button className="flex-1 px-2 py-2 sm:py-3 text-xs sm:text-sm font-bold bg-neutral-300 hover:bg-neutral-400 text-neutral-900 rounded-lg transition-colors duration-base flex flex-col items-center gap-1 min-h-12 sm:min-h-16">
                 <FontAwesomeIcon icon={faMoneyBill} className="w-4 h-4" />
                 <span>PETTY CASH</span>

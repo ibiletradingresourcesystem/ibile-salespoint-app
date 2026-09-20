@@ -848,6 +848,27 @@ export default function SettingsPage() {
                   </label>
                 </div>
 
+                {/* Receipt preview size */}
+                <div className="border-t border-gray-100 pt-4">
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    Receipt Preview Size
+                  </label>
+                  <select
+                    value={settings.system?.receiptPreviewSize || 'standard'}
+                    onChange={(e) => updateSystemSetting('receiptPreviewSize', e.target.value)}
+                    className="w-full border border-gray-300 rounded p-2 focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="compact">Compact</option>
+                    <option value="standard">Standard</option>
+                    <option value="large">Large</option>
+                    <option value="extra-large">Extra Large</option>
+                  </select>
+                  <p className="text-xs text-gray-500 mt-1">
+                    How big the receipt preview opens before printing. A larger size shows more of the
+                    receipt without scrolling; it follows Content Scale like the rest of the till.
+                  </p>
+                </div>
+
                 {/* Open Printer Settings Link */}
                 <div className="border-t border-gray-100 pt-4">
                   <button

@@ -30,7 +30,7 @@ The web deployment needs no configuration for the desktop.
 
 | | Desktop |
 |---|---|
-| Start | Electron → splash → local `mongod` (bundled MongoDB 8.0) → migrations (backup first) → local POS server → window |
+| Start | Electron → splash (BizSuits branded, `electron/splash.html`) → local `mongod` (bundled MongoDB 8.0) → migrations (backup first) → local POS server → window |
 | Page | `http://127.0.0.1:5150` (`/desktop-setup` on first run) |
 | POS database | Local MongoDB `ibile_pos` in `%APPDATA%\Ibile POS\data\mongodb`, localhost only, password-protected (DPAPI-encrypted password) |
 | Cloud database | Customer's MongoDB via connection string (DPAPI-encrypted), used only by the local server process |
@@ -49,8 +49,13 @@ the same computer; existing POS code therefore always uses its online paths agai
 The top-bar pill shows the real state: **ONLINE · OFFLINE · SYNCING · SYNCED · SYNC ERROR** (internet
 state from the computer, sync state from `/api/desktop/status`).
 
-**Window and controls.** The window has no Windows title bar or menu; it opens maximised and the POS
-header drags it. Desktop-only buttons in the POS itself replace the menu (hidden on the web):
+**Window and controls.** The window has no Windows title bar or menu. It opens maximised and stays
+that way: it is not resizable or movable, and a snap, a keyboard shortcut, a resolution change or a
+monitor being unplugged puts it back (`keepFullScreen` in `electron/main.js`). Minimising to the
+taskbar is the only way to get it out of the way. Nothing in the page drags the window: a drag region
+is an OS-level hit test, so a draggable header also swallows clicks on anything drawn over it — that
+was why the Close Till tabs only answered clicks on their lower edge. Desktop-only buttons in the POS
+itself replace the menu (hidden on the web):
 
 | Where | Buttons |
 |---|---|
@@ -226,7 +231,9 @@ till only: they are kept in `config.json` (`uiSettings`, `printerSettings`) as w
 storage, are not read from the store's copy, and are not pushed to it (`uiSettingsAreLocal()`). The web
 version keeps sharing them through the store. Content scale multiplies one base text size
 (`--content-scale` in globals.css), so text, spacing and rem-sized boxes scale together; product and
-category grids fit as many columns as the scaled card size allows.
+category grids fit as many columns as the scaled card size allows. Settings → System & Printing →
+**Receipt Preview Size** (compact · standard · large · extra large) sets how big the receipt preview
+opens; its sizes are in rem, so they follow content scale as well.
 
 ### Printing
 
@@ -349,7 +356,12 @@ showing the window (automated checks on a till someone is using).
   with technical details, *Clear setup and start again* (safety backup, connection and data removed,
   installation ID kept, restart at the first step).
 - Direct end-to-end test (local MongoDB + replica-set "customer cloud", desktop server and a web server): **60/60** (adds activity steps, per-item counts, driver error detail in status and server log) — first sync, staff data minimisation, local login, automatic push without Sync, parent/child stock, duplicate-safe re-send, stale revision, refund, pull of price/tender changes, online orders (list/process/complete) and petty cash directly on the cloud database, POS working with the cloud database down, OFFLINE → SYNCED after reconnect, credit balance, clock records, management-app conflict, web login/till/orders/petty cash unchanged, Close Till sync, disconnected installation, no credentials in status.
-- Packaged `Ibile POS.exe` setup test: **25/25** — port 5150, frameless window, Ibile logo with SYSTEM/HELP/EXIT on the setup and login screens, draggable header, SYSTEM menu items, database discovery, wrong passcode, installation registered in the cloud, DPAPI-encrypted connection string, first download, page and logs never contain the connection string, local MongoDB auth, manager passcode required for restore and set up again, EXIT button closes cleanly.
+- Packaged `Ibile POS.exe` setup test: **25/25** — port 5150, frameless window, Ibile logo with SYSTEM/HELP/EXIT on the setup and login screens, header that never drags the window, SYSTEM menu items, database discovery, wrong passcode, installation registered in the cloud, DPAPI-encrypted connection string, first download, page and logs never contain the connection string, local MongoDB auth, manager passcode required for restore and set up again, EXIT button closes cleanly.
+- Pre-fill and printing test (packaged app, window hidden): **14/14** — encrypted pre-filled connection
+  string with its key in the app package, setup connecting with nothing typed, DPAPI after setup,
+  SYSTEM → Printer settings behind a manager passcode, Windows printers listed, settings kept per
+  computer, receipt preview naming the printer, and Settings → Receipt Preview Size resizing that
+  preview (compact 504px · standard 576px · extra-large 1008px). Nothing is printed.
 - Backup/restore: 11/11.
 - Visual C++ runtime: installer check compiled with the bundled NSIS and run against bundled-newer,
   same-version, older-version and missing-file cases; a `mongod.exe` that cannot load its runtime

@@ -102,6 +102,7 @@ export default function Sidebar({ isOpen, onToggle, widthClass = 'w-56', mobileW
   const { staff, location, till, setCurrentTill } = useStaff();
   const canAccessSettings = hasPosPermission(staff, 'settingsAccess');
   const canAccessPrinterSettings = hasPosPermission(staff, 'printerSettingsAccess');
+  const canAccessPettyCash = hasPosPermission(staff, 'pettyCashAccess');
 
   // Opening the sidebar closes Complete Payment so the two don't overlap
   useEffect(() => {
@@ -399,7 +400,8 @@ export default function Sidebar({ isOpen, onToggle, widthClass = 'w-56', mobileW
           </div>
         ))}
 
-        {/* Petty Cash - Standalone */}
+        {/* Petty Cash - Standalone (staff role decides who may use it) */}
+        {canAccessPettyCash && (
         <button
           onClick={() => { setShowPaymentPanel(false); setShowPettyCashPanel(true); }}
           className={`w-full flex items-center ${scaleClasses.gap} ${scaleClasses.padding} rounded-lg bg-amber-50 border border-amber-200 hover:bg-amber-100 hover:border-amber-300 text-left font-semibold text-amber-900 transition-colors duration-base shadow-sm`}
@@ -407,6 +409,7 @@ export default function Sidebar({ isOpen, onToggle, widthClass = 'w-56', mobileW
           <FontAwesomeIcon icon={faPiggyBank} className={`${scaleClasses.iconLg} text-amber-600`} />
           <span className={`${scaleClasses.heading} font-semibold`}>Petty Cash</span>
         </button>
+        )}
       </div>
 
       {/* Bottom Section */}
@@ -578,7 +581,7 @@ export default function Sidebar({ isOpen, onToggle, widthClass = 'w-56', mobileW
       />
 
       <PettyCashPanel
-        isOpen={showPettyCashPanel}
+        isOpen={showPettyCashPanel && canAccessPettyCash}
         onClose={() => setShowPettyCashPanel(false)}
         staffName={staff?.name || staff?.fullName || staff?.email || "POS staff"}
         location={location?.name || location?.locationName || ""}
