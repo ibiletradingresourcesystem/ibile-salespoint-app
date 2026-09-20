@@ -126,17 +126,31 @@ async function printOnce({
   silent = true,
   paperWidth = 80,
   fitToContent = true,
-  usePaperWidth = true,
+  // Same default as the till's settings: the roll width, a page size the driver already has
+  pageWidthMode = 'roll',
+  pageWidthMm = 0,
   log,
 }) {
   const roll = Number(paperWidth) === 58 ? 58 : 80;
   const rollMicrons = roll * MM_TO_MICRONS;
-  // Print a page the size of the printer's own paper, so Windows never shrinks the receipt to fit
-  const fromDriver = usePaperWidth ? await driverPaperWidthMicrons(deviceName).catch(() => 0) : 0;
-  const widthMicrons = fromDriver > 0 && fromDriver <= rollMicrons ? fromDriver : rollMicrons;
-  if (widthMicrons !== rollMicrons) {
-    log?.info?.(`Printing on this printer's own paper width: ${(widthMicrons / MM_TO_MICRONS).toFixed(1)} mm (${roll} mm roll)`);
+  // How wide the printed page is (Printer Settings → Printed page width)
+  let widthMicrons = rollMicrons;
+  let widthSource = `${roll} mm roll`;
+  if (pageWidthMode === 'custom' && Number(pageWidthMm) >= 30 && Number(pageWidthMm) <= 120) {
+    widthMicrons = Math.round(Number(pageWidthMm) * MM_TO_MICRONS);
+    widthSource = 'set by hand';
+  } else if (pageWidthMode !== 'roll') {
+    // The printer's own paper, so Windows never shrinks the receipt to fit
+    const fromDriver = await driverPaperWidthMicrons(deviceName).catch(() => 0);
+    if (fromDriver > 0 && fromDriver <= rollMicrons) {
+      widthMicrons = fromDriver;
+      widthSource = 'reported by the printer driver';
+    }
   }
+  log?.info?.(
+    `Printing ${(widthMicrons / MM_TO_MICRONS).toFixed(1)} mm wide (${widthSource})` +
+      `${deviceName ? ` on "${deviceName}"` : ' on the Windows default printer'}`
+  );
   const widthPx = (widthMicrons / PX_TO_MICRONS);
   const file = path.join(os.tmpdir(), `ibile-pos-print-${crypto.randomBytes(8).toString('hex')}.html`);
   fs.writeFileSync(file, html, 'utf8');

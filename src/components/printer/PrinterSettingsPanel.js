@@ -24,6 +24,8 @@ import { showConfirm } from '@/src/components/common/ConfirmDialog';
 import { showToast } from '@/src/components/common/Toast';
 import {
   MAX_SIDE_MARGIN,
+  MIN_PAGE_WIDTH,
+  MAX_PAGE_WIDTH,
   PAPER_PROFILES,
   describeDesktopPrintTarget,
   getDefaultPrinterSettings,
@@ -209,6 +211,9 @@ export default function PrinterSettingsPanel({ staff = null, location = null, on
       const result = await printTransactionReceipt(buildTestTransaction(staff, location), null, {
         printerSettings: normalizePrinterSettings(settings),
         showPreview,
+        // A test print ends with a bar across the page, so it is obvious whether the printout
+        // reaches both edges of the paper
+        widthRuler: true,
       });
       if (result.success) {
         showToast(
@@ -331,21 +336,41 @@ export default function PrinterSettingsPanel({ staff = null, location = null, on
               <span className="block text-sm text-gray-500">On for thermal roll printers (no blank paper after the receipt). Turn off for A4 or Letter printers.</span>
             </span>
           </label>
-          <label className="flex items-start gap-3 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={settings.usePaperWidth !== false}
-              onChange={(e) => update({ usePaperWidth: e.target.checked })}
-              className="w-5 h-5 mt-0.5 rounded border-gray-300"
-            />
-            <span>
-              <span className="font-semibold text-gray-700">Print as wide as the printer&apos;s paper</span>
-              <span className="block text-sm text-gray-500">
-                Uses the paper size the printer driver reports, so Windows does not shrink the receipt and leave white
-                down both sides. Turn this off if your printer refuses the page or prints an error slip.
-              </span>
-            </span>
-          </label>
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-1">Printed page width</label>
+            <div className="flex flex-wrap items-center gap-3">
+              <select
+                value={settings.pageWidthMode || 'auto'}
+                onChange={(e) => update({ pageWidthMode: e.target.value })}
+                className={inputClass}
+              >
+                <option value="roll">Paper roll width ({settings.paperWidth} mm, recommended)</option>
+                <option value="auto">Ask the printer for its paper size</option>
+                <option value="custom">Set it myself</option>
+              </select>
+              {settings.pageWidthMode === 'custom' && (
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min={MIN_PAGE_WIDTH}
+                    max={MAX_PAGE_WIDTH}
+                    step={0.5}
+                    value={settings.pageWidthMm}
+                    onChange={(e) => update({ pageWidthMm: e.target.value })}
+                    className={`${inputClass} w-28`}
+                  />
+                  <span className="text-sm text-gray-600">mm</span>
+                </div>
+              )}
+            </div>
+            <p className="text-sm text-gray-500 mt-1">
+              How wide the page sent to the printer is. The roll width is the size the printer driver already has, and
+              Windows fits it to the area the printer can print — with the side margins at 0 the receipt covers all of
+              it. Use &quot;Ask the printer&quot; only if the printout comes out narrower than the paper: it is exact,
+              but a printer with no form that size can answer with an error slip instead of a receipt. Print a test
+              receipt to check — it ends with a bar that should just reach both edges of the paper.
+            </p>
+          </div>
           <StatusBadge status={windowsStatus} />
         </section>
       )}

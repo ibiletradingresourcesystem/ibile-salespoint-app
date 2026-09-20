@@ -253,16 +253,23 @@ settings… (manager or admin passcode, same lockout as restore). The app keeps 
 | **Print dialog** | The Windows print dialog for every printout. |
 
 **Printing the full width of the roll.** A thermal printer cannot print to the edge of its paper: an
-80 mm roll usually prints 72 mm, and drivers usually report that as the paper size. Asking for a page as
-wide as the roll makes Windows shrink the whole receipt to fit, which left white down both sides. The
-app asks the driver for its paper size (`driverPaperWidthMicrons`, System.Drawing through PowerShell,
-cached per printer; the smallest of paper size, bounds and printable area, ignored outside 30–120 mm)
-and makes the page exactly that. The figure stays in the driver's own units to the end — hundredths of
-an inch x 254 = microns, e.g. 284 -> 72,136 µm — because a page that is a few microns off is a custom
-size the printer may refuse. If a printer refuses the page anyway, the receipt is printed again on the
-driver's own page size and the log says so; *Print as wide as the printer's paper* in Printer Settings
-turns the whole thing off. The side margins in Printer Settings therefore start
-at **0 mm** — the printer's own edge is margin enough — and only need raising if a side is cut off.
+80 mm roll prints about 72 mm. What used to leave white down both sides was the receipt's own 4 mm side
+margins on top of that, so the margins now default to **0 mm** — the printer's own edge is margin
+enough — and only need raising if a side is cut off.
+
+The page itself stays the **roll width** (Printer Settings → *Printed page width*, the default).
+Windows fits that page to the area the printer can print, and with no side margins the ink covers all
+of it. Asking instead for the exact paper size the driver reports (*Ask the printer*,
+`driverPaperWidthMicrons` — System.Drawing through PowerShell, cached per printer, the smallest of
+paper size, bounds and printable area, in the driver's own units: hundredths of an inch x 254 = microns,
+e.g. 284 -> 72,136 µm) is exact, but a width the driver has no form for can make a thermal printer
+answer with an error slip instead of a receipt — the POS-X driver does. It stays as an option for a
+printer that does not scale, alongside *Set it myself* (30–120 mm). Every job logs the width it used and
+where that came from, and a page a printer refuses is printed again on the driver's own page size.
+
+A **test receipt ends with a bar across the page** with a tick every 10 mm: if it does not reach both
+edges of the paper the page is too narrow, and if its right end is cut off it is too wide — so the right
+setting can be found on the till without a new build.
 
 **The logo on direct (ESC/POS) printouts.** Thermal printers have no fonts for pictures, and the POS
 server cannot decode a PNG or JPEG. The page, which already shows the logo, draws it to a canvas at the
@@ -392,15 +399,20 @@ showing the window (automated checks on a till someone is using).
   computer, receipt preview naming the printer, and Settings → Receipt Preview Size resizing that
   preview (compact 504px · standard 576px · extra-large 1008px). Nothing is printed.
 - Printing through Windows drivers (hidden windows, `webContents.print` captured as PDF so nothing
-  reaches a printer): **16/16** — printer list with the default marked, unknown printer refused, empty
+  reaches a printer): **19/19** — printer list with the default marked, unknown printer refused, empty
   printout refused, silent print with no margins, Windows default when no printer is named, page width
   set to the driver's own paper size and never wider than the roll (72,136 µm = 284 hundredths of an
   inch of an 80 mm roll on the test machine), that width a whole number of driver units, the setting
-  turned off falling back to the roll width, a refused page size printed again on the driver's default
-  page, page length following the receipt, jobs queued one after another, printer default page size for
-  non-roll printouts, dialog mode, temp files removed, no windows left open.
+  the roll width when nothing is chosen, the driver's own paper size when asked for (72,136 µm = 284
+  hundredths of an inch), a width set by hand (76.5 mm), an impossible width falling back to the
+  driver's, a refused page size printed again on the driver's default page, page length following
+  the receipt, jobs queued one after another, printer default page size for non-roll printouts, dialog
+  mode, temp files removed, no windows left open.
 - Packaged window sizing (window shown): **3/3** — the page area is exactly the work area (1920x1032),
   no wider than the screen and no shorter than the work area.
+- The receipt a test print produces, captured from the packaged app and re-rendered with print media
+  at the page width the app asks for: the header, the items table and the width bar all span the full
+  page (273 px = 72.136 mm), the page carries no side padding, and the document is black on white.
 - Direct (ESC/POS) receipt: **10/10** — no bitmap when there is no logo, the logo sent as `GS v 0`
   centred above the store name with the right size header, and the text size options picking font A or
   font B ("auto" follows the management app's font size).

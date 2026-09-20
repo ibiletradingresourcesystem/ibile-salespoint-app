@@ -35,6 +35,7 @@ module.exports = {
   win: {
     // Ibile logo (from public/images/logo.png): app executable, taskbar and desktop shortcut
     icon: 'assets/icon.ico',
+    // One NSIS installer and nothing else: no zip, no unpacked archive to hand a customer
     target: [{ target: 'nsis', arch: ['x64'] }],
     // Keep the vendors' own signatures: re-signing Microsoft's installer can break it
     signExts: ['!vc_redist.x64.exe', '!mongod.exe'],

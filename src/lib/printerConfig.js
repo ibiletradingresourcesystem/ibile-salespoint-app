@@ -12,8 +12,14 @@
  *   connectionMode 'usb' (Windows printer queue named `printerName`) | 'network' (ip:port)
  *   windowsPrinterName  desktop app: printer for designed printouts ('' = the Windows default printer)
  *   fitToReceipt   desktop app: page length follows the printout (thermal rolls); off for A4/Letter printers
- *   usePaperWidth  desktop app: print a page exactly as wide as the printer's own paper, so Windows
- *                  does not shrink the receipt to fit; off falls back to the roll width above
+ *   pageWidthMode  desktop app, designed printouts: how wide the printed page is —
+ *                  'roll'   the paper roll above (80 or 58 mm), the size the driver already has a
+ *                           form for; Windows fits it to what the printer can print, and with no
+ *                           side margins the ink covers that whole area (default)
+ *                  'auto'   the paper size the driver reports. Exact, but a width the driver has no
+ *                           form for can make a thermal printer spit out an error slip instead
+ *                  'custom' pageWidthMm, when neither of those comes out right
+ *   pageWidthMm    width in mm used when pageWidthMode is 'custom' (30–120)
  *   paperWidth     80 | 58 (mm roll)
  *   marginLeft     blank space, in mm, kept clear on the left of the printout (0 = as wide as the
  *                  printer can print; its own unprintable edge is already left clear)
@@ -26,11 +32,14 @@ import { getDesktopBridge, isDesktopApp } from './desktopClient';
 import { buildReceiptLogoRaster } from './escposImage';
 
 const STORAGE_KEY = 'printerSettings';
-const SETTINGS_VERSION = 4;
+const SETTINGS_VERSION = 5;
 
 export const PRINT_METHODS = ['browser', 'windows', 'direct', 'both'];
 export const PAPER_WIDTHS = [80, 58];
 export const MAX_SIDE_MARGIN = 12;
+export const PAGE_WIDTH_MODES = ['auto', 'roll', 'custom'];
+export const MIN_PAGE_WIDTH = 30;
+export const MAX_PAGE_WIDTH = 120;
 
 // Default side margins and ESC/POS characters per line (Font A) per roll width.
 // The margins are 0: a thermal printer cannot print to the very edge anyway, and anything we keep
@@ -52,7 +61,8 @@ export function getDefaultPrinterSettings(paperWidth = 80) {
     printerName: 'XP-80C',
     windowsPrinterName: '',
     fitToReceipt: true,
-    usePaperWidth: true,
+    pageWidthMode: 'roll',
+    pageWidthMm: 72,
     ip: '192.168.1.100',
     port: 9100,
     paperWidth: PAPER_PROFILES[paperWidth] ? paperWidth : 80,
@@ -97,7 +107,13 @@ export function normalizePrinterSettings(raw = {}) {
     printerName: String(source.printerName || defaults.printerName).trim(),
     windowsPrinterName: String(source.windowsPrinterName || '').trim(),
     fitToReceipt: source.fitToReceipt !== false,
-    usePaperWidth: source.usePaperWidth !== false,
+    // Settings saved before this version start again on the default: the widths they were given
+    // (and the usePaperWidth switch this replaced) could leave a printer showing an error slip
+    pageWidthMode:
+      Number(source.settingsVersion) >= SETTINGS_VERSION && PAGE_WIDTH_MODES.includes(source.pageWidthMode)
+        ? source.pageWidthMode
+        : defaults.pageWidthMode,
+    pageWidthMm: Math.round(clampNumber(source.pageWidthMm, MIN_PAGE_WIDTH, MAX_PAGE_WIDTH, 72) * 10) / 10,
     ip: String(source.ip || defaults.ip).trim(),
     port: Math.round(clampNumber(source.port, 1, 65535, defaults.port)),
     paperWidth,
@@ -160,7 +176,8 @@ export function getDesktopPrintTarget(settings = getPrinterSettings()) {
   const base = {
     paperWidth: printer.paperWidth,
     fitToContent: printer.fitToReceipt,
-    usePaperWidth: printer.usePaperWidth,
+    pageWidthMode: printer.pageWidthMode,
+    pageWidthMm: printer.pageWidthMm,
   };
   if (printer.printMethod === 'windows') return { ...base, silent: true, deviceName: printer.windowsPrinterName };
   if (printer.printMethod === 'direct' || printer.printMethod === 'both') {

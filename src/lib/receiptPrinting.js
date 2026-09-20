@@ -124,9 +124,34 @@ function toAbsoluteAssetUrl(src) {
 }
 
 /**
+ * Printed at the bottom of a test receipt: a bar across the whole width of the page with a tick
+ * every 10 mm. If the bar does not reach both edges of the paper, the page is narrower than the
+ * roll — change Printer Settings → Printed page width. If its right end is cut off, the page is
+ * wider than the printer can print.
+ */
+const WIDTH_RULER = `
+    <div class="ruler">
+      <div class="ruler-bar"></div>
+      <div class="ruler-ends"><span>|&lt;</span><span>page width</span><span>&gt;|</span></div>
+      <div class="ruler-note">Tick every 10 mm. The bar should just reach both edges of the paper.</div>
+    </div>`;
+
+const WIDTH_RULER_CSS = `
+    .ruler { margin-top: 3mm; }
+    .ruler-bar {
+      height: 2mm;
+      background: repeating-linear-gradient(to right, #000 0 9.5mm, #fff 9.5mm 10mm);
+      border: 0.3mm solid #000;
+      border-left: none;
+      border-right: none;
+    }
+    .ruler-ends { display: flex; justify-content: space-between; font-size: 0.8em; font-weight: 700; }
+    .ruler-note { font-size: 0.75em; text-align: center; }`;
+
+/**
  * Receipt as a complete HTML document, laid out at the printer's printable width.
  */
-export function buildReceiptHtml(transaction, settings = {}, printerSettings = getPrinterSettings()) {
+export function buildReceiptHtml(transaction, settings = {}, printerSettings = getPrinterSettings(), { widthRuler = false } = {}) {
   const model = buildReceiptViewModel(transaction, settings);
   const layout = getPrintLayout(printerSettings);
   const fontFamily = FONT_FAMILY_MAP[model.fontFamily] || FONT_FAMILY_MAP.Arial;
@@ -173,6 +198,7 @@ export function buildReceiptHtml(transaction, settings = {}, printerSettings = g
     }
     /* The printer already leaves a gap above the first line; the space below comes from .print-end */
     .receipt { padding: 0; text-align: center; }
+    ${widthRuler ? WIDTH_RULER_CSS : ''}
     .section { border-top: 0.5px dashed #444; padding: 1mm 0; margin: 1mm 0; text-align: left; }
     .header { padding-bottom: 1.5mm; }
     .logo { display: block; max-width: 30mm; max-height: 12mm; margin: 0 auto 1mm; filter: grayscale(100%) contrast(1.05); }
@@ -257,6 +283,7 @@ ${model.tenderPayments.length > 0 ? `
         <div class="status${isUnpaid ? ' unpaid' : ''}">${escapeHtml(model.status)}</div>
       </div>
     </div>
+    ${widthRuler ? WIDTH_RULER : ''}
     <div class="print-end"></div>
   </div>
 </body>
@@ -267,7 +294,8 @@ ${model.tenderPayments.length > 0 ? `
  * Print a receipt using this till's printer settings.
  * @param {Object} transaction
  * @param {Object} [receiptSettings] used only when the latest settings can't be fetched or found offline
- * @param {Object} [options] { printerSettings, showPreview } — overrides, e.g. for a test print
+ * @param {Object} [options] { printerSettings, showPreview, widthRuler } — overrides, e.g. for a
+ *   test print, which ends with a bar across the page so the printed width can be seen
  * @returns {Promise<{ success: boolean, method: string, message?: string }>}
  */
 export async function printTransactionReceipt(transaction, receiptSettings = null, options = {}) {
@@ -290,7 +318,7 @@ export async function printTransactionReceipt(transaction, receiptSettings = nul
 
     // Browser: print dialog. Desktop app: the Windows printer (no dialog) or the Windows print dialog
     const method = isDesktopApp() && getDesktopPrintTarget(printer).silent ? 'windows' : 'browser';
-    const receiptHTML = buildReceiptHtml(transaction, settings, printer);
+    const receiptHTML = buildReceiptHtml(transaction, settings, printer, { widthRuler: options.widthRuler === true });
     const showPreview = options.showPreview ?? getUiSettings().system?.showPrintPreview !== false;
 
     if (showPreview) {
