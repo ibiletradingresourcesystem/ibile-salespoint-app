@@ -4,6 +4,7 @@ import Store from "@/src/models/Store";
 import { setSessionCookie } from "@/src/lib/sessionAuth";
 import { sanitizeString } from "@/src/lib/apiValidation";
 import { verifyPin } from "@/src/lib/staffPin";
+import { normalizePosPermissions } from "@/src/lib/posPermissions";
 
 const sendError = (res, status, code, message, details = {}) =>
   res.status(status).json({
@@ -144,6 +145,9 @@ export default async function handler(req, res) {
         name: staffMember.name,
         username: staffMember.username,
         role: staffMember.role,
+        // What this staff member may do in the till (Staff Roles in the management app). Without it
+        // the page falls back to the role's defaults and ignores anything granted to this person.
+        posPermissions: normalizePosPermissions(staffMember.role, staffMember.posPermissions),
         locationId: finalLocationData?._id,
         locationName: finalLocationData?.name || staffMember.locationName || "Main Store",
         storeId: storeObj?._id?.toString() || null,

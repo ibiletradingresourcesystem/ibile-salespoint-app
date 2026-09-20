@@ -815,7 +815,13 @@ export default function StaffLogin() {
         if (response.ok && data?.staff && data?.location) {
           console.log("✅ Login successful (ONLINE)!");
           console.log("📍 Staff:", data.staff?.name, "Location:", data.location?.name);
-          const normalizedStaffData = normalizeStaffMember(data.staff);
+          // Keep the till permissions the login gave us; fall back to the ones listed for this
+          // staff member, so a POS server that does not send them still honours Staff Roles.
+          const listedStaffData = staff.find((s) => s._id === selectedStaff);
+          const normalizedStaffData = normalizeStaffMember({
+            ...data.staff,
+            posPermissions: data.staff?.posPermissions || listedStaffData?.posPermissions,
+          });
           void preloadPosShell(normalizedStaffData, data.location);
           
           // Sync pending offline till/transactions before checking current till
@@ -879,7 +885,7 @@ export default function StaffLogin() {
     } finally {
       setLoading(false);
     }
-  }, [selectedStore, selectedLocation, selectedStaff, pin, isOnline, login, setCurrentTill, router, attemptOfflineLogin, getLoginErrorMessage, preloadPosShell]);
+  }, [staff, selectedStore, selectedLocation, selectedStaff, pin, isOnline, login, setCurrentTill, router, attemptOfflineLogin, getLoginErrorMessage, preloadPosShell]);
 
   const handlePinClick = (digit) => {
     if (pin.length < 4) {

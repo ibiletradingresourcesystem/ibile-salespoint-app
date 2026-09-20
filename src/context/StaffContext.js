@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { normalizeStaffMember } from "@/src/lib/posPermissions";
 
 const StaffContext = createContext();
@@ -70,6 +70,37 @@ export function StaffProvider({ children }) {
       salesCount: 0,
     });
   };
+
+  /**
+   * Staff Roles in the management app can change while someone is signed in to the till. Once a
+   * sync has brought the new record down, this picks it up without making them log in again.
+   */
+  const refreshPosPermissions = useCallback(async () => {
+    if (!staff?._id) return;
+    try {
+      const response = await fetch("/api/staff/list");
+      if (!response.ok) return;
+      const body = await response.json();
+      const mine = (Array.isArray(body?.data) ? body.data : []).find(
+        (member) => String(member._id) === String(staff._id)
+      );
+      if (!mine) return;
+      setStaff((current) => {
+        if (!current) return current;
+        const next = normalizeStaffMember({
+          ...current,
+          role: mine.role || current.role,
+          posPermissions: mine.posPermissions,
+        });
+        const unchanged =
+          next.role === current.role &&
+          JSON.stringify(next.posPermissions) === JSON.stringify(current.posPermissions);
+        return unchanged ? current : next;
+      });
+    } catch {
+      // Offline or the POS service is busy: keep the permissions we already have
+    }
+  }, [staff?._id]);
 
   const setCachedLocations = (locationsArray) => {
     if (isHydrated && locationsArray && Array.isArray(locationsArray)) {
@@ -148,7 +179,8 @@ export function StaffProvider({ children }) {
         till, 
         shift, 
         login, 
-        logout, 
+        logout,
+        refreshPosPermissions,
         setCurrentTill, 
         incrementSales, 
         setCachedTenders, 

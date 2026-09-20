@@ -3,6 +3,7 @@ import { Staff } from "@/src/models/Staff";
 import Store from "@/src/models/Store";
 import { setSessionCookie } from "@/src/lib/sessionAuth";
 import { sanitizeString } from "@/src/lib/apiValidation";
+import { normalizePosPermissions } from "@/src/lib/posPermissions";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -80,6 +81,8 @@ export default async function handler(req, res) {
         name: staffMember.name,
         username: staffMember.username,
         role: staffMember.role,
+        // What this staff member may do in the till (Staff Roles in the management app)
+        posPermissions: normalizePosPermissions(staffMember.role, staffMember.posPermissions),
         locationId: finalLocation?._id,
         locationName: finalLocation?.name || "Main Store",
         storeId: storeObj?._id?.toString() || null,

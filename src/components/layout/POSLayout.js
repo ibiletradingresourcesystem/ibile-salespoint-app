@@ -24,7 +24,7 @@ import { getOptimisticStoreData, primePosBootstrapFromLiveData, readPosBootstrap
 
 export default function POSLayout({ children }) {
   const router = useRouter();
-  const { staff, location, logout } = useStaff();
+  const { staff, location, logout, refreshPosPermissions } = useStaff();
   const { handleApiError, forceLoginRedirect } = useErrorHandler();
   const [storeData, setStoreData] = useState(() => getOptimisticStoreData({ location }));
   const [loading, setLoading] = useState(() => !staff);
@@ -183,6 +183,16 @@ export default function POSLayout({ children }) {
     window.addEventListener('uiSettings:updated', handleSettingsUpdate);
     return () => window.removeEventListener('uiSettings:updated', handleSettingsUpdate);
   }, []);
+
+  // Till access granted in Staff Roles applies as soon as the new staff record is here, so the
+  // sidebar and petty cash appear without a fresh login once a sync has run.
+  useEffect(() => {
+    if (!refreshPosPermissions) return undefined;
+    refreshPosPermissions();
+    const onFocus = () => refreshPosPermissions();
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, [refreshPosPermissions]);
 
   const handleLogout = () => {
     localStorage.removeItem('staffMember');

@@ -356,7 +356,8 @@ showing the window (automated checks on a till someone is using).
   with technical details, *Clear setup and start again* (safety backup, connection and data removed,
   installation ID kept, restart at the first step).
 - Direct end-to-end test (local MongoDB + replica-set "customer cloud", desktop server and a web server): **60/60** (adds activity steps, per-item counts, driver error detail in status and server log) — first sync, staff data minimisation, local login, automatic push without Sync, parent/child stock, duplicate-safe re-send, stale revision, refund, pull of price/tender changes, online orders (list/process/complete) and petty cash directly on the cloud database, POS working with the cloud database down, OFFLINE → SYNCED after reconnect, credit balance, clock records, management-app conflict, web login/till/orders/petty cash unchanged, Close Till sync, disconnected installation, no credentials in status.
-- Packaged `Ibile POS.exe` setup test: **25/25** — port 5150, frameless window, Ibile logo with SYSTEM/HELP/EXIT on the setup and login screens, header that never drags the window, SYSTEM menu items, database discovery, wrong passcode, installation registered in the cloud, DPAPI-encrypted connection string, first download, page and logs never contain the connection string, local MongoDB auth, manager passcode required for restore and set up again, EXIT button closes cleanly.
+- Packaged `Ibile POS.exe` setup test: **28/28** — port 5150, frameless window, Ibile logo with SYSTEM/HELP/EXIT on the setup and login screens, header that never drags the window, SYSTEM menu items, database discovery, wrong passcode, installation registered in the cloud, DPAPI-encrypted connection string, first download, page and logs never contain the connection string, local MongoDB auth, till access granted in Staff Roles reaching the page at login (and role defaults
+  when nothing is granted), manager passcode required for restore and set up again, EXIT button closes cleanly.
 - Pre-fill and printing test (packaged app, window hidden): **14/14** — encrypted pre-filled connection
   string with its key in the app package, setup connecting with nothing typed, DPAPI after setup,
   SYSTEM → Printer settings behind a manager passcode, Windows printers listed, settings kept per
@@ -368,7 +369,7 @@ showing the window (automated checks on a till someone is using).
   (exit code 3221225781) shows the runtime message and *Install and Restart / Open Logs Folder / Quit*.
   A tampered `vc_redist.x64.exe` fails the signature check.
 
-The packaged test also passes with the downloaded MongoDB 8.0.32 binary (26/26, run with the window hidden).
+The packaged test also passes with the downloaded MongoDB 8.0.32 binary (28/28, run with the window hidden).
 
 - Pre-filled database: encryption round trip, tampered file refused, local database refused, no-prefill
   build (8/8); packaged app with a pre-filled test database connects on its own, the page never holds the
