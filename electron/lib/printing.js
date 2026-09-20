@@ -22,31 +22,35 @@ const MM_TO_MICRONS = 1000;
 const PX_TO_MICRONS = 25400 / 96;
 
 let queue = Promise.resolve();
-const printableWidthCache = new Map();
+const paperWidthCache = new Map();
 
 /**
- * How wide this printer can actually print, in mm ('' printer = the Windows default), or 0 when the
- * driver does not say. A thermal printer keeps a margin at each edge its head cannot reach, and its
- * paper size is often set to that printable width (72 mm for an 80 mm roll). Asking for a page wider
- * than that makes Windows shrink the whole receipt to fit, so it comes out narrower than the paper
- * with white down both sides. A page of exactly this width prints one-to-one and fills the roll.
+ * The width of the paper this printer is set to, in microns ('' = the Windows default printer), or
+ * 0 when the driver does not say.
  *
- * Drivers disagree about which of the two figures is which — this printer reports a printable area
- * wider than its own paper — so the smaller of the two is used, and anything outside a sane roll
- * width is ignored.
+ * A thermal printer cannot print to the edge of its roll — an 80 mm roll prints about 72 mm — and
+ * its driver usually calls that the paper size. Asking Windows for a page as wide as the roll makes
+ * it shrink the whole receipt to fit, which leaves white down both sides. Printing a page of exactly
+ * the driver's own paper size is one-to-one, so the receipt fills the roll.
+ *
+ * The figure has to match the driver's paper exactly, or Windows treats it as a custom size that the
+ * printer may refuse, so it is kept in the driver's own units (hundredths of an inch) to the end.
+ * Drivers disagree about which figure is which — this test printer reports a printable area wider
+ * than its own paper — so the smallest sensible one is used.
  */
-function printableWidthMm(deviceName = '') {
+function driverPaperWidthMicrons(deviceName = '') {
   if (process.platform !== 'win32') return Promise.resolve(0);
   const key = deviceName || '(default)';
-  if (printableWidthCache.has(key)) return Promise.resolve(printableWidthCache.get(key));
+  if (paperWidthCache.has(key)) return Promise.resolve(paperWidthCache.get(key));
 
   const script = [
     'Add-Type -AssemblyName System.Drawing;',
     '$s = New-Object System.Drawing.Printing.PrinterSettings;',
     deviceName ? `$s.PrinterName = '${deviceName.replace(/'/g, "''")}';` : '',
     'if (-not $s.IsValid) { exit };',
-    // Both are in hundredths of an inch
-    "'{0} {1}' -f $s.DefaultPageSettings.PrintableArea.Width, $s.DefaultPageSettings.Bounds.Width",
+    '$p = $s.DefaultPageSettings;',
+    // All three are in hundredths of an inch
+    "'{0} {1} {2}' -f $p.PaperSize.Width, $p.Bounds.Width, $p.PrintableArea.Width",
   ].join(' ');
 
   return new Promise((resolve) => {
@@ -62,9 +66,10 @@ function printableWidthMm(deviceName = '') {
               .split(/\s+/)
               .map(Number)
               .filter((value) => Number.isFinite(value) && value > 0);
-        const mm = figures.length ? (Math.min(...figures) / 100) * 25.4 : 0;
-        const usable = mm >= 30 && mm <= 120 ? Math.round(mm * 10) / 10 : 0;
-        printableWidthCache.set(key, usable);
+        // 1 hundredth of an inch = 254 microns, kept whole so the page matches the driver's paper
+        const microns = figures.length ? Math.round(Math.min(...figures) * 254) : 0;
+        const usable = microns >= 30 * MM_TO_MICRONS && microns <= 120 * MM_TO_MICRONS ? microns : 0;
+        paperWidthCache.set(key, usable);
         resolve(usable);
       }
     );
@@ -115,19 +120,31 @@ function waitForImages(webContents) {
     .catch(() => false);
 }
 
-async function printOnce({ html, deviceName = '', silent = true, paperWidth = 80, fitToContent = true, log }) {
+async function printOnce({
+  html,
+  deviceName = '',
+  silent = true,
+  paperWidth = 80,
+  fitToContent = true,
+  usePaperWidth = true,
+  log,
+}) {
   const roll = Number(paperWidth) === 58 ? 58 : 80;
-  // Lay out and print at what the printer can actually cover, so the receipt fills the paper
-  const printable = await printableWidthMm(deviceName).catch(() => 0);
-  const width = printable > 0 && printable <= roll ? printable : roll;
-  if (printable > 0 && printable !== roll) log?.info?.(`Printing at the printer's printable width: ${width} mm of ${roll} mm paper`);
+  const rollMicrons = roll * MM_TO_MICRONS;
+  // Print a page the size of the printer's own paper, so Windows never shrinks the receipt to fit
+  const fromDriver = usePaperWidth ? await driverPaperWidthMicrons(deviceName).catch(() => 0) : 0;
+  const widthMicrons = fromDriver > 0 && fromDriver <= rollMicrons ? fromDriver : rollMicrons;
+  if (widthMicrons !== rollMicrons) {
+    log?.info?.(`Printing on this printer's own paper width: ${(widthMicrons / MM_TO_MICRONS).toFixed(1)} mm (${roll} mm roll)`);
+  }
+  const widthPx = (widthMicrons / PX_TO_MICRONS);
   const file = path.join(os.tmpdir(), `ibile-pos-print-${crypto.randomBytes(8).toString('hex')}.html`);
   fs.writeFileSync(file, html, 'utf8');
 
   const win = new BrowserWindow({
     show: false,
-    // Roughly the roll width, so the page is measured the way it will print
-    width: Math.round((width / 25.4) * 96) + 40,
+    // Roughly the page width, so the printout is measured the way it will print
+    width: Math.round(widthPx) + 40,
     height: 800,
     webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, spellcheck: false },
   });
@@ -154,16 +171,28 @@ async function printOnce({ html, deviceName = '', silent = true, paperWidth = 80
         )
         .catch(() => 0);
       const heightMicrons = Math.max(50 * MM_TO_MICRONS, Math.ceil(heightPx * PX_TO_MICRONS) + 5 * MM_TO_MICRONS);
-      options.pageSize = { width: Math.round(width * MM_TO_MICRONS), height: heightMicrons };
+      options.pageSize = { width: widthMicrons, height: heightMicrons };
     }
 
-    return await new Promise((resolve) => {
-      win.webContents.print(options, (success, failureReason) => {
-        if (success) resolve({ ok: true });
-        else if (/cancel/i.test(failureReason || '')) resolve({ ok: false, canceled: true, error: 'Printing was cancelled' });
-        else resolve({ ok: false, error: failureReason ? `Printing failed: ${failureReason}` : 'Printing failed' });
+    const send = (printOptions) =>
+      new Promise((resolve) => {
+        win.webContents.print(printOptions, (success, failureReason) => {
+          if (success) resolve({ ok: true });
+          else if (/cancel/i.test(failureReason || '')) resolve({ ok: false, canceled: true, error: 'Printing was cancelled' });
+          else resolve({ ok: false, error: failureReason ? `Printing failed: ${failureReason}` : 'Printing failed' });
+        });
       });
-    });
+
+    const result = await send(options);
+    // A driver that will not take the page we asked for still has its own: print on that rather
+    // than hand the till an error, and say so in the log
+    if (!result.ok && !result.canceled && options.pageSize) {
+      log?.warn?.(`${result.error} — printing again on the printer's default page size`);
+      const { pageSize, ...withoutPageSize } = options;
+      const retry = await send(withoutPageSize);
+      if (retry.ok) return retry;
+    }
+    return result;
   } catch (error) {
     log?.error('Printing failed', error);
     return { ok: false, error: error.message };
@@ -202,4 +231,4 @@ function printHtml(job, { log, webContents } = {}) {
   return result;
 }
 
-module.exports = { listPrinters, printHtml, printableWidthMm };
+module.exports = { listPrinters, printHtml, driverPaperWidthMicrons };

@@ -51,6 +51,8 @@ let mongo;
 let server;
 let updater;
 let mainWindow = null;
+// Put the till back over the whole screen (set when the window is created)
+let fitWindowToScreen = () => {};
 let shuttingDown = false;
 let busy = false;
 let updatePrompted = false;
@@ -201,25 +203,39 @@ function createWindow() {
 
   // The till fills the screen. It can be minimised to the taskbar, but it is never left part of
   // the way across a monitor — a half-sized till hides the keypad and the cart at the same time.
-  // The window is fixed in size, so this only has to undo what Windows does on its own: a snap, a
-  // screen that changes resolution, or a monitor that is unplugged. maximize() is ignored while a
-  // window is not resizable, so resizing is allowed again for the moment it takes to put it back.
+  //
+  // The window is given the screen's work area rather than being maximised: Windows maximises a
+  // frameless window to the work area *plus* its invisible resize borders, which pushes the edges
+  // of the till off the screen. Exact bounds look the same and stay on the screen. This only has to
+  // undo what Windows does on its own — a snap, a keyboard shortcut, a resolution change or a
+  // monitor unplugged — and bounds are only settable while the window is resizable, so resizing is
+  // allowed again for the moment it takes to put it back.
   let restoringBounds = false;
+  fitWindowToScreen = () => {
+    const { workArea } = screen.getDisplayMatching(mainWindow.getBounds());
+    if (mainWindow.isMaximized()) mainWindow.unmaximize();
+    mainWindow.setResizable(true);
+    mainWindow.setBounds(workArea);
+    mainWindow.setResizable(false);
+  };
+
   const keepFullScreen = () => {
     if (restoringBounds) return;
     if (!mainWindow || mainWindow.isDestroyed()) return;
     if (mainWindow.isMinimized() || !mainWindow.isVisible()) return;
     const bounds = mainWindow.getBounds();
     const { workArea } = screen.getDisplayMatching(bounds);
-    const fills = bounds.width >= workArea.width && bounds.height >= workArea.height;
-    if (mainWindow.isMaximized() && fills) return;
+    const fits =
+      !mainWindow.isMaximized() &&
+      bounds.x === workArea.x &&
+      bounds.y === workArea.y &&
+      bounds.width === workArea.width &&
+      bounds.height === workArea.height;
+    if (fits) return;
     restoringBounds = true;
     try {
-      mainWindow.setResizable(true);
-      mainWindow.setBounds(workArea);
-      mainWindow.maximize();
+      fitWindowToScreen();
     } finally {
-      mainWindow.setResizable(false);
       // Windows reports the moves this caused a beat later; ignore those rather than loop on them
       setTimeout(() => { restoringBounds = false; }, 250);
     }
@@ -228,10 +244,8 @@ function createWindow() {
   mainWindow.once('ready-to-show', () => {
     // Support and automated checks: run without putting a window in front of the till user
     if (process.env.POS_WINDOW_HIDDEN === '1') return;
-    mainWindow.maximize();
+    fitWindowToScreen();
     mainWindow.show();
-    // Drop the resize borders only once it is maximised, so maximising itself still works
-    mainWindow.setResizable(false);
   });
 
   // Snapping, a keyboard shortcut or a screen change can still leave it restored
@@ -948,10 +962,9 @@ function registerIpc() {
   settingsHandlers('ui-settings', 'uiSettings', 'Settings');
   // Window controls (the window has no Windows title bar)
   handle('desktop:window-minimize', () => mainWindow?.minimize());
-  // Kept for older builds of the front end: the till stays maximised, so this only restores it
+  // Kept for older builds of the front end: the till always fills the screen, so this only puts it back
   handle('desktop:window-toggle-maximize', () => {
-    if (!mainWindow) return;
-    if (!mainWindow.isMaximized()) mainWindow.maximize();
+    if (mainWindow && !mainWindow.isMinimized()) fitWindowToScreen();
   });
   handle('desktop:quit', () => shutdown());
 }

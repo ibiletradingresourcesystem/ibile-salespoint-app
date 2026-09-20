@@ -331,6 +331,21 @@ export default function PrinterSettingsPanel({ staff = null, location = null, on
               <span className="block text-sm text-gray-500">On for thermal roll printers (no blank paper after the receipt). Turn off for A4 or Letter printers.</span>
             </span>
           </label>
+          <label className="flex items-start gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={settings.usePaperWidth !== false}
+              onChange={(e) => update({ usePaperWidth: e.target.checked })}
+              className="w-5 h-5 mt-0.5 rounded border-gray-300"
+            />
+            <span>
+              <span className="font-semibold text-gray-700">Print as wide as the printer&apos;s paper</span>
+              <span className="block text-sm text-gray-500">
+                Uses the paper size the printer driver reports, so Windows does not shrink the receipt and leave white
+                down both sides. Turn this off if your printer refuses the page or prints an error slip.
+              </span>
+            </span>
+          </label>
           <StatusBadge status={windowsStatus} />
         </section>
       )}

@@ -12,6 +12,8 @@
  *   connectionMode 'usb' (Windows printer queue named `printerName`) | 'network' (ip:port)
  *   windowsPrinterName  desktop app: printer for designed printouts ('' = the Windows default printer)
  *   fitToReceipt   desktop app: page length follows the printout (thermal rolls); off for A4/Letter printers
+ *   usePaperWidth  desktop app: print a page exactly as wide as the printer's own paper, so Windows
+ *                  does not shrink the receipt to fit; off falls back to the roll width above
  *   paperWidth     80 | 58 (mm roll)
  *   marginLeft     blank space, in mm, kept clear on the left of the printout (0 = as wide as the
  *                  printer can print; its own unprintable edge is already left clear)
@@ -50,6 +52,7 @@ export function getDefaultPrinterSettings(paperWidth = 80) {
     printerName: 'XP-80C',
     windowsPrinterName: '',
     fitToReceipt: true,
+    usePaperWidth: true,
     ip: '192.168.1.100',
     port: 9100,
     paperWidth: PAPER_PROFILES[paperWidth] ? paperWidth : 80,
@@ -94,6 +97,7 @@ export function normalizePrinterSettings(raw = {}) {
     printerName: String(source.printerName || defaults.printerName).trim(),
     windowsPrinterName: String(source.windowsPrinterName || '').trim(),
     fitToReceipt: source.fitToReceipt !== false,
+    usePaperWidth: source.usePaperWidth !== false,
     ip: String(source.ip || defaults.ip).trim(),
     port: Math.round(clampNumber(source.port, 1, 65535, defaults.port)),
     paperWidth,
@@ -153,7 +157,11 @@ export async function loadDesktopPrinterSettings() {
  */
 export function getDesktopPrintTarget(settings = getPrinterSettings()) {
   const printer = normalizePrinterSettings(settings);
-  const base = { paperWidth: printer.paperWidth, fitToContent: printer.fitToReceipt };
+  const base = {
+    paperWidth: printer.paperWidth,
+    fitToContent: printer.fitToReceipt,
+    usePaperWidth: printer.usePaperWidth,
+  };
   if (printer.printMethod === 'windows') return { ...base, silent: true, deviceName: printer.windowsPrinterName };
   if (printer.printMethod === 'direct' || printer.printMethod === 'both') {
     if (printer.connectionMode === 'usb' && printer.printerName) return { ...base, silent: true, deviceName: printer.printerName };
