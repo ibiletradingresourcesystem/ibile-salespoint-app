@@ -30,7 +30,7 @@ The web deployment needs no configuration for the desktop.
 
 | | Desktop |
 |---|---|
-| Start | Electron → splash (BizSuits branded, `electron/splash.html`) → local `mongod` (bundled MongoDB 8.0) → migrations (backup first) → local POS server → window |
+| Start | Electron → splash (`electron/splash.html`: BizSuits logo on a rounded panel, "BizSuits Solutions System", status line, loader) → local `mongod` (bundled MongoDB 8.0) → migrations (backup first) → local POS server → window |
 | Page | `http://127.0.0.1:5150` (`/desktop-setup` on first run) |
 | POS database | Local MongoDB `ibile_pos` in `%APPDATA%\Ibile POS\data\mongodb`, localhost only, password-protected (DPAPI-encrypted password) |
 | Cloud database | Customer's MongoDB via connection string (DPAPI-encrypted), used only by the local server process |
@@ -228,6 +228,23 @@ Conflicts and rejections stay on the computer and appear as **SYNC ERROR** with 
 - **Close Till:** columns are in rem and stack on narrow or scaled-up screens; the cash-up table scrolls
   rather than being cut off.
 
+### A sale that is worth nothing
+
+A product whose sale price is 0 rings up free, so a whole basket can come to nothing: a completed
+sale on the till that is not one. Three guards, after one happened:
+
+- **The import says so first.** A blank Sale cell leaves a price alone, but a 0 sets it, which is how
+  a price list can zero a shelf. The preview counts those rows, marks them red with a "Sale price 0"
+  filter, and warns above the Import button (`lib/productImportPlan.js` → `zeroSalePrice`).
+- **The till refuses the sale.** `src/lib/saleValue.js` blocks a basket whose items all have no
+  price and names them, on cash sales, credit sales and any other path into the offline queue. It
+  looks at the prices on the items, before discounts, so a 100% discount or a giveaway still goes
+  through.
+- **A stuck sale is said out loud.** Anything the cloud refused used to be a number inside the sync
+  panel. The pill now reads "SYNC ERROR · 2 STUCK" and a red strip across the top of the till says
+  how many records — and how many of them are sales — the management app will not show until it is
+  dealt with, with a button straight to the retry list.
+
 ### Settings per computer
 
 In the desktop app, Settings (screen, till, layout, content scale) and Printer Settings belong to that
@@ -239,6 +256,19 @@ category grids fit as many columns as the scaled card size allows. Settings → 
 **Receipt Preview Size** (compact · standard · large · extra large) sets how big the receipt preview
 opens; its sizes are in rem, so they follow content scale as well.
 
+### Building the installer on a machine with Avast
+
+Avast refuses to let anything create `dist-desktopwin-unpackedIbile POS.exe` under the project
+folder (`EPERM: operation not permitted, rename 'electron.exe' -> 'Ibile POS.exe'`), while the same
+build works elsewhere. Build to a folder outside the project and copy the installer back:
+
+```
+cd electron
+npx electron-builder --config electron-builder.config.js --win --x64 --config.directories.output=C:/Users/<you>/AppData/Local/Temp/ibile-pos-build
+```
+
+The packaged test scripts take the app's path in `POS_EXE` for the same reason.
+
 ### Printing
 
 Printer settings live in Settings → Printer Settings, and on the login screen under SYSTEM → Printer
@@ -248,24 +278,24 @@ settings… (manager or admin passcode, same lockout as restore). The app keeps 
 | Method (desktop) | What happens |
 |---|---|
 | **Windows printer** (default) | The receipt design (logo, fonts, QR) prints through the printer's Windows driver to the chosen printer, or the Windows default, with no dialog. *Receipt roll* makes the page as long as the printout (thermal rolls); turn it off for A4/Letter printers. |
-| **Thermal direct (ESC/POS)** | Raw commands to the USB printer's Windows queue or a network printer (IP:9100) from the POS server. The store logo prints as dots (see below) and *Text size on direct printouts* picks the printer's own font. |
+| **Thermal direct (ESC/POS)** | Raw commands to the USB printer's Windows queue or a network printer (IP:9100) from the POS server. The store logo prints as dots (see below) and *Text size on direct printouts* picks the printer's own font. With the receipt preview on, the preview opens first and its Print button sends the thermal commands. |
 | **Thermal direct, Windows printer if it fails** | Direct first; otherwise the Windows printer. |
 | **Print dialog** | The Windows print dialog for every printout. |
 
-**Printing the full width of the roll.** A thermal printer cannot print to the edge of its paper: an
-80 mm roll prints about 72 mm. What used to leave white down both sides was the receipt's own 4 mm side
-margins on top of that, so the margins now default to **0 mm** — the printer's own edge is margin
-enough — and only need raising if a side is cut off.
+**How wide the printout is.** A thermal printer cannot print to the edge of its roll, so the receipt
+keeps a side margin — 4 mm on 80 mm paper, 3 mm on 58 mm (Printer Settings → Paper). Dropping those to
+0 to cover more of the roll had a printer clipping the amounts off the right-hand side, so they stay;
+raise one side by 1–2 mm if something is cut off, lower it if there is too much blank paper.
 
-The page itself stays the **roll width** (Printer Settings → *Printed page width*, the default).
-Windows fits that page to the area the printer can print, and with no side margins the ink covers all
-of it. Asking instead for the exact paper size the driver reports (*Ask the printer*,
-`driverPaperWidthMicrons` — System.Drawing through PowerShell, cached per printer, the smallest of
-paper size, bounds and printable area, in the driver's own units: hundredths of an inch x 254 = microns,
-e.g. 284 -> 72,136 µm) is exact, but a width the driver has no form for can make a thermal printer
-answer with an error slip instead of a receipt — the POS-X driver does. It stays as an option for a
-printer that does not scale, alongside *Set it myself* (30–120 mm). Every job logs the width it used and
-where that came from, and a page a printer refuses is printed again on the driver's own page size.
+The printed page is the **roll width** (Printer Settings → *Printed page width*, the default), which is
+a page size the driver already has. Windows fits it to the area the printer can print. Two other
+settings exist for printers this does not suit: *Ask the printer* uses the exact paper size the driver
+reports (`driverPaperWidthMicrons`, System.Drawing through PowerShell, cached per printer, the smallest
+of paper size, bounds and printable area, kept in the driver's own units — hundredths of an inch x 254 =
+microns), and *Set it myself* takes 30–120 mm. Asking for a width the driver has no form for can make a
+thermal printer answer with an error slip instead of a receipt — the POS-X driver does — which is why
+the roll width is the default. Every job logs the width it used and where that came from, and a page a
+printer refuses is printed again on the driver's own page size.
 
 A **test receipt ends with a bar across the page** with a tick every 10 mm: if it does not reach both
 edges of the paper the page is too narrow, and if its right end is cut off it is too wide — so the right
@@ -410,9 +440,11 @@ showing the window (automated checks on a till someone is using).
   mode, temp files removed, no windows left open.
 - Packaged window sizing (window shown): **3/3** — the page area is exactly the work area (1920x1032),
   no wider than the screen and no shorter than the work area.
-- The receipt a test print produces, captured from the packaged app and re-rendered with print media
-  at the page width the app asks for: the header, the items table and the width bar all span the full
-  page (273 px = 72.136 mm), the page carries no side padding, and the document is black on white.
+- The receipt a test print produces, captured from the packaged app (**18/18** with the setup and
+  printer-settings checks): it carries the width bar and the 4 mm side margins, and with the till set to
+  thermal direct the preview opens first, names the thermal printer it will print to, still offers the
+  Windows print dialog, and prints nothing when cancelled. Re-rendered with print media, the header,
+  items table and width bar span the full page and the document is black on white.
 - Direct (ESC/POS) receipt: **10/10** — no bitmap when there is no logo, the logo sent as `GS v 0`
   centred above the store name with the right size header, and the text size options picking font A or
   font B ("auto" follows the management app's font size).

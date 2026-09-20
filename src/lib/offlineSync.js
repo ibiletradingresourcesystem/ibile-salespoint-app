@@ -9,6 +9,7 @@
  */
 
 import { getDeviceId, getDeviceName } from './deviceIdentity';
+import { zeroValueSaleMessage } from './saleValue';
 
 const SYNC_INTERVAL = 30000; // Auto-sync every 30 seconds
 const DB_VERSION = 3;
@@ -228,6 +229,12 @@ export function getOnlineStatus() {
  * Save transaction to IndexedDB (offline-first)
  */
 export async function saveTransactionOffline(transaction) {
+  // Guarded at the till too; this catches any other path into the queue
+  if (['completed', 'credit'].includes(transaction?.status)) {
+    const noValue = zeroValueSaleMessage(transaction);
+    if (noValue) throw new Error(noValue);
+  }
+
   try {
     const baseId = transaction.externalId || transaction.clientId || transaction.id;
     const generatedId = baseId

@@ -9,6 +9,7 @@ import Image from "next/image";
 import { useCart } from "../../context/CartContext";
 import { useStaff } from "../../context/StaffContext";
 import { useErrorHandler } from "../../hooks/useErrorHandler";
+import { zeroValueSaleMessage } from '@/src/lib/saleValue';
 import {
   saveTransactionOffline,
   getOnlineStatus,
@@ -265,6 +266,13 @@ export default function PaymentPanel() {
         createdAt: new Date().toISOString(),
         tillId: till._id,
       };
+
+      // A basket of products that all cost nothing is a price problem, not a sale
+      const noValue = zeroValueSaleMessage(transaction);
+      if (noValue) {
+        showToast(noValue, 'error', 10000);
+        return;
+      }
 
       // Always save locally first for full offline/online reconciliation
       await saveTransactionOffline(transaction);

@@ -49,6 +49,7 @@ import {
   syncPendingTransactions,
 } from "../../lib/offlineSync";
 import { hasPosPermission } from "../../lib/posPermissions";
+import { zeroValueSaleMessage } from "../../lib/saleValue";
 import { canStaffApplyDiscount, describeItemDiscount } from "../../lib/itemDiscount";
 import ItemDiscountModal from "./ItemDiscountModal";
 import {
@@ -449,6 +450,12 @@ export default function CartPanel() {
         createdAt: new Date().toISOString(),
         tillId: till._id,
       };
+
+      const noValue = zeroValueSaleMessage(transaction);
+      if (noValue) {
+        showToast(noValue, "error", 10000);
+        return;
+      }
 
       await saveTransactionOffline(transaction);
       if (getOnlineStatus()) {

@@ -364,11 +364,11 @@ export default function PrinterSettingsPanel({ staff = null, location = null, on
               )}
             </div>
             <p className="text-sm text-gray-500 mt-1">
-              How wide the page sent to the printer is. The roll width is the size the printer driver already has, and
-              Windows fits it to the area the printer can print — with the side margins at 0 the receipt covers all of
-              it. Use &quot;Ask the printer&quot; only if the printout comes out narrower than the paper: it is exact,
-              but a printer with no form that size can answer with an error slip instead of a receipt. Print a test
-              receipt to check — it ends with a bar that should just reach both edges of the paper.
+              How wide the page sent to the printer is. The roll width is the size the printer driver already has and is
+              what every till used before this setting existed — leave it there unless printing is wrong. &quot;Ask the
+              printer&quot; uses the exact paper size the driver reports, which can fill more of the roll, but a printer
+              with no form that size may answer with an error slip instead of a receipt. Print a test receipt to check:
+              it ends with a bar that should just reach both edges of the paper.
             </p>
           </div>
           <StatusBadge status={windowsStatus} />
@@ -415,9 +415,9 @@ export default function PrinterSettingsPanel({ staff = null, location = null, on
         </div>
         {usesDesignedPrintout && (
           <p className="text-sm text-gray-500 mt-2">
-            Blank space kept on each side of {desktop ? 'the printed receipt design' : 'browser printouts'}, on top of the edge the
-            printer cannot reach. At the default of {PAPER_PROFILES[settings.paperWidth].sideMargin} mm the printout is as wide as the
-            printer can print. If text is cut off on one side, raise that side&apos;s margin by 1–2 mm and print a test receipt.
+            Blank space kept on each side of {desktop ? 'the printed receipt design' : 'browser printouts'}. The default of{' '}
+            {PAPER_PROFILES[settings.paperWidth].sideMargin} mm keeps the printout inside what the print head can reach. If text is cut
+            off on one side, raise that side&apos;s margin by 1–2 mm and print a test receipt; lower it if there is too much blank space.
           </p>
         )}
       </section>

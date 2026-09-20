@@ -305,7 +305,28 @@ export async function printTransactionReceipt(transaction, receiptSettings = nul
     const printer = normalizePrinterSettings(options.printerSettings || getPrinterSettings());
     const settings = await getReceiptSettings(receiptSettings);
 
-    if (printer.printMethod === 'direct' || printer.printMethod === 'both') {
+    const printsDirect = printer.printMethod === 'direct' || printer.printMethod === 'both';
+    const showPreview = options.showPreview ?? getUiSettings().system?.showPrintPreview !== false;
+
+    // The preview comes first whichever way the receipt will be printed: its Print button then does
+    // what this till is set to — thermal commands straight to the printer, or the Windows printer.
+    if (showPreview) {
+      const receiptHTML = buildReceiptHtml(transaction, settings, printer, { widthRuler: options.widthRuler === true });
+      const method = printsDirect ? 'direct' : isDesktopApp() && getDesktopPrintTarget(printer).silent ? 'windows' : 'browser';
+      window.dispatchEvent(new CustomEvent('printPreview:show', {
+        detail: {
+          receiptHTML,
+          companyName: settings.companyDisplayName || '',
+          transaction,
+          printerSettings: printer,
+          // What the preview needs to print the thermal way itself
+          receiptSettings: printsDirect ? settings : null,
+        },
+      }));
+      return { success: true, method };
+    }
+
+    if (printsDirect) {
       const result = await sendDirectPrint(transaction, settings, printer);
       if (result.success) return { success: true, method: 'direct' };
 
@@ -319,14 +340,6 @@ export async function printTransactionReceipt(transaction, receiptSettings = nul
     // Browser: print dialog. Desktop app: the Windows printer (no dialog) or the Windows print dialog
     const method = isDesktopApp() && getDesktopPrintTarget(printer).silent ? 'windows' : 'browser';
     const receiptHTML = buildReceiptHtml(transaction, settings, printer, { widthRuler: options.widthRuler === true });
-    const showPreview = options.showPreview ?? getUiSettings().system?.showPrintPreview !== false;
-
-    if (showPreview) {
-      window.dispatchEvent(new CustomEvent('printPreview:show', {
-        detail: { receiptHTML, companyName: settings.companyDisplayName || '', transaction, printerSettings: printer },
-      }));
-      return { success: true, method };
-    }
 
     const result = await printHtmlDocument(receiptHTML, { printerSettings: printer });
     if (!result.ok && !result.canceled) {

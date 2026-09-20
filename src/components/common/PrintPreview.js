@@ -14,7 +14,7 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faPrint, faSliders, faTimes } from '@fortawesome/free-solid-svg-icons';
 import { getStoreLogo } from '@/src/lib/logoCache';
 import { printHtmlDocument } from '@/src/lib/printDocument';
-import { describeDesktopPrintTarget, getDesktopPrintTarget } from '@/src/lib/printerConfig';
+import { describeDesktopPrintTarget, getDesktopPrintTarget, sendDirectPrint } from '@/src/lib/printerConfig';
 import { isDesktopApp } from '@/src/lib/desktopClient';
 import { showToast } from '@/src/components/common/Toast';
 import { getUiSettings } from '@/src/lib/uiSettings';
@@ -63,8 +63,14 @@ export default function PrintPreview() {
 
   useEffect(() => {
     const handleShow = (event) => {
-      const { receiptHTML = '', companyName = '', transaction = null, printerSettings = null } = event.detail || {};
-      const entry = { receiptHTML, companyName, transaction, printerSettings };
+      const {
+        receiptHTML = '',
+        companyName = '',
+        transaction = null,
+        printerSettings = null,
+        receiptSettings = null,
+      } = event.detail || {};
+      const entry = { receiptHTML, companyName, transaction, printerSettings, receiptSettings };
       if (currentRef.current) {
         queueRef.current.push(entry);
         setQueuedCount(queueRef.current.length);
@@ -83,12 +89,33 @@ export default function PrintPreview() {
   const size = PREVIEW_SIZES[previewSize] || PREVIEW_SIZES.standard;
   const printerSettings = current.printerSettings || undefined;
   const silentTarget = desktop && getDesktopPrintTarget(printerSettings).silent;
+  // This till prints thermal commands straight to the printer: the preview does the same
+  const printsDirect = Boolean(current.receiptSettings) && ['direct', 'both'].includes(printerSettings?.printMethod);
+  const thermalName =
+    printerSettings?.connectionMode === 'network'
+      ? `${printerSettings?.ip}:${printerSettings?.port}`
+      : printerSettings?.printerName || 'the thermal printer';
 
   const handlePrint = (dialog = false) => {
-    const { receiptHTML } = current;
+    const { receiptHTML, transaction, receiptSettings } = current;
     // Close first so the preview doesn't sit behind a print dialog
     showNext();
     setTimeout(async () => {
+      // Thermal printing, unless the user asked for the Windows print dialog instead
+      if (printsDirect && !dialog) {
+        const direct = await sendDirectPrint(transaction, receiptSettings, printerSettings);
+        if (direct.success) {
+          showToast(`Receipt sent to ${thermalName}`, 'success', 2500);
+          return;
+        }
+        if (printerSettings?.printMethod === 'direct') {
+          showToast(`Receipt not printed: ${direct.message}`, 'error', 6000);
+          return;
+        }
+        // "Thermal, Windows printer if it fails" — fall through to the designed printout
+        console.warn('Direct print failed, using the fallback printing:', direct.message);
+      }
+
       const result = await printHtmlDocument(receiptHTML, { printerSettings, dialog });
       if (!result.ok && !result.canceled) showToast(`Receipt not printed: ${result.error}`, 'error', 6000);
       else if (result.ok && desktop && silentTarget && !dialog) showToast('Receipt sent to the printer', 'success', 2500);
@@ -113,7 +140,11 @@ export default function PrintPreview() {
           <div className="flex-1">
             <h2 className="font-bold text-lg text-white">{current.companyName || 'Print Receipt'}</h2>
             <p className="text-cyan-200 text-xs">
-              {desktop ? `Printer: ${describeDesktopPrintTarget(printerSettings)}` : 'Review and print your receipt'}
+              {printsDirect
+                ? `Thermal printer: ${thermalName}`
+                : desktop
+                  ? `Printer: ${describeDesktopPrintTarget(printerSettings)}`
+                  : 'Review and print your receipt'}
               {queuedCount > 0 && (
                 <span className="ml-2 px-1.5 py-0.5 bg-amber-500 text-white text-[10px] rounded-full font-bold">
                   +{queuedCount} more
@@ -157,7 +188,7 @@ export default function PrintPreview() {
           >
             Cancel
           </button>
-          {silentTarget && (
+          {(silentTarget || printsDirect) && (
             <button
               onClick={() => handlePrint(true)}
               title="Open the Windows print dialog to pick a printer or copies"

@@ -21,8 +21,7 @@
  *                  'custom' pageWidthMm, when neither of those comes out right
  *   pageWidthMm    width in mm used when pageWidthMode is 'custom' (30–120)
  *   paperWidth     80 | 58 (mm roll)
- *   marginLeft     blank space, in mm, kept clear on the left of the printout (0 = as wide as the
- *                  printer can print; its own unprintable edge is already left clear)
+ *   marginLeft     blank space, in mm, kept clear on the left of the printout
  *   marginRight    blank space, in mm, kept clear on the right (raise the side that gets cut off)
  *   thermalTextSize  direct ESC/POS printing only: 'auto' follows the management app's receipt font
  *                  size, 'standard' and 'small' pick the printer's own font A or B
@@ -32,7 +31,7 @@ import { getDesktopBridge, isDesktopApp } from './desktopClient';
 import { buildReceiptLogoRaster } from './escposImage';
 
 const STORAGE_KEY = 'printerSettings';
-const SETTINGS_VERSION = 5;
+const SETTINGS_VERSION = 6;
 
 export const PRINT_METHODS = ['browser', 'windows', 'direct', 'both'];
 export const PAPER_WIDTHS = [80, 58];
@@ -42,11 +41,11 @@ export const MIN_PAGE_WIDTH = 30;
 export const MAX_PAGE_WIDTH = 120;
 
 // Default side margins and ESC/POS characters per line (Font A) per roll width.
-// The margins are 0: a thermal printer cannot print to the very edge anyway, and anything we keep
-// clear on top of that is printed paper left blank. Raise one side only if it is cut off.
+// These margins keep the printout inside what the print head can reach. Dropping them to 0 to use
+// the whole roll had printers clipping the amounts off the right-hand side, so they stay.
 export const PAPER_PROFILES = {
-  80: { sideMargin: 0, columns: 48 },
-  58: { sideMargin: 0, columns: 32 },
+  80: { sideMargin: 4, columns: 48 },
+  58: { sideMargin: 3, columns: 32 },
 };
 
 export const THERMAL_TEXT_SIZES = ['auto', 'standard', 'small'];

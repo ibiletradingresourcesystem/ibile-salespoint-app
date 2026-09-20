@@ -109,7 +109,7 @@ export default function DesktopSyncStatus() {
   const needsAttention = Number(status?.failed || 0) + Number(status?.conflicts || 0);
 
   useEffect(() => {
-    if (!open || needsAttention === 0) {
+    if (needsAttention === 0) {
       setAttention([]);
       return;
     }
@@ -118,6 +118,8 @@ export default function DesktopSyncStatus() {
       .then((data) => setAttention(data.entries || []))
       .catch(() => setAttention([]));
   }, [open, needsAttention]);
+
+  const stuckSales = attention.filter((entry) => entry.entity === 'transactions').length;
 
   const retry = async (ids) => {
     await fetch('/api/desktop/outbox', {
@@ -141,8 +143,37 @@ export default function DesktopSyncStatus() {
         title="Cloud sync status"
       >
         {LABELS[phase]}
-        {status.pending > 0 ? ` · ${status.pending}` : ''}
+        {needsAttention > 0
+          ? ` · ${needsAttention} STUCK`
+          : status.pending > 0
+            ? ` · ${status.pending}`
+            : ''}
       </button>
+
+      {/*
+       * A sale that the cloud refused stays on this till until someone deals with it, and the
+       * management app never shows it. The count in the panel was easy to walk past, so it is said
+       * plainly across the top of the till until it is cleared.
+       */}
+      {needsAttention > 0 && (
+        <div className="fixed left-1/2 -translate-x-1/2 top-2 z-[60] w-[min(92vw,34rem)]">
+          <div className="flex items-center gap-3 rounded-lg border border-red-300 bg-red-600 text-white px-3 py-2 shadow-lg">
+            <span className="text-lg leading-none">⚠</span>
+            <p className="flex-1 text-xs sm:text-sm font-semibold leading-snug">
+              {needsAttention} record{needsAttention === 1 ? '' : 's'} could not be sent to the cloud
+              {stuckSales > 0 ? ` (${stuckSales} sale${stuckSales === 1 ? '' : 's'})` : ''} — the management
+              app will not show {needsAttention === 1 ? 'it' : 'them'} until this is fixed.
+            </p>
+            <button
+              type="button"
+              onClick={() => setOpen(true)}
+              className="px-2.5 py-1 rounded bg-white text-red-700 text-xs font-bold hover:bg-red-50 whitespace-nowrap"
+            >
+              Show me
+            </button>
+          </div>
+        </div>
+      )}
 
       {open && (
         <div className="absolute right-0 top-full mt-2 w-72 bg-white text-gray-800 rounded-lg shadow-xl z-50 p-4 text-sm">

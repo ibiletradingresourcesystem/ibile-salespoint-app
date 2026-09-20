@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faTimes, faCoins, faPlus, faCheck, faPen, faTrash } from "@fortawesome/free-solid-svg-icons";
+import { faTimes, faCoins, faPlus, faCheck, faPen, faTrash, faKeyboard } from "@fortawesome/free-solid-svg-icons";
+import NumKeypad from "../common/NumKeypad";
 
 function PettyCashPanel({ isOpen, onClose, staffName, location }) {
   const [tab, setTab] = useState("orders");
@@ -16,6 +17,8 @@ function PettyCashPanel({ isOpen, onClose, staffName, location }) {
   const [description, setDescription] = useState("");
   const [productEntries, setProductEntries] = useState([]);
   const [editingOrderId, setEditingOrderId] = useState(null);
+  // Tills with no keyboard: the row whose quantity the on-screen keypad is typing into
+  const [keypadRow, setKeypadRow] = useState(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -454,10 +457,25 @@ function PettyCashPanel({ isOpen, onClose, staffName, location }) {
                           step="1"
                           value={entry.quantity}
                           onChange={(e) => updateEntryQty(idx, e.target.value)}
-                          className="w-20 border border-gray-300 rounded px-2 py-1 text-sm text-center font-semibold"
+                          onFocus={() => setKeypadRow(idx)}
+                          className={`w-20 border rounded px-2 py-1 text-sm text-center font-semibold ${
+                            keypadRow === idx ? "border-blue-500 ring-2 ring-blue-200" : "border-gray-300"
+                          }`}
                           placeholder="Qty"
-                          autoFocus
                         />
+                        <button
+                          type="button"
+                          onClick={() => setKeypadRow(keypadRow === idx ? null : idx)}
+                          title="Type the quantity with the on-screen keypad"
+                          aria-label="Quantity keypad"
+                          className={`p-1.5 rounded border ${
+                            keypadRow === idx
+                              ? "bg-blue-600 border-blue-600 text-white"
+                              : "bg-white border-gray-300 text-gray-500 hover:bg-gray-50"
+                          }`}
+                        >
+                          <FontAwesomeIcon icon={faKeyboard} className="w-3 h-3" />
+                        </button>
                         <button
                           type="button"
                           onClick={() => removeEntry(idx)}
@@ -468,6 +486,30 @@ function PettyCashPanel({ isOpen, onClose, staffName, location }) {
                       </div>
                     ))}
                   </div>
+
+                  {/* On-screen keypad, so a till with no keyboard can still enter quantities */}
+                  {keypadRow !== null && productEntries[keypadRow] && (
+                    <div className="mt-2 border border-blue-200 rounded-lg p-2 bg-blue-50/60">
+                      <div className="flex items-center justify-between mb-2">
+                        <p className="text-xs font-semibold text-gray-700 truncate pr-2">
+                          Quantity — {productEntries[keypadRow].productName || "Product"}
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => setKeypadRow(null)}
+                          className="text-xs font-semibold text-blue-700 hover:text-blue-900 px-2 py-1"
+                        >
+                          Done
+                        </button>
+                      </div>
+                      <NumKeypad
+                        value={productEntries[keypadRow].quantity ? String(productEntries[keypadRow].quantity) : ""}
+                        onChange={(next) => updateEntryQty(keypadRow, next)}
+                        placeholder="Quantity"
+                        size="compact"
+                      />
+                    </div>
+                  )}
                 </div>
               )}
 
