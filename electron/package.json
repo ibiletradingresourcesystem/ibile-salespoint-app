@@ -8,8 +8,8 @@
   "main": "main.js",
   "scripts": {
     "dev": "node scripts/dev.js",
-    "dist": "electron-builder --config electron-builder.config.js --win --x64",
-    "dist:dir": "electron-builder --config electron-builder.config.js --win --x64 --dir"
+    "dist": "node scripts/pack.js",
+    "dist:dir": "node scripts/pack.js --dir"
   },
   "dependencies": {
     "bcryptjs": "^3.0.2",

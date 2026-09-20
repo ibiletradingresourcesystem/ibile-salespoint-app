@@ -256,18 +256,23 @@ category grids fit as many columns as the scaled card size allows. Settings → 
 **Receipt Preview Size** (compact · standard · large · extra large) sets how big the receipt preview
 opens; its sizes are in rem, so they follow content scale as well.
 
-### Building the installer on a machine with Avast
+### Security software and the app's executable
 
-Avast refuses to let anything create `dist-desktopwin-unpackedIbile POS.exe` under the project
-folder (`EPERM: operation not permitted, rename 'electron.exe' -> 'Ibile POS.exe'`), while the same
-build works elsewhere. Build to a folder outside the project and copy the installer back:
+Avast on this machine refuses to let anything create `dist-desktopwin-unpackedIbile POS.exe`
+inside the project folder — the build stops with `EPERM: operation not permitted, rename
+'electron.exe' -> 'Ibile POS.exe'` — while the same build runs in any other folder.
+
+`npm run desktop:dist` handles this itself (`electron/scripts/pack.js`): it tries to create that
+name first, and when it is refused it builds in `%TEMP%ibile-pos-build` and copies the installer
+back into `dist-desktop`. The output says so when it happens. On a machine without that software
+nothing changes and the build stays in the project.
+
+The app itself then lives in `%TEMP%ibile-pos-buildwin-unpacked`, so the packaged tests take its
+path in `POS_EXE`:
 
 ```
-cd electron
-npx electron-builder --config electron-builder.config.js --win --x64 --config.directories.output=C:/Users/<you>/AppData/Local/Temp/ibile-pos-build
+POS_EXE="%TEMP%ibile-pos-buildwin-unpackedIbile POS.exe" node packaged-smoke.js
 ```
-
-The packaged test scripts take the app's path in `POS_EXE` for the same reason.
 
 ### Printing
 
