@@ -180,8 +180,10 @@ export function getDesktopPrintTarget(settings = getPrinterSettings()) {
   };
   if (printer.printMethod === 'windows') return { ...base, silent: true, deviceName: printer.windowsPrinterName };
   if (printer.printMethod === 'direct' || printer.printMethod === 'both') {
-    if (printer.connectionMode === 'usb' && printer.printerName) return { ...base, silent: true, deviceName: printer.printerName };
+    // The Windows printer chosen for designed printouts comes first; the thermal queue is only a
+    // fallback, and only when it is a USB queue Windows can also print pages to
     if (printer.windowsPrinterName) return { ...base, silent: true, deviceName: printer.windowsPrinterName };
+    if (printer.connectionMode === 'usb' && printer.printerName) return { ...base, silent: true, deviceName: printer.printerName };
   }
   return { ...base, silent: false, deviceName: printer.windowsPrinterName };
 }
@@ -288,6 +290,26 @@ export async function sendDirectPrint(transaction, receiptSettings, settings = g
     transaction,
     receiptSettings,
     logo,
+    printer: {
+      connectionMode: printer.connectionMode,
+      printerName: printer.printerName,
+      ip: printer.ip,
+      port: printer.port,
+      paperWidth: printer.paperWidth,
+      thermalTextSize: printer.thermalTextSize,
+    },
+  });
+  return { success: data.success === true, message: data.message || 'Direct print failed' };
+}
+
+/**
+ * Send the end-of-day report straight to the thermal printer, the same way a receipt goes.
+ * The designed HTML report cannot be used on a till that prints raw ESC/POS.
+ */
+export async function sendDirectEndOfDay(report, settings = getPrinterSettings()) {
+  const printer = normalizePrinterSettings(settings);
+  const { data } = await postJson('/api/printer/print-direct', {
+    endOfDay: report,
     printer: {
       connectionMode: printer.connectionMode,
       printerName: printer.printerName,

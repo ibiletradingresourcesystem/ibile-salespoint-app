@@ -7,7 +7,7 @@
  * falls back to browser printing.
  *
  * Body: {
- *   transaction, receiptSettings,
+ *   transaction | endOfDay, receiptSettings,
  *   printer: { connectionMode: "usb" | "network", printerName, ip, port, paperWidth: 80 | 58 }
  * }
  */

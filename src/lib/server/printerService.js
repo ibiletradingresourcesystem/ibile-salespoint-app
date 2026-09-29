@@ -3,6 +3,7 @@
  * /api/printer/* (staff session) and, in the desktop app, /api/desktop/printer (the app itself).
  */
 import { buildEscposReceipt } from '@/src/lib/escposReceipt';
+import { buildEscposEndOfDay } from '@/src/lib/escposEndOfDay';
 import { canUseWindowsPrinters, isHostedOnline, listWindowsPrinters, sendRawToWindowsPrinter } from '@/src/lib/server/windowsPrinters';
 import { checkNetworkPrinter, isLocalNetworkAddress, isValidPort, sendToNetworkPrinter } from '@/src/lib/server/networkPrinter';
 
@@ -96,11 +97,14 @@ function readLogoRaster(logo) {
 }
 
 /**
- * { transaction, receiptSettings, logo, printer: { connectionMode, printerName, ip, port,
+ * { transaction | endOfDay, receiptSettings, logo, printer: { connectionMode, printerName, ip, port,
  *   paperWidth, thermalTextSize } } → { status, body: { success, message } }
+ *
+ * `endOfDay` prints the end-of-day report instead of a sale, so a till that prints straight to a
+ * thermal printer gets its report the same way it gets receipts.
  */
-export async function printReceiptToThermalPrinter({ transaction, receiptSettings = {}, logo = null, printer = {} } = {}) {
-  if (!transaction) {
+export async function printReceiptToThermalPrinter({ transaction, endOfDay = null, receiptSettings = {}, logo = null, printer = {} } = {}) {
+  if (!transaction && !endOfDay) {
     return { status: 400, body: { success: false, message: 'Transaction data required' } };
   }
 
@@ -111,14 +115,16 @@ export async function printReceiptToThermalPrinter({ transaction, receiptSetting
   const paperWidth = Number(printer.paperWidth) === 58 ? 58 : 80;
   let bytes;
   try {
-    bytes = buildEscposReceipt(transaction, receiptSettings, {
-      paperWidth,
-      textSize: printer.thermalTextSize,
-      logo: readLogoRaster(logo),
-    });
+    bytes = endOfDay
+      ? buildEscposEndOfDay(endOfDay, { paperWidth, textSize: printer.thermalTextSize })
+      : buildEscposReceipt(transaction, receiptSettings, {
+          paperWidth,
+          textSize: printer.thermalTextSize,
+          logo: readLogoRaster(logo),
+        });
   } catch (error) {
-    console.error('Failed to build receipt:', error);
-    return { status: 500, body: { success: false, message: 'Could not build the receipt' } };
+    console.error('Failed to build the printout:', error);
+    return { status: 500, body: { success: false, message: `Could not build the ${endOfDay ? 'report' : 'receipt'}` } };
   }
 
   try {

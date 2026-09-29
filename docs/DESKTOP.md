@@ -327,6 +327,14 @@ printer's 203 dpi (up to 30 x 12 mm, 4x4 ordered dither) and sends the dots with
 canvas, so `/api/store/logo-data` hands the page the same image as a data URI — the address comes from
 the store record, never from the request. No logo simply means no logo on that receipt.
 
+**The end-of-day report.** It follows the same Printer Settings as receipts. On a till set to
+thermal direct it is sent as ESC/POS (`src/lib/escposEndOfDay.js`) — it used to be the designed HTML
+page, addressed to the raw ESC/POS queue, which comes out blank — and on any other till it prints as
+the designed page to the chosen Windows printer. The settings are read from the app at print time
+rather than from whatever the page had cached, so the report goes where Printer Settings says. A
+designed printout now prefers `windowsPrinterName` over the thermal queue for exactly the same
+reason.
+
 **Text size on direct printouts.** A thermal printer has two built-in fonts, so it cannot follow every
 size in the management app. *Follow Receipt Settings* (the default) uses the compact font when Setup →
 Receipts is under 7pt; *Standard* and *Small* pick font A or font B for that till. Everything else about

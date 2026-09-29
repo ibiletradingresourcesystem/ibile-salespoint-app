@@ -27,11 +27,16 @@ import {
   faXmark,
 } from "@fortawesome/free-solid-svg-icons";
 
-import { getPrintLayout } from "../../lib/printerConfig";
+import { getPrintLayout, loadDesktopPrinterSettings, normalizePrinterSettings, sendDirectEndOfDay } from "../../lib/printerConfig";
 import { buildPrintPageCss, printHtmlDocument } from "../../lib/printDocument";
 
-// Generate and print End-of-Day report
-const printEndOfDayReport = (tillData, summaryData, tenderCounts, tenders, closingNotes, locationName) => {
+// Generate and print End-of-Day report.
+//
+// It used to print the designed page to whatever getPrinterSettings() happened to hold, which on a
+// till that prints straight to a thermal printer meant an HTML page sent to the raw ESC/POS queue —
+// blank paper — and on any till could miss the printer chosen in Printer Settings. Now the settings
+// are read from the app first, and a thermal till gets the report as ESC/POS, like its receipts.
+const printEndOfDayReport = async (tillData, summaryData, tenderCounts, tenders, closingNotes, locationName) => {
   const formatNaira = (amount) =>
     `₦${(amount || 0).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
@@ -153,11 +158,47 @@ const printEndOfDayReport = (tillData, summaryData, tenderCounts, tenders, closi
 </body>
 </html>`;
 
-  printHtmlDocument(html)
-    .then((result) => {
-      if (!result.ok && !result.canceled) showToast(`End of day report not printed: ${result.error}`, 'error', 6000);
-    })
-    .catch((err) => console.error('Failed to print end-of-day report:', err));
+  try {
+    // What this computer is set to, from the app rather than whatever the page cached
+    const printerSettings = normalizePrinterSettings(await loadDesktopPrinterSettings());
+
+    if (printerSettings.printMethod === 'direct' || printerSettings.printMethod === 'both') {
+      const direct = await sendDirectEndOfDay(
+        {
+          storeName: summaryData?.storeName || '',
+          locationName: locationName || '',
+          staffName: tillData?.staffName || '',
+          openedAt,
+          closedAt: `${dateStr} ${timeStr}`,
+          transactionCount: tillData?.transactionCount || 0,
+          openingBalance: summaryData?.openingBalance || 0,
+          totalSales: summaryData?.totalSales || 0,
+          expectedClosing: totalExpected,
+          totalCounted: totalPhysical,
+          totalVariance,
+          tenders: (tenders || []).map((tender) => {
+            const expected = getTenderAmount(summaryData?.tenderBreakdown, tender.name);
+            const counted = parseFloat(tenderCounts?.[tender.id]) || 0;
+            return { name: tender.name, expected, counted, variance: counted - expected };
+          }),
+          closingNotes: closingNotes || '',
+          printedAt: `${dateStr} ${timeStr}`,
+        },
+        printerSettings
+      );
+      if (direct.success) return;
+      if (printerSettings.printMethod === 'direct') {
+        showToast(`End of day report not printed: ${direct.message}`, 'error', 6000);
+        return;
+      }
+      console.warn('Direct end-of-day print failed, using the printed design:', direct.message);
+    }
+
+    const result = await printHtmlDocument(html, { printerSettings });
+    if (!result.ok && !result.canceled) showToast(`End of day report not printed: ${result.error}`, 'error', 6000);
+  } catch (err) {
+    console.error('Failed to print end-of-day report:', err);
+  }
 };
 
 
@@ -665,7 +706,7 @@ export default function CloseTillModal({ isOpen, onClose, onTillClosed }) {
       
       // Print end-of-day report before clearing session
       try {
-        printEndOfDayReport(
+        await printEndOfDayReport(
           till,
           summary,
           tenderCountsForAPI,
@@ -1060,9 +1101,9 @@ export default function CloseTillModal({ isOpen, onClose, onTillClosed }) {
               </button>
               <button
                 type="button"
-                onClick={() => {
+                onClick={async () => {
                   try {
-                    printEndOfDayReport(till, summary, tenderCounts, tenders, closingNotes.trim(), location?.name || '');
+                    await printEndOfDayReport(till, summary, tenderCounts, tenders, closingNotes.trim(), location?.name || '');
                   } catch (printErr) {
                     console.warn('Could not print end-of-day report:', printErr);
                   }
