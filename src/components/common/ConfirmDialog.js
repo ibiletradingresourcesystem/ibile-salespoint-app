@@ -25,7 +25,7 @@ function ConfirmModal({ title, message, confirmLabel, cancelLabel, variant, onCo
     : "bg-cyan-600 hover:bg-cyan-700";
 
   return (
-    <div className={`fixed inset-0 z-[110] flex items-center justify-center transition-opacity duration-200 ${visible ? "opacity-100" : "opacity-0"}`}>
+    <div className={`fixed inset-0 z-[10050] flex items-center justify-center transition-opacity duration-200 ${visible ? "opacity-100" : "opacity-0"}`}>
       <div className="absolute inset-0 bg-black/40" onClick={() => handleClose(false)} />
       <div className={`relative bg-white rounded-2xl shadow-2xl max-w-sm w-full mx-4 overflow-hidden transition-all duration-200 ${visible ? "scale-100" : "scale-95"}`}>
         <div className="p-6 text-center">

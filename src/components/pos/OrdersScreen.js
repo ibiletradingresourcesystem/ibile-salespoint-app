@@ -64,6 +64,8 @@ export default function OrdersScreen({ onNavigateToMenu }) {
   const [selectedTime, setSelectedTime] = useState('');
   const [filteredOrders, setFilteredOrders] = useState([]);
   const [completedTransactions, setCompletedTransactions] = useState([]);
+  // Holds are saved as transactions, so a hold survives a restart or comes from another till
+  const [serverHeldOrders, setServerHeldOrders] = useState([]);
   const [onlineOrders, setOnlineOrders] = useState([]);
   const [isLoadingCompleted, setIsLoadingCompleted] = useState(false);
   const [isLoadingOnlineOrders, setIsLoadingOnlineOrders] = useState(false);
@@ -213,6 +215,28 @@ export default function OrdersScreen({ onNavigateToMenu }) {
       fetchCompletedTransactions();
     }
   }, [activeStatus, fetchCompletedTransactions, isOnline]);
+
+  const fetchHeldOrders = useCallback(async () => {
+    try {
+      const params = new URLSearchParams();
+      if (location?._id) params.append('locationId', location._id);
+      if (location?.name) params.append('location', location.name);
+      const response = await fetch(`/api/transactions/held?${params}`);
+      if (!response.ok) return;
+      const result = await response.json();
+      setServerHeldOrders(Array.isArray(result.data) ? result.data : []);
+    } catch (error) {
+      // The holds kept on this till still show
+      console.warn('Could not load held sales from the database:', error?.message || error);
+    }
+  }, [location]);
+
+  useEffect(() => {
+    if (activeStatus !== 'HELD') return undefined;
+    fetchHeldOrders();
+    const timer = setInterval(fetchHeldOrders, 30000);
+    return () => clearInterval(timer);
+  }, [activeStatus, fetchHeldOrders]);
 
   useEffect(() => {
     if (activeStatus === 'ORDERED') {
@@ -459,17 +483,14 @@ export default function OrdersScreen({ onNavigateToMenu }) {
         };
       });
     } else {
-      // Use held orders from CartContext
-      if (!orders || orders.length === 0) {
-        setFilteredOrders([]);
-        return;
-      }
-
-      sourceOrders = orders
+      // Held orders: the carts held on this till, plus the ones in the database
+      const localOrders = (orders || [])
         .filter(order => order.status === activeStatus)
         .map(order => ({
           id: order.id,
+          externalId: order.id,
           time: order.createdAt ? new Date(order.createdAt).toLocaleString() : 'N/A',
+          createdAt: order.createdAt || new Date().toISOString(),
           customer: order.customer?.name || 'Walk-in',
           staffMember: order.staffMember?.name || order.staffMember || 'Unknown',
           location: order.location?.name || order.location || 'Unknown',
@@ -477,7 +498,42 @@ export default function OrdersScreen({ onNavigateToMenu }) {
           total: order.total || 0,
           status: order.status,
           items: order.items || [],
+          onThisTill: true,
         }));
+
+      // A hold this till already has is not listed twice; the local one is used, so resuming it
+      // picks up exactly the cart that was held
+      const heldHere = new Set(localOrders.map((order) => String(order.id)));
+      const fromDatabase = activeStatus === 'HELD'
+        ? serverHeldOrders
+            .filter((tx) => !heldHere.has(String(tx.externalId || '')) && !heldHere.has(String(tx.id)))
+            .map((tx) => ({
+              id: tx.id,
+              externalId: tx.externalId,
+              time: tx.createdAt ? new Date(tx.createdAt).toLocaleString() : 'N/A',
+              createdAt: tx.createdAt || new Date().toISOString(),
+              customer: tx.customerName || 'Walk-in',
+              staffMember: tx.heldByStaffName || tx.staffName || 'Unknown',
+              location: tx.location || 'Unknown',
+              tenderType: null,
+              total: tx.total || 0,
+              subtotal: tx.subtotal || 0,
+              tax: tx.tax || 0,
+              discount: tx.discount || 0,
+              status: 'HELD',
+              items: tx.items || [],
+              onThisTill: false,
+            }))
+        : [];
+
+      sourceOrders = [...localOrders, ...fromDatabase].sort(
+        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      );
+
+      if (sourceOrders.length === 0) {
+        setFilteredOrders([]);
+        return;
+      }
     }
 
     // Apply date filter if selected
@@ -491,13 +547,27 @@ export default function OrdersScreen({ onNavigateToMenu }) {
     }
 
     setFilteredOrders(filtered);
-  }, [activeStatus, selectedDate, orders, completedTransactions, onlineOrders, location]);
+  }, [activeStatus, selectedDate, orders, completedTransactions, onlineOrders, serverHeldOrders, location]);
 
   const handleOrderSelect = (order) => {
     if (activeStatus === 'COMPLETE' || activeStatus === 'ORDERED') {
       // Show detail panel for completed transactions
       setDetailOrder(order);
       setShowDetailPanel(true);
+    } else if (order.onThisTill === false) {
+      // Held on another till, or before this one restarted: bring the sale itself back
+      recallTransactionToCart({
+        id: order.id,
+        items: order.items,
+        subtotal: order.subtotal,
+        tax: order.tax,
+        discount: order.discount,
+        total: order.total,
+        customerName: order.customer === 'Walk-in' ? null : order.customer,
+        createdAt: order.createdAt,
+      });
+      setServerHeldOrders((current) => current.filter((tx) => String(tx.id) !== String(order.id)));
+      if (onNavigateToMenu) onNavigateToMenu();
     } else {
       // Resume held orders to cart
       resumeOrder(order.id);

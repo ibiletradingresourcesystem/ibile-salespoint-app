@@ -27,7 +27,10 @@ export default async function handler(req, res) {
     const { category, search, locationId } = req.query;
     await releaseExpiredRoomBookings();
     
-    let query = {};
+    // Archived products are deleted as far as the shop is concerned: the inventory
+    // system archives rather than destroys, and until this filter existed a deleted
+    // product still appeared on the till and could be sold.
+    let query = { isArchived: { $ne: true } };
 
     // Filter by category if provided
     if (category) {

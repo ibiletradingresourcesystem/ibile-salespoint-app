@@ -228,6 +228,20 @@ Conflicts and rejections stay on the computer and appear as **SYNC ERROR** with 
 - **Close Till:** columns are in rem and stack on narrow or scaled-up screens; the cash-up table scrolls
   rather than being cut off.
 
+### Held sales
+
+A hold is saved twice: as a cart in this browser's storage, and as a transaction with status
+"held". The Held tab used to read only the first, so a hold made before a restart, or after the
+browser's data was cleared, vanished from the till while the management app still listed it. The tab
+now merges both — `/api/transactions/held` reads the local POS database, and a hold the till still
+has of its own wins, so resuming it brings back exactly the cart that was held. A hold that only the
+database has is recalled into the cart instead, carrying its transaction id, so finishing the sale
+updates that record rather than leaving a second one behind.
+
+Transactions are push-only in the sync (src/lib/sync/entities.js), so a desktop till lists the holds
+it recorded itself. A hold taken on another till shows in the management app and on the web POS,
+which read the cloud database directly.
+
 ### A sale that is worth nothing
 
 A product whose sale price is 0 rings up free, so a whole basket can come to nothing: a completed

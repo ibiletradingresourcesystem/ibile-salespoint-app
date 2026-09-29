@@ -3,6 +3,26 @@ import { createPortal } from "react-dom";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faTimes, faCoins, faPlus, faCheck, faPen, faTrash, faKeyboard } from "@fortawesome/free-solid-svg-icons";
 import NumKeypad from "../common/NumKeypad";
+import { showConfirm } from "../common/ConfirmDialog";
+
+const entryDate = (order) => order?.requestDate || order?.createdAt || null;
+
+/** "24 Sep 2026", or "—" when a record has no date at all. */
+function formatEntryDate(value) {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  return date.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+}
+
+const sameDay = (value, isoDay) => {
+  if (!isoDay) return true;
+  if (!value) return false;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return false;
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  return local.toISOString().slice(0, 10) === isoDay;
+};
 
 function PettyCashPanel({ isOpen, onClose, staffName, location }) {
   const [tab, setTab] = useState("orders");
@@ -19,6 +39,8 @@ function PettyCashPanel({ isOpen, onClose, staffName, location }) {
   const [editingOrderId, setEditingOrderId] = useState(null);
   // Tills with no keyboard: the row whose quantity the on-screen keypad is typing into
   const [keypadRow, setKeypadRow] = useState(null);
+  // Orders are listed with the day they were entered, and can be narrowed to one day
+  const [dateFilter, setDateFilter] = useState("");
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -262,7 +284,20 @@ function PettyCashPanel({ isOpen, onClose, staffName, location }) {
     }
   };
 
-  const handleMarkPaid = async (orderId) => {
+  const handleMarkPaid = async (order) => {
+    const orderId = typeof order === "string" ? order : order?._id;
+    const details = typeof order === "string" ? orders.find((o) => o._id === order) : order;
+
+    const amount = Number(details?.amount || 0).toLocaleString();
+    const itemCount = Array.isArray(details?.products) ? details.products.length : 0;
+    const confirmed = await showConfirm(
+      `Pay ₦${amount} to ${details?.vendorName || "this vendor"}${
+        itemCount ? ` for ${itemCount} item${itemCount === 1 ? "" : "s"}` : ""
+      }? This records the payment and adds it to expenses.`,
+      { title: "Mark as paid", confirmLabel: `Pay ₦${amount}`, cancelLabel: "Not yet" }
+    );
+    if (!confirmed) return;
+
     setSaving(true);
     setMessage(null);
     try {
@@ -292,6 +327,8 @@ function PettyCashPanel({ isOpen, onClose, staffName, location }) {
       setSaving(false);
     }
   };
+
+  const visibleOrders = orders.filter((order) => sameDay(entryDate(order), dateFilter));
 
   if (!isOpen) return null;
 
@@ -351,7 +388,33 @@ function PettyCashPanel({ isOpen, onClose, staffName, location }) {
               </div>
             ) : (
               <div className="space-y-3">
-                {orders.map((order) => (
+                <div className="flex flex-wrap items-center gap-2 pb-1">
+                  <label className="text-xs font-semibold text-gray-600">Entered on</label>
+                  <input
+                    type="date"
+                    value={dateFilter}
+                    onChange={(e) => setDateFilter(e.target.value)}
+                    className="border border-gray-300 rounded px-2 py-1 text-xs"
+                  />
+                  {dateFilter && (
+                    <button
+                      type="button"
+                      onClick={() => setDateFilter("")}
+                      className="text-xs font-semibold text-blue-700 hover:text-blue-900"
+                    >
+                      All dates
+                    </button>
+                  )}
+                  <span className="ml-auto text-[11px] text-gray-500">
+                    {visibleOrders.length} of {orders.length}
+                  </span>
+                </div>
+                {visibleOrders.length === 0 && (
+                  <div className="text-center py-6 text-gray-400 text-sm">
+                    No petty cash entries on {formatEntryDate(dateFilter)}.
+                  </div>
+                )}
+                {visibleOrders.map((order) => (
                   <div key={order._id} className="border border-gray-200 rounded-lg p-3">
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex-1 min-w-0">
@@ -373,6 +436,17 @@ function PettyCashPanel({ isOpen, onClose, staffName, location }) {
                         <p className="text-sm font-bold text-gray-800 mt-1">
                           ₦{Number(order.amount || 0).toLocaleString()}
                         </p>
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-1 text-[10px] text-gray-500">
+                          <span title="Entered on this day">
+                            <strong className="text-gray-600">Entered:</strong> {formatEntryDate(order.requestDate || order.createdAt)}
+                          </span>
+                          {order.receivedAt && (
+                            <span><strong className="text-gray-600">Received:</strong> {formatEntryDate(order.receivedAt)}</span>
+                          )}
+                          {order.paidAt && (
+                            <span><strong className="text-gray-600">Paid:</strong> {formatEntryDate(order.paidAt)}</span>
+                          )}
+                        </div>
                         <div className="flex items-center gap-2 mt-1">
                           <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
                             order.status === "Approved" ? "bg-green-100 text-green-700" :
@@ -407,7 +481,7 @@ function PettyCashPanel({ isOpen, onClose, staffName, location }) {
                         )}
                         {order.status === "Received" && (
                           <button
-                            onClick={() => handleMarkPaid(order._id)}
+                            onClick={() => handleMarkPaid(order)}
                             disabled={saving}
                             className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-300 text-white text-xs font-semibold rounded-lg flex items-center gap-1"
                           >
