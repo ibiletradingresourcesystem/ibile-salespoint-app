@@ -354,6 +354,9 @@ async function startApp() {
   updater.on('status', onUpdateStatus);
 
   sendSplash('Starting the local database…');
+  // A till switched off mid-write leaves files mongod will not open; it repairs them and starts
+  // again by itself, which takes a moment worth explaining
+  mongo.onRepairStart = () => sendSplash('Repairing the local database… this can take a few minutes');
   await mongo.start();
   mongo.onUnexpectedExit = () => recoverFromCrash('database');
 

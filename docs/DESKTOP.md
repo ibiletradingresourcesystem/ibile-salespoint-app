@@ -228,6 +228,31 @@ Conflicts and rejections stay on the computer and appear as **SYNC ERROR** with 
 - **Close Till:** columns are in rem and stack on narrow or scaled-up screens; the cash-up table scrolls
   rather than being cut off.
 
+### A local database that will not open
+
+A till switched off at the wall, or a disk the antivirus grabbed mid-write, can leave the local
+MongoDB files in a state mongod refuses to open: it starts, throws, and exits with **code 14** (or
+100, or 62 for files from another version), so the app showed a fatal error and the till was dead
+until someone rebuilt it — while the same build ran fine everywhere else.
+
+The app now repairs itself. On one of those exit codes `LocalMongo.start` removes any leftover
+`mongod.lock`, runs `mongod --repair` against the data folder (up to 15 minutes, output in
+`logsmongod.log`), and starts again; the splash says what it is doing. Only these codes get a
+repair — a port already in use or a missing Visual C++ runtime is a different problem and still
+reports itself. If the repair does not work either, the message points at SYSTEM → Restore from
+backup.
+
+Sales are not at risk from the repair: they are in the cloud database and in the app's own backups,
+and a test that damages WiredTiger's checkpoint file has the till starting again with the recorded
+sale still in place.
+
+To repair an installation by hand (an older build, or a till that will not start at all):
+
+```
+"C:Program FilesIbile POSesourcesmongodbinmongod.exe" --repair ^
+  --dbpath "%APPDATA%Ibile POSdatamongodb"
+```
+
 ### Held sales
 
 A hold is saved twice: as a cart in this browser's storage, and as a transaction with status

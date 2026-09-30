@@ -3,6 +3,16 @@ import mongoose from "mongoose";
 // Global connection state
 let isConnected = false;
 
+/** "127.0.0.1:27517/ibile_pos" — a connection string with the user and password left out. */
+function describeMongoUri(uri) {
+  const text = String(uri || "");
+  const at = text.lastIndexOf("@");
+  const scheme = text.indexOf("://");
+  // Everything between the scheme and the last "@" is the user and password
+  const withoutCredentials = at > scheme && scheme >= 0 ? text.slice(0, scheme + 3) + text.slice(at + 1) : text;
+  return withoutCredentials.split("?")[0] || "(address hidden)";
+}
+
 export async function mongooseConnect() {
   // If already connected, return immediately
   if (isConnected && mongoose.connection.readyState === 1) {
@@ -23,7 +33,8 @@ export async function mongooseConnect() {
       throw new Error("MONGODB_URI is not configured");
     }
 
-    console.log("🔗 Attempting MongoDB connection...", uri.substring(0, 30) + "...");
+    // Host and database only: the connection string carries credentials
+    console.log("🔗 Attempting MongoDB connection...", describeMongoUri(uri));
     
     const result = await mongoose.connect(uri, {
       maxPoolSize: 10,

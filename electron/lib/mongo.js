@@ -40,12 +40,21 @@ const WINDOWS_START_FAILURES = {
   },
 };
 
+/**
+ * mongod exited after it had started running, which points at its data files rather than at this
+ * computer: 14 is an unhandled exception (what a till that was switched off mid-write shows), 100 is
+ * a failure inside initAndListen, 62 is data written by a version it will not open. Each is worth one
+ * repair attempt before giving up. A port already in use (48) or the codes above are not.
+ */
+const REPAIRABLE_EXIT_CODES = new Set([14, 62, 100]);
+
 class LocalDatabaseStartError extends Error {
   constructor(message, { exitCode = null, reason = 'exit' } = {}) {
     super(message);
     this.name = 'LocalDatabaseStartError';
     this.exitCode = exitCode;
     this.reason = reason;
+    this.repairable = REPAIRABLE_EXIT_CODES.has(Number(exitCode));
   }
 }
 
@@ -84,6 +93,34 @@ class LocalMongo {
       this.log.warn(`Database port ${previous} is in use; using ${this.port}`);
     }
 
+    try {
+      await this.launch();
+    } catch (error) {
+      // The files are in a state mongod will not open. This is what a till shows after it was
+      // switched off at the wall mid-write, and it fixes itself: repair the files and start again.
+      if (!error.repairable) throw error;
+      this.log.warn(`${error.message} Repairing the local database files and trying again.`);
+      this.onRepairStart?.();
+      const repaired = await this.repair();
+      if (!repaired) {
+        throw new LocalDatabaseStartError(
+          'The local database could not start and its files could not be repaired. ' +
+            'Use SYSTEM → Restore from backup on the setup screen, or send logs\\mongod.log for help.',
+          { exitCode: error.exitCode, reason: 'repair_failed' }
+        );
+      }
+      this.log.info('Local database files repaired; starting again');
+      await this.launch();
+    }
+
+    await this.ensureUser();
+    this.log.info(`Local database ready on 127.0.0.1:${this.port}`);
+    return this.uri();
+  }
+
+  /** Starts mongod and waits for it to answer. Throws LocalDatabaseStartError if it exits first. */
+  async launch() {
+    const { mongod, dbPath, logsDir, runDir } = this.paths;
     const args = [
       '--dbpath', dbPath,
       '--port', String(this.port),
@@ -111,9 +148,51 @@ class LocalMongo {
     });
 
     await this.waitUntilReady(120 * 1000);
-    await this.ensureUser();
-    this.log.info(`Local database ready on 127.0.0.1:${this.port}`);
-    return this.uri();
+  }
+
+  /**
+   * `mongod --repair`: rebuilds what WiredTiger can still read and drops what it cannot. Sales are
+   * also in the cloud and in the backups, so the worst case here is a restore, not lost takings.
+   */
+  async repair() {
+    const { mongod, dbPath, logsDir } = this.paths;
+
+    // A lock left behind by a killed process stops even the repair from running
+    const lockFile = path.join(dbPath, 'mongod.lock');
+    try {
+      if (fs.existsSync(lockFile)) {
+        fs.rmSync(lockFile, { force: true });
+        this.log.info('Removed a leftover database lock file');
+      }
+    } catch (error) {
+      this.log.warn(`Could not remove the database lock file: ${error.message}`);
+    }
+
+    const output = openLogStream(logsDir, 'mongod.log');
+    return new Promise((resolve) => {
+      const child = spawn(mongod, ['--dbpath', dbPath, '--repair'], {
+        windowsHide: true,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      child.stdout.pipe(output);
+      child.stderr.pipe(output);
+
+      const timer = setTimeout(() => {
+        this.log.warn('Repairing the local database took too long; stopping it');
+        child.kill();
+      }, 15 * 60 * 1000);
+
+      child.once('error', (error) => {
+        clearTimeout(timer);
+        this.log.error(`Could not run the database repair: ${error.message}`);
+        resolve(false);
+      });
+      child.once('exit', (code) => {
+        clearTimeout(timer);
+        if (code !== 0) this.log.error(`Database repair finished with exit code ${code}`);
+        resolve(code === 0);
+      });
+    });
   }
 
   async waitUntilReady(timeoutMs) {
