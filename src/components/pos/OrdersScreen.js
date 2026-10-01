@@ -135,33 +135,47 @@ export default function OrdersScreen({ onNavigateToMenu }) {
   }, [isOnline, location]);
 
   // Fetch completed transactions from server (online) or IndexedDB (offline)
+  /**
+   * Completed sales for the day being looked at.
+   *
+   * This only ever asked the server for today, and only for the till that is open, so choosing an
+   * earlier date filtered a list that never held that day and the tab came back empty. The day now
+   * comes from the date box, and an earlier day is not tied to the till open now — that one belongs
+   * to today.
+   */
   const fetchCompletedTransactions = useCallback(async () => {
     setIsLoadingCompleted(true);
     try {
       let completed = [];
 
-      // Try to use cached data first (much faster)
-      const cached = getCachedCompletedTransactions();
-      if (cached.length > 0) {
-        console.log(`⚡ Using ${cached.length} cached transactions`);
-        setCompletedTransactions(cached);
+      const dayStart = new Date(selectedDate ? `${selectedDate}T00:00:00` : Date.now());
+      dayStart.setHours(0, 0, 0, 0);
+      const dayEnd = new Date(dayStart);
+      dayEnd.setDate(dayEnd.getDate() + 1);
+      const isToday = dayStart.toDateString() === new Date().toDateString();
+      const onThatDay = (value) => {
+        const at = new Date(value);
+        return at >= dayStart && at < dayEnd;
+      };
+
+      // Today's sales are cached, so the tab fills at once; an earlier day is always fetched
+      if (isToday) {
+        const cached = getCachedCompletedTransactions();
+        if (cached.length > 0) {
+          console.log(`⚡ Using ${cached.length} cached transactions`);
+          setCompletedTransactions(cached);
+        }
       }
 
       if (isOnline) {
-        // Online: Fetch from server API - filter by today's date
         try {
-          const today = new Date();
-          today.setHours(0, 0, 0, 0);
-          const tomorrow = new Date(today);
-          tomorrow.setDate(tomorrow.getDate() + 1);
-
           const params = new URLSearchParams({
-            startDate: today.toISOString(),
-            endDate: tomorrow.toISOString(),
+            startDate: dayStart.toISOString(),
+            endDate: dayEnd.toISOString(),
             limit: 500,
           });
-          // Filter by current till session if available
-          if (till?._id) {
+          // The open till is today's till; an earlier day had its own
+          if (isToday && till?._id) {
             params.append('tillId', till._id);
           }
 
@@ -169,34 +183,25 @@ export default function OrdersScreen({ onNavigateToMenu }) {
           if (response.ok) {
             const result = await response.json();
             completed = result.data || result || [];
-            console.log(`✅ Fetched ${completed.length} completed transactions from server (today)`);
-            // Cache the fresh data
-            cacheCompletedTransactions(completed);
+            console.log(`✅ Fetched ${completed.length} completed transactions (${dayStart.toDateString()})`);
+            // Only today's list is kept: it is what the tab opens with next time
+            if (isToday) cacheCompletedTransactions(completed);
           } else {
             console.warn('Failed to fetch from server, falling back to IndexedDB');
-            completed = await getCompletedTransactions();
+            completed = (await getCompletedTransactions()).filter((tx) => onThatDay(tx.createdAt));
           }
         } catch (error) {
           console.warn('Error fetching from server:', error, 'falling back to IndexedDB');
-          completed = await getCompletedTransactions();
+          completed = (await getCompletedTransactions()).filter((tx) => onThatDay(tx.createdAt));
         }
       } else {
-        // Offline: Fetch from IndexedDB filtered by today and current till
+        // Offline: whatever this till kept for that day
         console.log('🔴 Offline mode - fetching from IndexedDB');
-        let allCompleted = await getCompletedTransactions();
-        
-        // Filter for today's transactions
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        const tomorrow = new Date(today);
-        tomorrow.setDate(tomorrow.getDate() + 1);
-        
-        completed = allCompleted.filter(tx => {
-          const txDate = new Date(tx.createdAt);
-          const isToday = txDate >= today && txDate < tomorrow;
-          // Also filter by tillId if available
-          const matchesTill = till?._id ? (tx.tillId === till._id || tx.tillId?.toString() === till._id) : true;
-          return isToday && matchesTill;
+        const allCompleted = await getCompletedTransactions();
+        completed = allCompleted.filter((tx) => {
+          if (!onThatDay(tx.createdAt)) return false;
+          if (!isToday || !till?._id) return true;
+          return tx.tillId === till._id || tx.tillId?.toString() === till._id;
         });
       }
 
@@ -207,7 +212,7 @@ export default function OrdersScreen({ onNavigateToMenu }) {
     } finally {
       setIsLoadingCompleted(false);
     }
-  }, [isOnline, till]);
+  }, [isOnline, till, selectedDate]);
 
   // Load completed transactions on mount and when switching to COMPLETE tab or online status changes
   useEffect(() => {

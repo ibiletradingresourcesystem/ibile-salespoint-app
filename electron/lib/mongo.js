@@ -112,16 +112,20 @@ function readMongodFailure(logsDir) {
     }
 
     // The first real complaints, which is where the cause is
-    const summary = messages.slice(0, 3).join(' | ');
-    const recent = text.slice(-20000);
+    // Judged on the errors themselves, never on the whole tail of the file: an "Access is denied"
+    // from an older crash (mongod failing to write its own dump, say) would otherwise be read as
+    // the cause of today's failure and send everyone after the antivirus.
+    const errors = messages.join(' | ');
     return {
-      summary,
-      blocked: BLOCKED_PATTERNS.some((pattern) => pattern.test(recent)),
-      socket: SOCKET_PATTERNS.some((pattern) => pattern.test(recent)),
+      summary: messages.slice(0, 3).join(' | '),
+      blocked: BLOCKED_PATTERNS.some((pattern) => pattern.test(errors)),
+      socket: SOCKET_PATTERNS.some((pattern) => pattern.test(errors)),
+      // mongod refuses to open a folder whose repair was interrupted until a repair finishes
+      incompleteRepair: /incomplete repair/i.test(errors),
     };
   } catch {
     // No log to read yet, so nothing is claimed about the cause
-    return { summary: '', blocked: false, socket: false };
+    return { summary: '', blocked: false, socket: false, incompleteRepair: false };
   }
 }
 
@@ -260,6 +264,10 @@ class LocalMongo {
         }
         throw new LocalDatabaseStartError(
           'The local database could not start and its files could not be repaired.' +
+            (failure.incompleteRepair
+              ? ' An earlier repair was interrupted, and these files cannot be opened again until one' +
+                ' finishes — which this one did not.'
+              : '') +
             (failure.summary ? ` It reported: ${failure.summary}.` : '') +
             ' This till can start again with an empty database and take everything back from the cloud.',
           { exitCode: error.exitCode, reason: 'repair_failed' }
