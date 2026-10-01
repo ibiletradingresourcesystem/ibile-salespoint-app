@@ -50,16 +50,39 @@ const hasContents = (dir) => {
   }
 };
 
+/**
+ * Moves the database folder, or leaves everything exactly as it was.
+ *
+ * A rename is all or nothing, so it is tried first. Only when the two folders are on different
+ * drives (EXDEV), where a rename cannot work, is the folder copied — into a temporary folder that
+ * becomes the real one in a single rename once the copy is complete. A copy that stops half way is
+ * thrown away, never mistaken for the database on the next start, and the original is removed only
+ * after the new one is in place.
+ *
+ * A folder that is busy or locked is not copied at all: those files may be changing under the copy.
+ * The till keeps the old folder this time and tries again on the next start.
+ */
 function move(from, to) {
   fs.mkdirSync(path.dirname(to), { recursive: true });
+  // An empty folder left by an earlier start would make the rename fail every time
+  if (fs.existsSync(to) && fs.readdirSync(to).length === 0) fs.rmdirSync(to);
   try {
     fs.renameSync(from, to);
+    return;
   } catch (error) {
-    // Different volumes: copy across, then leave the original for the customer's peace of mind
-    if (error.code !== 'EXDEV' && error.code !== 'EPERM') throw error;
-    fs.cpSync(from, to, { recursive: true });
-    fs.rmSync(from, { recursive: true, force: true });
+    if (error.code !== 'EXDEV') throw error;
   }
+
+  const staging = `${to}.moving`;
+  fs.rmSync(staging, { recursive: true, force: true });
+  try {
+    fs.cpSync(from, staging, { recursive: true });
+    fs.renameSync(staging, to);
+  } catch (error) {
+    fs.rmSync(staging, { recursive: true, force: true });
+    throw error;
+  }
+  fs.rmSync(from, { recursive: true, force: true });
 }
 
 /**
@@ -68,6 +91,13 @@ function move(from, to) {
  */
 function resolveDataFolder({ dbPath, legacyDbPath, log }) {
   if (!legacyDbPath || legacyDbPath === dbPath) return dbPath;
+
+  // A copy that never finished (the computer went off mid-move) is not a database
+  try {
+    fs.rmSync(`${dbPath}.moving`, { recursive: true, force: true });
+  } catch {
+    // nothing there, or it will be cleared next time
+  }
 
   if (hasContents(dbPath)) {
     if (hasContents(legacyDbPath)) {
@@ -84,7 +114,8 @@ function resolveDataFolder({ dbPath, legacyDbPath, log }) {
     log?.info('Local database folder moved');
     return dbPath;
   } catch (error) {
-    log?.error(`Could not move the local database folder: ${error.message}. Using ${legacyDbPath}.`);
+    // Nothing has changed: the database is still whole in its old folder
+    log?.warn(`Could not move the local database folder yet (${error.code || error.message}); using ${legacyDbPath} and trying again next start.`);
     return legacyDbPath;
   }
 }

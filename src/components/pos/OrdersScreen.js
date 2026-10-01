@@ -64,6 +64,8 @@ export default function OrdersScreen({ onNavigateToMenu }) {
   const [selectedTime, setSelectedTime] = useState('');
   const [filteredOrders, setFilteredOrders] = useState([]);
   const [completedTransactions, setCompletedTransactions] = useState([]);
+  // Said above the list when an earlier day could only be read from this till
+  const [completedNote, setCompletedNote] = useState('');
   // Holds are saved as transactions, so a hold survives a restart or comes from another till
   const [serverHeldOrders, setServerHeldOrders] = useState([]);
   const [onlineOrders, setOnlineOrders] = useState([]);
@@ -183,6 +185,7 @@ export default function OrdersScreen({ onNavigateToMenu }) {
           if (response.ok) {
             const result = await response.json();
             completed = result.data || result || [];
+            setCompletedNote(result.note || '');
             console.log(`✅ Fetched ${completed.length} completed transactions (${dayStart.toDateString()})`);
             // Only today's list is kept: it is what the tab opens with next time
             if (isToday) cacheCompletedTransactions(completed);
@@ -197,6 +200,9 @@ export default function OrdersScreen({ onNavigateToMenu }) {
       } else {
         // Offline: whatever this till kept for that day
         console.log('🔴 Offline mode - fetching from IndexedDB');
+        setCompletedNote(
+          isToday ? '' : 'Offline: showing only the sales this till kept. Other tills\' sales for that day appear once it is back online.'
+        );
         const allCompleted = await getCompletedTransactions();
         completed = allCompleted.filter((tx) => {
           if (!onThatDay(tx.createdAt)) return false;
@@ -764,6 +770,12 @@ export default function OrdersScreen({ onNavigateToMenu }) {
           </button>
         )}
       </div>
+
+      {activeStatus === 'COMPLETE' && completedNote && (
+        <div className="bg-amber-50 border-b border-amber-200 px-3 py-1.5 text-[11px] text-amber-800">
+          {completedNote}
+        </div>
+      )}
 
       {/* Orders Table */}
       <div className="flex-1 overflow-y-auto">

@@ -238,8 +238,12 @@ like when it works on the day it is installed and will not open the next morning
 while every other one is fine.
 
 An installation that still has its database in Roaming has it moved across on the next start
-(`lib/dataFolder.js`), keeping its sales; if the move cannot be done the till carries on with the
-old folder and says so in the log. A database folder that still resolves onto a network drive stops
+(`lib/dataFolder.js`), keeping its sales. The move is all or nothing: a rename where it can be one,
+and across drives a copy into `mongodb.moving` that becomes the real folder in one rename once it
+is complete, with the original removed only afterwards. A folder that is busy (a database process
+from before still holds it) is not copied at all — the till keeps the old folder and tries again on
+the next start — and a `.moving` folder left by a power cut is discarded, never taken for the
+database. A database folder that still resolves onto a network drive stops
 the start with a message naming the problem, because there is nothing the app can do about it.
 
 ### A local database that will not open
@@ -308,6 +312,19 @@ To repair an installation by hand (an older build, or a till that will not start
 "C:Program FilesIbile POSesourcesmongodbinmongod.exe" --repair ^
   --dbpath "%APPDATA%Ibile POSdatamongodb"
 ```
+
+### Completed sales for an earlier day
+
+Sales only travel from a till to the cloud — they never come back down (`PUSH_ENTITIES`). So a
+till's own database holds only the sales it recorded itself: an earlier day showed none of the other
+tills' sales, and nothing at all on a till whose database had been started again.
+
+`/api/transactions/completed` now reads an earlier day from the cloud as well, and merges: this
+till's copy of a sale wins (it may not have been sent yet), the cloud fills in the rest, and a sale
+held in both is listed once. Today stays on this till, so the Completed tab's own refreshing never
+reaches out to the cloud. If the cloud does not answer within 12 seconds, the till lists its own
+sales for that day and says so above the list. On the web POS nothing changes: it already reads the
+cloud directly.
 
 ### Held sales
 
