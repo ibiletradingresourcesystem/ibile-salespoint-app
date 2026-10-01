@@ -21,9 +21,10 @@ const { spawn } = require('child_process');
 const { app, BrowserWindow, Menu, dialog, ipcMain, net, powerMonitor, safeStorage, screen, shell } = require('electron');
 
 const { getPaths } = require('./lib/paths');
+const { resolveDataFolder, isNetworkPath } = require('./lib/dataFolder');
 const { createLogger } = require('./lib/logger');
 const { DesktopConfig } = require('./lib/config');
-const { LocalMongo } = require('./lib/mongo');
+const { LocalMongo, LocalDatabaseStartError } = require('./lib/mongo');
 const { LocalServer } = require('./lib/server');
 const backups = require('./lib/backup');
 const migrations = require('./lib/migrations');
@@ -341,6 +342,18 @@ async function startApp() {
   paths = getPaths();
   log = createLogger(paths.logsDir);
   log.info(`Ibile POS ${app.getVersion()} starting (${paths.isDev ? 'development' : 'installed'})`);
+
+  // The database goes on this computer, never in a roaming profile or on a share
+  paths.dbPath = resolveDataFolder({ dbPath: paths.dbPath, legacyDbPath: paths.legacyDbPath, log });
+  log.info(`Local database folder: ${paths.dbPath}`);
+  if (isNetworkPath(paths.dbPath)) {
+    throw new LocalDatabaseStartError(
+      `The local database folder is on a network drive (${paths.dbPath}). MongoDB cannot run from one. ` +
+        'This computer\'s Windows profile is redirected to a server; it needs a local folder (ask whoever ' +
+        'manages these computers to exclude Ibile POS from folder redirection).',
+      { reason: 'network_path' }
+    );
+  }
   app.setAppUserModelId('com.ibilemart.pos');
 
   config = new DesktopConfig(paths.configFile, appDefaults);

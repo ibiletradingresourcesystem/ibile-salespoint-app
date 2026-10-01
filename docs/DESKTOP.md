@@ -228,6 +228,20 @@ Conflicts and rejections stay on the computer and appear as **SYNC ERROR** with 
 - **Close Till:** columns are in rem and stack on narrow or scaled-up screens; the cash-up table scrolls
   rather than being cut off.
 
+### Where the database lives
+
+Everything else is in `%APPDATA%Ibile POS` (Roaming), but the database is in
+`%LOCALAPPDATA%Ibile POSdatamongodb`. Roaming is the folder Windows copies to a server at
+sign-in and sign-out on a managed computer, or redirects onto a share outright — MongoDB supports
+neither, and a profile copy takes the files while they are being written. That is what a till looks
+like when it works on the day it is installed and will not open the next morning, on one computer
+while every other one is fine.
+
+An installation that still has its database in Roaming has it moved across on the next start
+(`lib/dataFolder.js`), keeping its sales; if the move cannot be done the till carries on with the
+old folder and says so in the log. A database folder that still resolves onto a network drive stops
+the start with a message naming the problem, because there is nothing the app can do about it.
+
 ### A local database that will not open
 
 A till switched off at the wall, or a disk the antivirus grabbed mid-write, can leave the local
@@ -245,6 +259,12 @@ backup.
 Sales are not at risk from the repair: they are in the cloud database and in the app's own backups,
 and a test that damages WiredTiger's checkpoint file has the till starting again with the recorded
 sale still in place.
+
+**Before mongod runs at all**, the app writes a probe file into the data folder. Ransomware
+protection — Windows Security's *Controlled folder access*, or a third-party shield — lets a program
+start and then refuses its writes, and mongod answers that by throwing and exiting 14, which reads
+like a damaged database and sends everyone looking in the wrong place. The probe separates the two
+and the message names the program and the folder to allow.
 
 **When the repair cannot help either.** Exit code 14 on its own says only "mongod threw", so the app
 reads back the error and fatal lines mongod wrote (`readMongodFailure`) and repeats them in its own

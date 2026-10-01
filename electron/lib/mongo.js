@@ -108,6 +108,25 @@ class LocalDatabaseStartError extends Error {
   }
 }
 
+/**
+ * Can the app write where the database lives?
+ *
+ * Ransomware protection — Defender's Controlled Folder Access, Avast's Ransomware Shield — lets a
+ * program run and then refuses its writes. mongod answers that by throwing and exiting 14, which on
+ * its own reads like a damaged database and sends everyone looking in the wrong place. One probe
+ * file before it starts separates the two.
+ */
+function checkFolderIsWritable(dbPath) {
+  const probe = path.join(dbPath, '.ibile-write-test');
+  try {
+    fs.writeFileSync(probe, String(Date.now()));
+    fs.rmSync(probe, { force: true });
+    return null;
+  } catch (error) {
+    return error;
+  }
+}
+
 class LocalMongo {
   constructor({ paths, config, log }) {
     this.paths = paths;
@@ -133,6 +152,18 @@ class LocalMongo {
     }
 
     fs.mkdirSync(dbPath, { recursive: true });
+
+    const writeError = checkFolderIsWritable(dbPath);
+    if (writeError) {
+      throw new LocalDatabaseStartError(
+        'Ibile POS is not allowed to write to the folder its database lives in ' +
+          `("${dbPath}": ${writeError.code || writeError.message}). This is ransomware protection — ` +
+          "Windows Security's Controlled folder access, or Avast's Ransomware Shield. Allow " +
+          `"${mongod}" and that folder, then start Ibile POS again.`,
+        { reason: 'blocked' }
+      );
+    }
+
     await killOrphan(runDir, 'mongod', path.basename(mongod), this.log);
 
     this.port = this.config.get('mongoPort');

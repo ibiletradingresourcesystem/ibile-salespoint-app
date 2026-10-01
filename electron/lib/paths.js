@@ -6,10 +6,17 @@
  *
  *   %APPDATA%\Ibile POS\
  *     config.json        installation id, ports, encrypted secrets
- *     data\mongodb\      local MongoDB database
  *     backups\           automatic and manual backups
  *     logs\              main.log, server.log, mongod.log
  *     run\               process ids (to clean up after a crash)
+ *
+ *   %LOCALAPPDATA%\Ibile POS\
+ *     data\mongodb\      local MongoDB database
+ *
+ * The database is the one thing that must not be in Roaming: that folder is copied to a server at
+ * sign-in on a managed computer, or redirected onto a network share, and MongoDB supports neither.
+ * %LOCALAPPDATA% stays on the computer. An installation that still has its database in Roaming has
+ * it moved across on the next start (lib/dataFolder.js).
  */
 
 const path = require('path');
@@ -21,13 +28,19 @@ function getPaths() {
   const isDev = !app.isPackaged;
   const repoRoot = path.resolve(__dirname, '..', '..');
   const userData = app.getPath('userData');
+  // app.getPath('userData') is Roaming; the database belongs on this computer only
+  const localData = process.env.LOCALAPPDATA
+    ? path.join(process.env.LOCALAPPDATA, app.getName())
+    : userData;
 
   return {
     isDev,
     repoRoot,
     userData,
+    localData,
     configFile: path.join(userData, 'config.json'),
-    dbPath: path.join(userData, 'data', 'mongodb'),
+    dbPath: path.join(localData, 'data', 'mongodb'),
+    legacyDbPath: path.join(userData, 'data', 'mongodb'),
     backupsDir: path.join(userData, 'backups'),
     logsDir: path.join(userData, 'logs'),
     runDir: path.join(userData, 'run'),
