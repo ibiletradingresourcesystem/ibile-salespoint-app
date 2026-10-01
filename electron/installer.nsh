@@ -40,6 +40,18 @@
     DetailPrint "Microsoft Visual C++ Runtime installer finished (code $R0)"
 
   ibile_vcredist_done:
+
+  ; The local database listens on 127.0.0.1 only, but a firewall still decides whether the program
+  ; may open that socket at all; on a domain computer the policy often says no by default. These
+  ; rules name the program rather than a port, so they hold when the port changes.
+  DetailPrint "Allowing the local database through Windows Firewall..."
+  nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="Ibile POS local database"'
+  Pop $R0
+  nsExec::ExecToLog 'netsh advfirewall firewall add rule name="Ibile POS local database" dir=in action=allow program="$INSTDIR\resources\mongodb\bin\mongod.exe" enable=yes profile=any'
+  Pop $R0
+  nsExec::ExecToLog 'netsh advfirewall firewall add rule name="Ibile POS local database" dir=out action=allow program="$INSTDIR\resources\mongodb\bin\mongod.exe" enable=yes profile=any'
+  Pop $R0
+
   Pop $R7
   Pop $R6
   Pop $R5
@@ -47,5 +59,11 @@
   Pop $R3
   Pop $R2
   Pop $R1
+  Pop $R0
+!macroend
+
+!macro customUnInstall
+  ; Leave nothing of ours in the firewall rules
+  nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="Ibile POS local database"'
   Pop $R0
 !macroend

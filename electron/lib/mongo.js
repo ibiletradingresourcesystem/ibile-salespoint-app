@@ -58,6 +58,22 @@ const BLOCKED_PATTERNS = [
 ];
 
 /**
+ * A socket mongod was not allowed to open. Windows says this when a firewall rule or a security
+ * policy stops that program listening, and when the port sits inside a range Windows has reserved
+ * (Hyper-V and WSL take blocks of ports and move them at every restart).
+ */
+const SOCKET_PATTERNS = [
+  /forbidden by its access permissions/i,
+  /failed to set up listener/i,
+  /address already in use/i,
+  /SocketException/,
+  /WSAEACCES|10013/,
+];
+
+// mongod prints these after a crash whatever caused it; the cause is in the lines before them
+const BOILERPLATE = /unhandled exception|stack trace for|immediate exit|writing fatal message|aborting after|got signal/i;
+
+/**
  * The last thing mongod complained about, from its own log.
  *
  * Exit code 14 on its own says nothing — it is "mongod threw" — so the app reads back the error and
@@ -78,23 +94,34 @@ function readMongodFailure(logsDir) {
         continue; // mongod also writes plain lines; only its JSON carries severities
       }
       if (entry.s !== 'E' && entry.s !== 'F') continue;
-      const detail = entry.attr?.error?.message || entry.attr?.error || entry.attr?.reason || '';
+      const detail =
+        entry.attr?.error?.errmsg ||
+        entry.attr?.error?.message ||
+        entry.attr?.error ||
+        entry.attr?.reason ||
+        entry.attr?.message ||
+        '';
       const message = [entry.msg, typeof detail === 'string' ? detail : JSON.stringify(detail)]
         .filter(Boolean)
         .join(': ')
         .trim();
-      // The dump file it could not write is a consequence of the crash, not the cause
-      if (!message || /minidump/i.test(message)) continue;
+      // The dump file it could not write, and the crash notice itself, are consequences — the line
+      // that says why comes before them
+      if (!message || /minidump/i.test(message) || BOILERPLATE.test(message)) continue;
       if (!messages.includes(message)) messages.push(message);
     }
 
-    const summary = messages.slice(-3).join(' | ');
+    // The first real complaints, which is where the cause is
+    const summary = messages.slice(0, 3).join(' | ');
+    const recent = text.slice(-20000);
     return {
       summary,
-      blocked: BLOCKED_PATTERNS.some((pattern) => pattern.test(text.slice(-20000))),
+      blocked: BLOCKED_PATTERNS.some((pattern) => pattern.test(recent)),
+      socket: SOCKET_PATTERNS.some((pattern) => pattern.test(recent)),
     };
   } catch {
-    return { summary: '', blocked: false };
+    // No log to read yet, so nothing is claimed about the cause
+    return { summary: '', blocked: false, socket: false };
   }
 }
 
@@ -179,7 +206,44 @@ class LocalMongo {
     } catch (error) {
       // The files are in a state mongod will not open. This is what a till shows after it was
       // switched off at the wall mid-write, and it fixes itself: repair the files and start again.
-      if (!error.repairable || error.reason === 'blocked') throw error;
+      if (error.reason === 'blocked') throw error;
+
+      // Not the files: mongod was not allowed to open its port. A firewall rule or a security
+      // policy can block that program on that port, and Windows itself reserves blocks of ports
+      // that move at every restart — which is what a till that starts once and then will not looks
+      // like. Another port costs nothing to try.
+      const listener = readMongodFailure(this.paths.logsDir);
+      if (listener.socket) {
+        const previous = this.port;
+        this.port = await findFreePort(previous + 1);
+        this.config.set({ mongoPort: this.port });
+        this.log.warn(
+          `The local database was not allowed to use port ${previous} (${listener.summary || 'socket error'}); ` +
+            `trying port ${this.port}`
+        );
+        try {
+          await this.launch();
+          this.log.info(`Local database moved to port ${this.port}`);
+          await this.ensureUser();
+          this.log.info(`Local database ready on 127.0.0.1:${this.port}`);
+          return this.uri();
+        } catch (retryError) {
+          const again = readMongodFailure(this.paths.logsDir);
+          if (again.socket) {
+            throw new LocalDatabaseStartError(
+              'The local database is not allowed to open a port on this computer. A firewall rule or ' +
+                'a security policy is blocking the database program itself, so changing the port does ' +
+                `not help. Allow "${this.paths.mongod}" through the firewall (it only listens on this ` +
+                'computer, 127.0.0.1), or ask whoever manages these computers to allow it.' +
+                (again.summary ? ` The database reported: ${again.summary}.` : ''),
+              { exitCode: retryError.exitCode, reason: 'blocked' }
+            );
+          }
+          throw retryError;
+        }
+      }
+
+      if (!error.repairable) throw error;
       this.log.warn(`${error.message} Repairing the local database files and trying again.`);
       this.onRepairStart?.();
       const repaired = await this.repair();
@@ -401,4 +465,4 @@ class LocalMongo {
   }
 }
 
-module.exports = { LocalMongo, LocalDatabaseStartError, DATABASE_NAME };
+module.exports = { LocalMongo, LocalDatabaseStartError, DATABASE_NAME, readMongodFailure };

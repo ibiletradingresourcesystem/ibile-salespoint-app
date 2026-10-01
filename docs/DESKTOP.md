@@ -266,10 +266,26 @@ start and then refuses its writes, and mongod answers that by throwing and exiti
 like a damaged database and sends everyone looking in the wrong place. The probe separates the two
 and the message names the program and the folder to allow.
 
+**A port the database is not allowed to open.** mongod listens on 127.0.0.1 only, but a firewall
+rule or a domain security policy still decides whether *that program* may open a socket at all, and
+Windows reserves blocks of ports for Hyper-V and WSL that move at every restart. Either way mongod
+throws at startup and exits 14 — the same code as damaged files, and the reason a till can work when
+it is installed and refuse to open the next morning.
+
+The app's own check binds the port with its own process, which a per-program rule lets through, so
+the block only shows when mongod tries. When the log says the listener failed, the app moves to the
+next free port, remembers it, and starts; if that is refused too, the program itself is blocked and
+the message says so and names `mongod.exe` to allow. The installer adds inbound and outbound
+Windows Firewall rules for `mongod.exe` (`installer.nsh`, removed again on uninstall), so this does
+not have to be done by hand on each till.
+
 **When the repair cannot help either.** Exit code 14 on its own says only "mongod threw", so the app
-reads back the error and fatal lines mongod wrote (`readMongodFailure`) and repeats them in its own
-message and log — "Unable to read the storage engine metadata file", "Access is denied", whatever it
-was. Two outcomes follow:
+reads back the error lines mongod wrote (`readMongodFailure`) and repeats them in its own message
+and log — "Failed to set up listener: an attempt was made to access a socket in a way forbidden by
+its access permissions", "Unable to read the storage engine metadata file", whatever it was. The
+three lines mongod prints *after* any crash ("Unhandled exception", "stack trace for unhandled
+exception", "immediate exit due to unhandled exception") are skipped: they are what every crash
+looks like, and quoting them back told nobody anything. Three outcomes follow:
 
 - *Something is blocking it* (access denied, permission denied, file in use): the message names the
   program and the folder to allow in the antivirus, and no repair is attempted, because repairing is
