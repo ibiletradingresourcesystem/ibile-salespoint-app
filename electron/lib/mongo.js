@@ -48,6 +48,56 @@ const WINDOWS_START_FAILURES = {
  */
 const REPAIRABLE_EXIT_CODES = new Set([14, 62, 100]);
 
+/** Windows words for "something outside this app would not let mongod touch its files". */
+const BLOCKED_PATTERNS = [
+  /access is denied/i,
+  /permission denied/i,
+  /operation not permitted/i,
+  /used by another process/i,
+  /EPERM|EACCES/,
+];
+
+/**
+ * The last thing mongod complained about, from its own log.
+ *
+ * Exit code 14 on its own says nothing — it is "mongod threw" — so the app reads back the error and
+ * fatal lines it wrote and repeats them. That is the difference between "it will not start" and
+ * "your antivirus will not let it write to its folder".
+ */
+function readMongodFailure(logsDir) {
+  try {
+    const text = fs.readFileSync(path.join(logsDir, 'mongod.log'), 'utf8');
+    const lines = text.split(/\r?\n/).slice(-400).filter(Boolean);
+    const messages = [];
+
+    for (const line of lines) {
+      let entry = null;
+      try {
+        entry = JSON.parse(line);
+      } catch {
+        continue; // mongod also writes plain lines; only its JSON carries severities
+      }
+      if (entry.s !== 'E' && entry.s !== 'F') continue;
+      const detail = entry.attr?.error?.message || entry.attr?.error || entry.attr?.reason || '';
+      const message = [entry.msg, typeof detail === 'string' ? detail : JSON.stringify(detail)]
+        .filter(Boolean)
+        .join(': ')
+        .trim();
+      // The dump file it could not write is a consequence of the crash, not the cause
+      if (!message || /minidump/i.test(message)) continue;
+      if (!messages.includes(message)) messages.push(message);
+    }
+
+    const summary = messages.slice(-3).join(' | ');
+    return {
+      summary,
+      blocked: BLOCKED_PATTERNS.some((pattern) => pattern.test(text.slice(-20000))),
+    };
+  } catch {
+    return { summary: '', blocked: false };
+  }
+}
+
 class LocalDatabaseStartError extends Error {
   constructor(message, { exitCode = null, reason = 'exit' } = {}) {
     super(message);
@@ -98,14 +148,25 @@ class LocalMongo {
     } catch (error) {
       // The files are in a state mongod will not open. This is what a till shows after it was
       // switched off at the wall mid-write, and it fixes itself: repair the files and start again.
-      if (!error.repairable) throw error;
+      if (!error.repairable || error.reason === 'blocked') throw error;
       this.log.warn(`${error.message} Repairing the local database files and trying again.`);
       this.onRepairStart?.();
       const repaired = await this.repair();
       if (!repaired) {
+        const failure = readMongodFailure(this.paths.logsDir);
+        if (failure.blocked) {
+          throw new LocalDatabaseStartError(
+            'Something on this computer is stopping the local database from using its own files — ' +
+              'antivirus (Avast Ransomware Shield and similar) or Windows permissions. Allow ' +
+              `"${this.paths.mongod}" and the folder "${this.paths.dbPath}", then start Ibile POS again.` +
+              (failure.summary ? ` The database reported: ${failure.summary}.` : ''),
+            { exitCode: error.exitCode, reason: 'blocked' }
+          );
+        }
         throw new LocalDatabaseStartError(
-          'The local database could not start and its files could not be repaired. ' +
-            'Use SYSTEM → Restore from backup on the setup screen, or send logs\\mongod.log for help.',
+          'The local database could not start and its files could not be repaired.' +
+            (failure.summary ? ` It reported: ${failure.summary}.` : '') +
+            ' This till can start again with an empty database and take everything back from the cloud.',
           { exitCode: error.exitCode, reason: 'repair_failed' }
         );
       }
@@ -133,7 +194,7 @@ class LocalMongo {
     const output = openLogStream(logsDir, 'mongod.log');
     this.stopping = false;
     this.exitInfo = null;
-    this.child = spawn(mongod, args, { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+    this.child = spawn(mongod, args, { cwd: dbPath, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
     this.child.stdout.pipe(output);
     this.child.stderr.pipe(output);
     writePid(runDir, 'mongod', this.child.pid);
@@ -171,6 +232,7 @@ class LocalMongo {
     const output = openLogStream(logsDir, 'mongod.log');
     return new Promise((resolve) => {
       const child = spawn(mongod, ['--dbpath', dbPath, '--repair'], {
+        cwd: dbPath,
         windowsHide: true,
         stdio: ['ignore', 'pipe', 'pipe'],
       });
@@ -195,6 +257,21 @@ class LocalMongo {
     });
   }
 
+  /**
+   * Moves the data folder aside and leaves an empty one in its place, so the till can start again
+   * and take the store's data back from the cloud. The old folder is kept next to it: anything that
+   * had not reached the cloud yet is still in there for support to pull out.
+   */
+  setAsideDataFolder() {
+    const { dbPath } = this.paths;
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const kept = `${dbPath}-unreadable-${stamp}`;
+    fs.renameSync(dbPath, kept);
+    fs.mkdirSync(dbPath, { recursive: true });
+    this.log.warn(`Started a new local database; the old files are kept in ${kept}`);
+    return kept;
+  }
+
   async waitUntilReady(timeoutMs) {
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
@@ -204,8 +281,19 @@ class LocalMongo {
         if (known) {
           throw new LocalDatabaseStartError(`${known.message} (exit code ${code})`, { exitCode: code, reason: known.reason });
         }
+        const failure = readMongodFailure(this.paths.logsDir);
+        if (failure.blocked) {
+          throw new LocalDatabaseStartError(
+            'Something on this computer is stopping the local database from using its own files — ' +
+              'antivirus (Avast Ransomware Shield and similar) or Windows permissions. Allow ' +
+              `"${this.paths.mongod}" and the folder "${this.paths.dbPath}", then start Ibile POS again.` +
+              (failure.summary ? ` The database reported: ${failure.summary}.` : ''),
+            { exitCode: code, reason: 'blocked' }
+          );
+        }
         throw new LocalDatabaseStartError(
-          `The local database could not start (exit code ${code}). Details are in logs\\mongod.log.`,
+          `The local database could not start (exit code ${code}).` +
+            (failure.summary ? ` It reported: ${failure.summary}.` : ' Details are in logs\\mongod.log.'),
           { exitCode: code }
         );
       }

@@ -246,6 +246,26 @@ Sales are not at risk from the repair: they are in the cloud database and in the
 and a test that damages WiredTiger's checkpoint file has the till starting again with the recorded
 sale still in place.
 
+**When the repair cannot help either.** Exit code 14 on its own says only "mongod threw", so the app
+reads back the error and fatal lines mongod wrote (`readMongodFailure`) and repeats them in its own
+message and log — "Unable to read the storage engine metadata file", "Access is denied", whatever it
+was. Two outcomes follow:
+
+- *Something is blocking it* (access denied, permission denied, file in use): the message names the
+  program and the folder to allow in the antivirus, and no repair is attempted, because repairing is
+  not the problem.
+- *The files are beyond repair*: the till is offered a way back — the data folder is renamed to
+  `datamongodb-unreadable-<timestamp>` and an empty one takes its place. The cloud connection stays
+  in `config.json`, and the sync state lives in the database that was just emptied, so the next start
+  downloads the store's products, staff, prices and settings again without anyone setting the POS up
+  or typing a manager passcode. The old folder is kept, never deleted: a sale that had not reached
+  the cloud is still in it.
+
+mongod is also launched with its working directory set to the data folder. It drops crash dumps in
+its working directory, which used to be `C:Program FilesIbile POS`, where Windows refuses the
+write — that is the "Failed to open minidump file … Access is denied" line that made these crashes
+harder to read than they needed to be.
+
 To repair an installation by hand (an older build, or a till that will not start at all):
 
 ```

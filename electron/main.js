@@ -475,6 +475,10 @@ async function fatal(error) {
   log?.error('Fatal error', error);
   sendSplash(error?.message || 'Ibile POS could not start', true);
   if (error?.reason === 'vc_runtime') return repairVisualCppRuntime(error);
+  // Files this computer will not let the database read, and that a repair could not mend either:
+  // the till can still trade, by starting a new database and taking the store's data from the cloud
+  if (error?.reason === 'repair_failed') return startOverWithEmptyDatabase(error);
+
   const { response } = await dialog.showMessageBox({
     type: 'error',
     title: 'Ibile POS',
@@ -486,6 +490,61 @@ async function fatal(error) {
   });
   if (response === 0 && paths) await shell.openPath(paths.logsDir);
   await shutdown();
+}
+
+/**
+ * Offers the till a way back: the unreadable data folder is kept aside and a new one takes its
+ * place, then the app restarts and sets itself up again from the cloud database.
+ *
+ * Sales that had already synced are in the cloud and come back. Anything this till had not sent yet
+ * stays in the folder that is kept, which is why it is never deleted.
+ */
+async function startOverWithEmptyDatabase(error) {
+  const { response } = await dialog.showMessageBox({
+    type: 'error',
+    title: 'Ibile POS',
+    message: 'The local database on this computer cannot be opened.',
+    detail:
+      `${error?.message || error}\n\n` +
+      'Start again with an empty database: this POS keeps its connection to the store and takes the ' +
+      'products, staff, prices and settings back from the cloud. The old files are kept on this ' +
+      'computer, so any sale that had not reached the cloud can still be recovered from them.',
+    buttons: ['Start again with an empty database', 'Open Logs Folder', 'Quit'],
+    defaultId: 0,
+    cancelId: 2,
+  });
+
+  if (response === 1) {
+    if (paths) await shell.openPath(paths.logsDir);
+    return shutdown();
+  }
+  if (response !== 0) return shutdown();
+
+  try {
+    const kept = mongo.setAsideDataFolder();
+    // The sync state lives in the database itself (sync_state), so an empty folder means the next
+    // start downloads everything again. The cloud connection stays in config.json, so nobody has to
+    // set this POS up or enter a manager passcode a second time.
+    await dialog.showMessageBox({
+      type: 'info',
+      title: 'Ibile POS',
+      message: 'Ibile POS will start again.',
+      detail: `The old database files are kept in:\n${kept}\n\nWhen it opens it downloads the store's data again.`,
+      buttons: ['Restart Ibile POS'],
+    });
+    app.relaunch();
+    app.exit(0);
+  } catch (resetError) {
+    log?.error('Could not start a new local database', resetError);
+    await dialog.showMessageBox({
+      type: 'error',
+      title: 'Ibile POS',
+      message: 'The old database files could not be moved aside.',
+      detail: `${resetError.message}\n\nThis is usually antivirus or Windows permissions. Send logs\\mongod.log for help.`,
+      buttons: ['Quit'],
+    });
+    await shutdown();
+  }
 }
 
 /* ------------------------------------------------------------------ shutdown */
