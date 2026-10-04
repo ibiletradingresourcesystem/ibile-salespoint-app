@@ -569,6 +569,7 @@ export default function OrdersScreen({ onNavigateToMenu }) {
       // Held on another till, or before this one restarted: bring the sale itself back
       recallTransactionToCart({
         id: order.id,
+        fromHold: true,
         items: order.items,
         subtotal: order.subtotal,
         tax: order.tax,

@@ -236,6 +236,11 @@ export default function PaymentPanel() {
         })),
         ...(editTransactionId ? {} : { externalId: clientId, clientId }),
         ...(editTransactionId ? { editTransactionId, subStatus: "edited" } : {}),
+        // Finishing a hold, not re-editing a finished sale: the server refuses it if the hold has
+        // already been paid for somewhere else
+        ...(editTransactionId && (activeCart.status === "HELD" || activeCart.recalledFromHold)
+          ? { expectedStatus: "held" }
+          : {}),
         total: totals.total,
         subtotal: totals.subtotal,
         tax: totals.tax,

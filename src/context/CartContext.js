@@ -669,6 +669,8 @@ export function CartProvider({ children }) {
         ...INITIAL_CART,
         id: transaction.id || transaction._id || null,
         recallSourceTransactionId: transaction.id || transaction._id || null,
+        // A hold brought back from the database, as opposed to a finished sale recalled for a refund
+        recalledFromHold: Boolean(transaction.fromHold),
         items: mappedItems,
         discountPercent: transaction.discount || 0,
         subtotal: transaction.subtotal || 0,

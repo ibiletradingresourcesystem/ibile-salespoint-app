@@ -28,10 +28,14 @@ function getPaths() {
   const isDev = !app.isPackaged;
   const repoRoot = path.resolve(__dirname, '..', '..');
   const userData = app.getPath('userData');
-  // app.getPath('userData') is Roaming; the database belongs on this computer only
-  const localData = process.env.LOCALAPPDATA
-    ? path.join(process.env.LOCALAPPDATA, app.getName())
-    : userData;
+  // app.getPath('userData') is Roaming; the database belongs on this computer only. An instance
+  // started with POS_USER_DATA_DIR (tests, support) keeps its database in that folder as well:
+  // pointing it at %LOCALAPPDATA% would put it on the installed till's live database.
+  const localData = process.env.POS_USER_DATA_DIR
+    ? userData
+    : process.env.LOCALAPPDATA
+      ? path.join(process.env.LOCALAPPDATA, app.getName())
+      : userData;
 
   return {
     isDev,

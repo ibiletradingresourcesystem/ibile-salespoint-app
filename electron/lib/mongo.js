@@ -43,10 +43,11 @@ const WINDOWS_START_FAILURES = {
 /**
  * mongod exited after it had started running, which points at its data files rather than at this
  * computer: 14 is an unhandled exception (what a till that was switched off mid-write shows), 100 is
- * a failure inside initAndListen, 62 is data written by a version it will not open. Each is worth one
- * repair attempt before giving up. A port already in use (48) or the codes above are not.
+ * a failure inside initAndListen. Each is worth one repair attempt before giving up. 62 (files from
+ * a different MongoDB version) is not: a repair cannot convert them and drops what it cannot read.
+ * Nor is 100 when another mongod is holding the folder — see `inUse` below.
  */
-const REPAIRABLE_EXIT_CODES = new Set([14, 62, 100]);
+const REPAIRABLE_EXIT_CODES = new Set([14, 100]);
 
 /** Windows words for "something outside this app would not let mongod touch its files". */
 const BLOCKED_PATTERNS = [
@@ -80,9 +81,21 @@ const BOILERPLATE = /unhandled exception|stack trace for|immediate exit|writing 
  * fatal lines it wrote and repeats them. That is the difference between "it will not start" and
  * "your antivirus will not let it write to its folder".
  */
-function readMongodFailure(logsDir) {
+/** Bytes already in mongod.log, so a run's own lines can be told from those of earlier runs. */
+function mongodLogSize(logsDir) {
   try {
-    const text = fs.readFileSync(path.join(logsDir, 'mongod.log'), 'utf8');
+    return fs.statSync(path.join(logsDir, 'mongod.log')).size;
+  } catch {
+    return 0;
+  }
+}
+
+function readMongodFailure(logsDir, fromByte = 0) {
+  try {
+    // mongod.log is appended to by every run; a "Failed to set up listener" from last week must not
+    // decide how today's crash is handled, so only this run's part is read
+    const buffer = fs.readFileSync(path.join(logsDir, 'mongod.log'));
+    const text = buffer.subarray(Math.min(fromByte, buffer.length)).toString('utf8');
     const lines = text.split(/\r?\n/).slice(-400).filter(Boolean);
     const messages = [];
 
@@ -122,10 +135,12 @@ function readMongodFailure(logsDir) {
       socket: SOCKET_PATTERNS.some((pattern) => pattern.test(errors)),
       // mongod refuses to open a folder whose repair was interrupted until a repair finishes
       incompleteRepair: /incomplete repair/i.test(errors),
+      // Another mongod already has this folder open: repairing it would write under that process
+      inUse: /DBPathInUse|Unable to lock the lock file|already running|Another mongod/i.test(errors),
     };
   } catch {
     // No log to read yet, so nothing is claimed about the cause
-    return { summary: '', blocked: false, socket: false, incompleteRepair: false };
+    return { summary: '', blocked: false, socket: false, incompleteRepair: false, inUse: false };
   }
 }
 
@@ -216,7 +231,7 @@ class LocalMongo {
       // policy can block that program on that port, and Windows itself reserves blocks of ports
       // that move at every restart — which is what a till that starts once and then will not looks
       // like. Another port costs nothing to try.
-      const listener = readMongodFailure(this.paths.logsDir);
+      const listener = readMongodFailure(this.paths.logsDir, this.runLogStart);
       if (listener.socket) {
         const previous = this.port;
         this.port = await findFreePort(previous + 1);
@@ -232,7 +247,7 @@ class LocalMongo {
           this.log.info(`Local database ready on 127.0.0.1:${this.port}`);
           return this.uri();
         } catch (retryError) {
-          const again = readMongodFailure(this.paths.logsDir);
+          const again = readMongodFailure(this.paths.logsDir, this.runLogStart);
           if (again.socket) {
             throw new LocalDatabaseStartError(
               'The local database is not allowed to open a port on this computer. A firewall rule or ' +
@@ -247,12 +262,31 @@ class LocalMongo {
         }
       }
 
+      if (listener.inUse) {
+        throw new LocalDatabaseStartError(
+          'Another copy of the local database is already running on this computer and has its files open. ' +
+            'Close any other Ibile POS window (or restart the computer), then start Ibile POS again.' +
+            (listener.summary ? ` The database reported: ${listener.summary}.` : ''),
+          { exitCode: error.exitCode, reason: 'in_use' }
+        );
+      }
+
       if (!error.repairable) throw error;
       this.log.warn(`${error.message} Repairing the local database files and trying again.`);
       this.onRepairStart?.();
       const repaired = await this.repair();
       if (!repaired) {
-        const failure = readMongodFailure(this.paths.logsDir);
+        const failure = readMongodFailure(this.paths.logsDir, this.runLogStart);
+        // Another mongod holding the folder also says "locked by another process", which would
+        // otherwise read as antivirus; it is neither blocked nor damaged, so it is told apart first
+        if (failure.inUse) {
+          throw new LocalDatabaseStartError(
+            'Another copy of the local database is already running on this computer and has its files open. ' +
+              'Close any other Ibile POS window (or restart the computer), then start Ibile POS again.' +
+              (failure.summary ? ` The database reported: ${failure.summary}.` : ''),
+            { exitCode: error.exitCode, reason: 'in_use' }
+          );
+        }
         if (failure.blocked) {
           throw new LocalDatabaseStartError(
             'Something on this computer is stopping the local database from using its own files — ' +
@@ -295,6 +329,7 @@ class LocalMongo {
     ];
 
     const output = openLogStream(logsDir, 'mongod.log');
+    this.runLogStart = mongodLogSize(logsDir);
     this.stopping = false;
     this.exitInfo = null;
     this.child = spawn(mongod, args, { cwd: dbPath, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -333,6 +368,7 @@ class LocalMongo {
     }
 
     const output = openLogStream(logsDir, 'mongod.log');
+    this.runLogStart = mongodLogSize(logsDir);
     return new Promise((resolve) => {
       const child = spawn(mongod, ['--dbpath', dbPath, '--repair'], {
         cwd: dbPath,
@@ -384,7 +420,17 @@ class LocalMongo {
         if (known) {
           throw new LocalDatabaseStartError(`${known.message} (exit code ${code})`, { exitCode: code, reason: known.reason });
         }
-        const failure = readMongodFailure(this.paths.logsDir);
+        const failure = readMongodFailure(this.paths.logsDir, this.runLogStart);
+        // Another mongod holding the folder also says "locked by another process", which would
+        // otherwise read as antivirus; it is neither blocked nor damaged, so it is told apart first
+        if (failure.inUse) {
+          throw new LocalDatabaseStartError(
+            'Another copy of the local database is already running on this computer and has its files open. ' +
+              'Close any other Ibile POS window (or restart the computer), then start Ibile POS again.' +
+              (failure.summary ? ` The database reported: ${failure.summary}.` : ''),
+            { exitCode: code, reason: 'in_use' }
+          );
+        }
         if (failure.blocked) {
           throw new LocalDatabaseStartError(
             'Something on this computer is stopping the local database from using its own files — ' +
@@ -473,4 +519,4 @@ class LocalMongo {
   }
 }
 
-module.exports = { LocalMongo, LocalDatabaseStartError, DATABASE_NAME, readMongodFailure };
+module.exports = { LocalMongo, LocalDatabaseStartError, DATABASE_NAME, readMongodFailure, mongodLogSize };

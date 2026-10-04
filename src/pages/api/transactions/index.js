@@ -109,6 +109,8 @@ export default async function handler(req, res) {
       tillId, // Till session ID
       externalId,
       editTransactionId,
+      // 'held' when the till is finishing a sale it put on hold, rather than re-editing a finished one
+      expectedStatus,
       subStatus,
       heldByStaffName,
       heldByStaffId,
@@ -176,6 +178,21 @@ export default async function handler(req, res) {
         return res.status(404).json({
           success: false,
           message: 'Original transaction not found for edit',
+        });
+      }
+
+      // A hold can be finished once. A hold is visible on every till that reads this database, and
+      // the till that made it also keeps its own copy, so the same hold can be paid for twice. The
+      // second payment used to go through as an edit of the first and overwrite it — the first
+      // till's takings vanished and stock was moved twice. It is refused instead, and stays in that
+      // till's unsynced list for a manager to look at.
+      if (expectedStatus === 'held' && String(existingTransaction.status).toLowerCase() !== 'held') {
+        return res.status(409).json({
+          success: false,
+          code: 'HOLD_ALREADY_COMPLETED',
+          message:
+            `This held sale was already finished (it is now "${existingTransaction.status}"), on another till or ` +
+            'earlier on this one. It was not changed. Check the Completed list before taking payment again.',
         });
       }
 
