@@ -67,6 +67,16 @@ const ProductSchema = new Schema(
     promoPrice: { type: Number },
     promoStart: { type: Date },
     promoEnd: { type: Date },
+    // Printed on the receipt, so the customer knows what they saved on
+    promoName: { type: String, default: "" },
+    // "price": each at promoPrice · "multibuy": promoBuyQty for promoPrice · "percent": promoBuyQty or more, promoPercent off
+    promoType: { type: String, enum: ["price", "multibuy", "percent"], default: "price" },
+    promoBuyQty: { type: Number, default: 1 },
+    promoPercent: { type: Number },
+    // "mon" … "sun"; none means every day
+    promoDays: { type: [String], default: [] },
+    // Customer types it is kept for; none means everyone
+    promoCustomerTypes: { type: [String], default: [] },
 
     /* =====================
        PROMOTION PERFORMANCE

@@ -20,7 +20,10 @@ const formatNaira = (value) =>
   `₦${Number(value || 0).toLocaleString("en-NG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 export default function ItemDiscountModal({ item, staff, onApply, onRemove, onClose }) {
-  const existing = item?.discountDetails || null;
+  // A promotion is not a discount staff gave: the dialog starts empty, and a discount given here
+  // takes the promotion's place until it is removed
+  const onPromotion = item?.discountDetails?.mode === DISCOUNT_MODES.PROMOTION;
+  const existing = onPromotion ? null : item?.discountDetails || null;
   const [mode, setMode] = useState(existing?.mode || DISCOUNT_MODES.PERCENT);
   const [value, setValue] = useState(existing ? String(existing.value) : "");
   const [reason, setReason] = useState(existing?.reason || "");
@@ -32,7 +35,8 @@ export default function ItemDiscountModal({ item, staff, onApply, onRemove, onCl
   const needsNote = reason === "Other";
   const reasonMissing = !reason || (needsNote && !note.trim());
   const canApply = result.valid && !reasonMissing;
-  const hasDiscount = Boolean(existing) || Number(item.discount) > 0;
+  const hasDiscount = Boolean(existing) || (!onPromotion && Number(item.discount) > 0);
+  const promotionOnLine = existing ? null : item?.promotionDetails?.reason;
   const isPercent = mode === DISCOUNT_MODES.PERCENT;
 
   const changeMode = (nextMode) => {
@@ -120,6 +124,12 @@ export default function ItemDiscountModal({ item, staff, onApply, onRemove, onCl
                 </div>
               ))}
             </div>
+
+            {promotionOnLine && (
+              <p className="text-xs font-semibold text-purple-700 bg-purple-50 border border-purple-200 rounded-md px-3 py-2">
+                On promotion: {promotionOnLine}. A discount here replaces it; removing the discount puts it back.
+              </p>
+            )}
 
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500 mb-1.5">Discount by</p>

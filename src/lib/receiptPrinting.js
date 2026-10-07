@@ -166,7 +166,12 @@ export function buildReceiptHtml(transaction, settings = {}, printerSettings = g
             <td class="num">${formatReceiptNairaCompact(item.unitPrice)}</td>
             <td class="qty">${escapeHtml(String(item.quantity))}</td>
             <td class="num">${formatReceiptNairaCompact(item.lineTotal)}</td>`;
-    return stackItems
+    // The promotion's name under its item, with what it took off
+    const promotionRow = item.promotion
+      ? `
+          <tr class="promo"><td class="item-name" colspan="3">${escapeHtml(item.promotion.name)}</td><td class="num">-${formatReceiptNairaCompact(item.promotion.saving)}</td></tr>`
+      : '';
+    return (stackItems
       ? `
           <tr><td class="item-name" colspan="4">${escapeHtml(item.name)}</td></tr>
           <tr><td></td>${amounts}
@@ -174,7 +179,7 @@ export function buildReceiptHtml(transaction, settings = {}, printerSettings = g
       : `
           <tr>
             <td class="item-name">${escapeHtml(item.name)}</td>${amounts}
-          </tr>`;
+          </tr>`) + promotionRow;
   }).join('');
 
   const adjustmentRows = model.adjustmentLines.map((line) => `
@@ -216,6 +221,7 @@ export function buildReceiptHtml(transaction, settings = {}, printerSettings = g
     .items .num, .items .qty { width: 1%; white-space: nowrap; padding-left: 1.5mm; }
     .items .num { text-align: right; }
     .items .qty { text-align: center; }
+    .items .promo td { font-style: italic; padding-left: 2mm; }
     .total-qty { border-top: 0.5px dotted #888; margin-top: 0.5mm; padding-top: 0.5mm; font-size: 0.84em; }
     .grand-total { font-weight: 700; font-size: 1.08em; }
     .grand-total.after-breakdown { border-top: 0.5px dashed #444; padding-top: 0.8mm; margin-top: 0.8mm; }
@@ -262,6 +268,7 @@ export function buildReceiptHtml(transaction, settings = {}, printerSettings = g
 
       <div class="section">
         ${model.showSubtotal ? `<div class="row"><span>Subtotal</span><span class="amount">${formatReceiptNaira(model.subtotal)}</span></div>` : ''}
+        ${model.promotionSavings > 0 ? `<div class="row"><span>Promotions</span><span class="amount">-${formatReceiptNaira(model.promotionSavings)}</span></div>` : ''}
         ${model.tax > 0 ? `<div class="row"><span>Tax</span><span class="amount">${formatReceiptNaira(model.tax)}</span></div>` : ''}${adjustmentRows}
         <div class="row grand-total${model.showSubtotal ? ' after-breakdown' : ''}"><span>TOTAL</span><span class="amount">${formatReceiptNaira(model.total)}</span></div>
       </div>

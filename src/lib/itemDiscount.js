@@ -5,14 +5,32 @@
  *   discount         – naira taken off the whole line (price × qty)
  *   discountDetails  – how it was worked out: { mode, value, reason, note, appliedBy, appliedById, appliedAt }
  * Keeping the mode and value means the line discount follows quantity changes.
+ *
+ * A product on promotion carries it on the line (promotion, promotionDetails) and its discount
+ * details are the promotion's ({ mode: 'promotion', reason: its name, promotion }). A discount
+ * staff give replaces it; removing that discount puts the promotion back.
  */
 
 import { normalizeStaffRole, hasPosPermission } from './posPermissions';
+import { describePromotion, promotionBlock, promotionDiscount, promotionLabel } from './promotionRules';
 
 export const DISCOUNT_MODES = {
   PERCENT: 'percent',
   PRICE: 'price',
+  // A product promotion, applied by the till: { mode, reason (its name), promotion (the deal) }
+  PROMOTION: 'promotion',
 };
+
+/**
+ * The line discount a product's promotion gives right now, for this customer type, or null when
+ * it does not apply (not started, over, not one of its days, or kept for other customers).
+ */
+export function promotionDetailsFor(promotion, { now = new Date(), customerType = null } = {}) {
+  if (!promotion || promotionBlock(promotion, { now, customerType })) return null;
+  return { mode: DISCOUNT_MODES.PROMOTION, reason: promotionLabel(promotion), promotion };
+}
+
+export const isPromotionDiscount = (details) => details?.mode === DISCOUNT_MODES.PROMOTION;
 
 export const DISCOUNT_REASONS = [
   'Close to expiry',
@@ -80,16 +98,26 @@ export function calculateItemDiscount({ price, quantity, mode, value }) {
   };
 }
 
-/** Item with its discount recalculated from discountDetails (after a quantity or price change) */
+/**
+ * Item with its discount recalculated from discountDetails (after a quantity or price change).
+ * Taking a staff discount off (details null) puts the line back on its promotion, if it has one.
+ */
 export function applyDiscountDetails(item, details) {
-  if (!details) return { ...item, discount: 0, discountDetails: null };
-  const result = calculateItemDiscount({ price: item.price, quantity: item.quantity, mode: details.mode, value: details.value });
+  const effective = details || item.promotionDetails || null;
+  if (!effective) return { ...item, discount: 0, discountDetails: null };
+  if (isPromotionDiscount(effective)) {
+    // Kept on the line even when it takes nothing off yet: "buy 2" starts paying at the second one
+    const discount = promotionDiscount(effective.promotion, { unitPrice: item.price, quantity: item.quantity });
+    return { ...item, discount, discountDetails: effective };
+  }
+  const result = calculateItemDiscount({ price: item.price, quantity: item.quantity, mode: effective.mode, value: effective.value });
   if (!result.valid) return { ...item, discount: 0, discountDetails: null };
-  return { ...item, discount: result.lineDiscount, discountDetails: details };
+  return { ...item, discount: result.lineDiscount, discountDetails: effective };
 }
 
 export function describeItemDiscount(details) {
   if (!details) return '';
+  if (isPromotionDiscount(details)) return [details.reason, describePromotion(details.promotion)].filter(Boolean).join(' · ');
   const amount = details.mode === DISCOUNT_MODES.PRICE
     ? `new price ₦${Number(details.value).toLocaleString('en-NG')}`
     : `${Number(details.value)}% off`;
@@ -101,15 +129,22 @@ export function describeItemDiscount(details) {
 export function summarizeItemDiscounts(items = []) {
   const discounted = items.filter((item) => Number(item.discount) > 0);
   const total = roundMoney(discounted.reduce((sum, item) => sum + Number(item.discount || 0), 0));
-  const reasons = [...new Set(discounted.map((item) => {
+  const manual = discounted.filter((item) => !isPromotionDiscount(item.discountDetails));
+  const reasons = [...new Set(manual.map((item) => {
     const details = item.discountDetails;
     return details?.reason === 'Other' && details?.note ? details.note : details?.reason;
   }).filter(Boolean))];
+  const promotionTotal = roundMoney(
+    discounted.filter((item) => isPromotionDiscount(item.discountDetails)).reduce((sum, item) => sum + Number(item.discount || 0), 0)
+  );
 
   return {
     total,
+    promotionTotal,
     count: discounted.length,
-    label: reasons.length === 1 ? `Discount (${reasons[0]})` : 'Discount',
+    label: manual.length === 0 && promotionTotal > 0
+      ? 'Promotions'
+      : reasons.length === 1 ? `Discount (${reasons[0]})` : 'Discount',
     reasonText: discounted
       .map((item) => `${item.name}: ${describeItemDiscount(item.discountDetails) || 'discount'} (-₦${Number(item.discount).toLocaleString('en-NG')})${item.discountDetails?.appliedBy ? ` by ${item.discountDetails.appliedBy}` : ''}`)
       .join('; '),

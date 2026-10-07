@@ -38,6 +38,7 @@ import { getUiSettings } from '../../lib/uiSettings';
 import AlphaKeyboardModal from '../common/AlphaKeyboardModal';
 import { isDesktopApp } from '../../lib/desktopClient';
 import { getTillStockQuantity } from '../../lib/packUnits';
+import { promotionOf } from '../../lib/promotionRules';
 
 // Product name sizes (Settings → Layout). In rem so they follow the content scale.
 const PRODUCT_NAME_SIZES = {
@@ -221,6 +222,8 @@ export default function MenuScreen() {
     category: product.category,
     quantity: 1,
     productType: product.productType || 'standard',
+    // The deal set on the product in the management app, if any (lib/promotionRules.js)
+    promotion: promotionOf(product),
     ...overrides,
   }), []);
 

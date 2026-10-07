@@ -24,12 +24,25 @@ import {
 } from '../lib/offlineSync';
 import { getSyncMeta } from '../lib/indexedDB';
 import { getRoomReservationDetails, isRoomProduct } from '../lib/roomReservations';
-import { applyDiscountDetails, summarizeItemDiscounts } from '../lib/itemDiscount';
+import { applyDiscountDetails, isPromotionDiscount, promotionDetailsFor, summarizeItemDiscounts } from '../lib/itemDiscount';
 
 // Keep a line discount in step with the item's quantity
 const withQuantity = (item, quantity) => {
   const next = { ...item, quantity };
   return item.discountDetails ? applyDiscountDetails(next, item.discountDetails) : next;
+};
+
+/**
+ * A line's promotion worked out again for the customer now on the sale: a promotion kept for VIPs
+ * comes on when a VIP is picked and off when they are taken off. A discount staff gave by hand
+ * stays as it is.
+ */
+const withPromotionFor = (item, customerType) => {
+  if (!item.promotion) return item;
+  const promotionDetails = promotionDetailsFor(item.promotion, { customerType });
+  const next = { ...item, promotionDetails };
+  const manual = item.discountDetails && !isPromotionDiscount(item.discountDetails);
+  return manual ? next : applyDiscountDetails(next, promotionDetails);
 };
 
 // ============================================================================
@@ -306,18 +319,23 @@ export function CartProvider({ children }) {
       } else {
         newItems = [
           ...prev.activeCart.items,
-          {
-            id: product.id,
-            name: product.name,
-            category: product.category,
-            price: product.price,
-            quantity: 1,
-            discount: 0,
-            notes: roomReservationDetails?.notes || '',
-            productType: product.productType || 'standard',
-            roomStatus: product.roomStatus || 'available',
-            reservationDetails: roomReservationDetails,
-          },
+          withPromotionFor(
+            {
+              id: product.id,
+              name: product.name,
+              category: product.category,
+              price: product.price,
+              quantity: 1,
+              discount: 0,
+              notes: roomReservationDetails?.notes || '',
+              productType: product.productType || 'standard',
+              roomStatus: product.roomStatus || 'available',
+              reservationDetails: roomReservationDetails,
+              // The product's promotion, if it has one; applied below if it is on now for this customer
+              promotion: isRoom ? null : product.promotion || null,
+            },
+            prev.activeCart.customer?.type || null
+          ),
         ];
       }
 
@@ -428,6 +446,7 @@ export function CartProvider({ children }) {
         ...prev.activeCart,
         customer: customer,
         appliedPromotion: promotion,
+        items: prev.activeCart.items.map((item) => withPromotionFor(item, customer?.type || null)),
       };
 
       // The promotion will be applied in calculateTotals
@@ -458,6 +477,7 @@ export function CartProvider({ children }) {
         discountPercent: 0,
         discountAmount: 0,
         appliedPromotion: null,
+        items: prev.activeCart.items.map((item) => withPromotionFor(item, null)),
       },
     }));
   }, []);
@@ -657,6 +677,9 @@ export function CartProvider({ children }) {
       quantity: item.qty || item.quantity || 1,
       discount: item.discount || 0,
       discountDetails: item.discountDetails || null,
+      // The promotion as it was charged, so a change of quantity keeps to that deal
+      promotion: isPromotionDiscount(item.discountDetails) ? item.discountDetails.promotion : null,
+      promotionDetails: isPromotionDiscount(item.discountDetails) ? item.discountDetails : null,
       notes: item.note || item.notes || '',
       productType: item.productType || 'standard',
       roomStatus: item.roomStatus || 'available',

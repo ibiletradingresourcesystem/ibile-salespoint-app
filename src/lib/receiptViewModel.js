@@ -181,24 +181,32 @@ export function buildReceiptViewModel(transaction = {}, settings = {}) {
     const unitPrice = getItemUnitPrice(item);
     const lineTotal = getLineTotal(item);
 
+    // A product promotion is printed under its item, by name, with what it saved
+    const details = item?.discountDetails;
+    const promoSaving = details?.mode === 'promotion' ? toNumber(item?.discount, 0) : 0;
+
     return {
       name: cleanString(item?.name || item?.productName || item?.description || 'Item'),
       quantity,
       unitPrice,
       lineTotal,
+      ...(promoSaving > 0 ? { promotion: { name: cleanString(details.reason) || 'Promotion', saving: promoSaving } } : {}),
     };
   });
 
   const itemSubtotal = items.reduce((sum, item) => sum + item.lineTotal, 0);
   const subtotal = toNumber(transaction.subtotal, itemSubtotal) || itemSubtotal;
   const tax = toNumber(transaction.tax, 0);
-  const discount = toNumber(transaction.discount ?? transaction.discountAmount, 0);
+  const promotionSavings = items.reduce((sum, item) => sum + (item.promotion?.saving || 0), 0);
+  // The sale's discount includes its promotions. They have their own line, so the discount line
+  // keeps the rest (a discount staff gave, a customer campaign)
+  const discount = Math.max(0, toNumber(transaction.discount ?? transaction.discountAmount, 0) - promotionSavings);
   const incrementAmount = toNumber(transaction.incrementAmount, 0);
   const adjustmentLines = getNamedAdjustments(transaction, discount, incrementAmount);
   const adjustmentTotal = adjustmentLines.reduce((sum, line) => (
     line.type === 'subtract' ? sum - line.amount : sum + line.amount
   ), 0);
-  const computedTotal = Math.max(0, subtotal + tax + adjustmentTotal);
+  const computedTotal = Math.max(0, subtotal + tax - promotionSavings + adjustmentTotal);
   const total = toNumber(transaction.total, computedTotal) || computedTotal;
   const change = toNumber(transaction.change, 0);
   const amountPaid = toNumber(transaction.amountPaid, total);
@@ -220,7 +228,7 @@ export function buildReceiptViewModel(transaction = {}, settings = {}) {
       ? transaction.tenderPayments
       : [{ tenderName: transaction.tenderType || 'CASH', amount: amountPaid || total }];
   // Subtotal only adds information when discounts, promotions, fees or tax change it
-  const showSubtotal = tax > 0 || adjustmentLines.length > 0 || Math.abs(subtotal - total) >= 0.01;
+  const showSubtotal = tax > 0 || adjustmentLines.length > 0 || promotionSavings > 0 || Math.abs(subtotal - total) >= 0.01;
 
   return {
     companyName,
@@ -238,6 +246,7 @@ export function buildReceiptViewModel(transaction = {}, settings = {}) {
     fontFamily: cleanString(settings.fontFamily) || 'Arial',
     fontWeight: normalizeReceiptFontWeight(settings.fontWeight),
     items,
+    promotionSavings,
     totalQuantity: items.reduce((sum, item) => sum + item.quantity, 0),
     subtotal,
     showSubtotal,

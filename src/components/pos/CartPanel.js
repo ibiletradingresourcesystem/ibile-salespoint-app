@@ -975,6 +975,11 @@ export default function CartPanel() {
                             )}
                           </div>
                         )}
+                        {item.discountDetails?.mode === "promotion" && !(item.discount > 0) && (
+                          <div className="text-[11px] text-purple-600 mt-0.5 line-clamp-1" title={describeItemDiscount(item.discountDetails)}>
+                            {describeItemDiscount(item.discountDetails)}
+                          </div>
+                        )}
                         {hasRoomReservation && (
                           <div className="mt-0.5 text-[10px] font-semibold text-cyan-700 line-clamp-1">
                             {roomReservation?.guestName || "Room booking"}{roomDateRange ? ` · ${roomDateRange}` : ""}

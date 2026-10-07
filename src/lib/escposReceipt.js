@@ -96,12 +96,16 @@ export function buildEscposReceipt(transaction, settings = {}, { paperWidth = 80
       lines(wrap(name, width));
       lines(pair(`  ${rate} x ${qty}`, total, width));
     }
+    if (item.promotion) {
+      lines(pair(`  ${toPrinterText(item.promotion.name)}`, `-${toPrinterText(formatReceiptNairaCompact(item.promotion.saving))}`, width));
+    }
   });
   lines(pair('Total Qty', String(model.totalQuantity), width));
 
   // Totals
   p.text(rule);
   if (model.showSubtotal) lines(pair('Subtotal', formatReceiptNaira(model.subtotal), width));
+  if (model.promotionSavings > 0) lines(pair('Promotions', `-${formatReceiptNaira(model.promotionSavings)}`, width));
   if (model.tax > 0) lines(pair('Tax', formatReceiptNaira(model.tax), width));
   model.adjustmentLines.forEach((line) => {
     lines(pair(line.label, `${line.type === 'subtract' ? '-' : ''}${formatReceiptNaira(line.amount)}`, width));

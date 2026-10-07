@@ -44,7 +44,7 @@ export default async function handler(req, res) {
 
     const requestLimit = req.query.sync === 'true' ? 10000 : 2000;
     let products = await Product.find(query)
-      .select("_id name category salePriceIncTax quantity images description locations isChildProduct parentProduct packType qtyPerPack unitsPerChild childSalePrice productType roomStatus currentBooking barcode")
+      .select("_id name category salePriceIncTax quantity images description locations isChildProduct parentProduct packType qtyPerPack unitsPerChild childSalePrice productType roomStatus currentBooking barcode isPromotion promoName promoType promoBuyQty promoPrice promoPercent promoStart promoEnd promoDays promoCustomerTypes")
       .limit(requestLimit)
       .lean();
 
