@@ -282,6 +282,15 @@ export default async function handler(req, res) {
       existingTransaction.customerId = mongoose.Types.ObjectId.isValid(String(customerId || ''))
         ? new mongoose.Types.ObjectId(String(customerId))
         : existingTransaction.customerId || null;
+      // A held sale is a sale when it is paid for. It kept the time it was put on hold, so a sale
+      // held at 9pm and paid at 1am the next day landed on the wrong day in every report. It takes
+      // the time of payment the till sends (the time it was taken, even if the till was offline),
+      // and the hold time is kept as heldAt. Re-editing a finished sale does not move its date.
+      if (String(existingTransaction.status).toLowerCase() === 'held' && newAffectsStock) {
+        const paidAt = createdAt ? new Date(createdAt) : new Date();
+        existingTransaction.heldAt = existingTransaction.heldAt || existingTransaction.createdAt || null;
+        existingTransaction.createdAt = Number.isNaN(paidAt.getTime()) ? new Date() : paidAt;
+      }
       existingTransaction.status = normalizedStatus;
       existingTransaction.creditStatus = isCreditTransaction
         ? existingTransaction.creditStatus === 'paid' ? 'paid' : 'open'

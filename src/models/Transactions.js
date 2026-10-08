@@ -70,6 +70,8 @@ const TransactionSchema = new mongoose.Schema({
   
   // Held-by tracking (who originally held the transaction)
   heldByStaffName: String,
+  // When a held sale was put on hold; createdAt becomes the time it was paid for
+  heldAt: Date,
   heldByStaffId: { type: mongoose.Schema.Types.ObjectId, ref: "Staff" },
   
   // Device & Table info
