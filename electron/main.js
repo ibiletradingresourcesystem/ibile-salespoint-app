@@ -370,6 +370,8 @@ async function startApp() {
   // A till switched off mid-write leaves files mongod will not open; it repairs them and starts
   // again by itself, which takes a moment worth explaining
   mongo.onRepairStart = () => sendSplash('Repairing the local database… this can take a few minutes');
+  // A processor that cannot read the data an earlier version saved (lib/mongo.js restartInNewFolder)
+  mongo.onNewFolder = () => sendSplash("Setting up the local database again for this computer's processor…");
   await mongo.start();
   mongo.onUnexpectedExit = () => recoverFromCrash('database');
 
@@ -385,11 +387,35 @@ async function startApp() {
   server.onUnexpectedExit = () => recoverFromCrash('server');
 
   await loadPos();
+  explainNewDatabaseFolder();
   // Atlas hosts rarely change; a new list is used from the next start
   refreshCloudConnectUri();
   watchConnectivity();
   scheduleAutoBackups();
   updater.init();
+}
+
+/**
+ * Says once, without holding the till up, that the local database was started again because this
+ * computer's processor could not read what an earlier version saved — and where those files are.
+ */
+function explainNewDatabaseFolder() {
+  const kept = mongo?.keptFolder;
+  if (!kept || !mainWindow || mainWindow.isDestroyed()) return;
+  mongo.keptFolder = null;
+  dialog
+    .showMessageBox(mainWindow, {
+      type: 'info',
+      title: 'Ibile POS',
+      message: 'The local database was set up again for this computer.',
+      detail:
+        "This computer's processor could not read the data an earlier version of Ibile POS saved here, which " +
+        "is why it kept asking to start again with an empty database. That is now fixed: the store's products, " +
+        'staff and settings download from the cloud as on a new till, and from now on the data is saved in a way ' +
+        `this computer reads.\n\nThe old files are kept in:\n${kept}`,
+      buttons: ['OK'],
+    })
+    .catch(() => {});
 }
 
 async function recoverFromCrash(component) {
@@ -411,6 +437,7 @@ async function recoverFromCrash(component) {
     }
     await server.start(serverEnv());
     await loadPos();
+    explainNewDatabaseFolder();
   } catch (error) {
     busy = false;
     return fatal(error);
@@ -485,6 +512,11 @@ async function repairVisualCppRuntime(error) {
 }
 
 async function fatal(error) {
+  // Closed while it was still starting: the page or service it was waiting for was stopped on purpose
+  if (shuttingDown) {
+    log?.warn(`Closed while starting: ${error?.message || error}`);
+    return;
+  }
   log?.error('Fatal error', error);
   sendSplash(error?.message || 'Ibile POS could not start', true);
   if (error?.reason === 'vc_runtime') return repairVisualCppRuntime(error);

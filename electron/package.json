@@ -1,7 +1,7 @@
 {
   "name": "ibile-pos-desktop",
   "productName": "Ibile POS",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "description": "Ibile System POS for Windows: works offline with a local database and syncs with the cloud",
   "author": "Ibile Mart Systems",

@@ -306,6 +306,42 @@ its working directory, which used to be `C:Program FilesIbile POS`, where Window
 write — that is the "Failed to open minidump file … Access is denied" line that made these crashes
 harder to read than they needed to be.
 
+### A processor without BMI2 (Celeron J1900 and similar): "start again with an empty database" every time
+
+A till on a Celeron J1900 worked once, then asked to start again with an empty database before
+every start. The cause is MongoDB, not the files: the Windows build of MongoDB 8.0 decompresses
+Snappy data (WiredTiger's default compression) with a BMI2 instruction (`bzhi`, in Snappy's
+`DecompressAllTags`) without asking the processor first — MongoDB's own bug SERVER-103289, fixed in
+8.3. On an empty folder nothing is read back from disk, so it runs; the first time it reads saved
+data it dies with *illegal instruction* (0xC000001D, which mongod's crash handler turns into exit 14),
+the repair reads the same data and dies the same way, and the app offered the empty database again.
+Any processor without BMI2 is affected: Celeron and Pentium (J/N series, most desktop ones before
+2020), and Core processors older than Haswell.
+
+Reproduced with Intel SDE emulating Silvermont (the J1900's core) against the bundled 8.0.32: first
+start fine, second start stops at `mongod.exe+0x2c3597f: bzhi`. The same run emulating Haswell (an
+i3-4030U) works across restarts and a hard kill.
+
+Since this version:
+
+- **New data folders are written with zstd** (`--wiredTigerCollectionBlockCompressor zstd
+  --wiredTigerJournalCompressor zstd`), which has no such path: on the emulated J1900 a zstd folder
+  survives clean restarts and a hard kill with journal replay. Collections a folder already has keep
+  Snappy, so tills that read it today (BMI2) keep every sale; `config.json` records which folder was
+  started empty with zstd (`localDatabaseFormat`).
+- **A till that cannot read its old Snappy folder moves to a new one by itself**, once. mongod's
+  "Unhandled exception 0xC000001D" (or exit code 3221225501) on a folder that may hold Snappy sets
+  the folder aside as `mongodb-unreadable-<timestamp>` — kept, not deleted — and starts a zstd one;
+  the till downloads the store's data again and says so once. On a zstd folder the same crash is
+  reported instead, so it can never loop.
+- **On a processor without AVX2** (Windows reports AVX2; every processor with it has BMI2), an old
+  folder is read through once right after the database starts, so the crash comes before the POS
+  opens rather than in the middle of the start-up or a sale. Remembered per folder (`oldDataReadable`)
+  and per computer (`processor`).
+- mongod's output now reaches `mongod.log` in full before the app reads it to decide what failed
+  (both output pipes used to close the file, losing the last lines), and on computers with 4 GB of
+  memory or less the database cache is 256 MB instead of 512 MB.
+
 To repair an installation by hand (an older build, or a till that will not start at all):
 
 ```
@@ -513,7 +549,8 @@ showing the window (automated checks on a till someone is using).
 | Download stuck, "cloud database address could not be looked up" | The network's DNS answers badly; the app falls back to Windows DNS and DNS over HTTPS. *Show technical details* names what failed. Allow HTTPS to cloudflare-dns.com / dns.google if Windows DNS also fails. |
 | Download stuck for another reason | *Show technical details* and `server.log` (`[sync]` lines) give the cause. *Retry now*, or *Clear setup and start again*. |
 | "Microsoft Visual C++ Redistributable … not installed" (exit code 3221225781) | Choose *Install and Restart*, or install `https://aka.ms/vs/17/release/vc_redist.x64.exe` and open Ibile POS again. Installers built from now on do this automatically. |
-| "processor cannot run the local database" (exit code 3221225501) | The CPU lacks AVX, which MongoDB 8.0 requires. Use a newer computer for this till. |
+| Asked to "start again with an empty database" before every start (Celeron J1900 and other processors without BMI2) | Fixed in 1.0.1: install it. The first start moves the unreadable folder aside on its own and downloads the store again; from then on the data is saved in a form this processor reads. See "A processor without BMI2". |
+| "processor does not have an instruction the local database used" | mongod met an instruction this CPU lacks on data written by this version (zstd). Send the logs folder to support. |
 | Local database credentials lost | Close the app; remove `secrets.mongoPassword` from `config.json`; start `mongod.exe --dbpath "%APPDATA%\Ibile POS\data\mongodb" --port 27517 --bind_ip 127.0.0.1` without `--auth`; drop user `ibilepos` in `admin`; stop it; start the app. |
 | New computer | Old PC: SYSTEM → Back up now. New PC: install, set up, SYSTEM → Restore from backup…, set up again if asked. |
 | Logs | SYSTEM → Open logs folder (`%APPDATA%\Ibile POS\logs`). Developer tools: F12 in development builds only. |
