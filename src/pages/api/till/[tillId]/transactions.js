@@ -26,7 +26,7 @@ export default async function handler(req, res) {
     await mongooseConnect();
 
     const till = await Till.findById(tillId)
-      .select("status openingBalance openedAt closedAt staffName transactions handovers closedByDeviceId closedByDeviceName closedByStaffName")
+      .select("status openingBalance openedAt closedAt staffName transactions handovers refundsPaid closedByDeviceId closedByDeviceName closedByStaffName")
       .lean();
     if (!till) {
       return res.status(404).json({ success: false, message: "Till not found" });

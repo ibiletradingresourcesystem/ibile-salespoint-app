@@ -1,7 +1,54 @@
+import mongoose from 'mongoose';
 import Till from '@/src/models/Till';
+import { Transaction } from '@/src/models/Transactions';
 import { ROOM_STATUSES } from '@/src/lib/roomReservations';
 import { markRoomsFromTransaction } from '@/src/lib/roomAvailability';
 import { updateInventoryForSale } from '@/src/lib/syncPackQty';
+import { isDesktopServer } from '@/src/lib/runtime';
+
+/**
+ * Runs work as one all-or-nothing change in the cloud database. The desktop app's single local
+ * database has no multi-document transactions, so there it just runs.
+ */
+export async function runAtomically(work) {
+  if (isDesktopServer()) return work(null);
+
+  const session = await mongoose.startSession();
+  try {
+    let result;
+    await session.withTransaction(async () => {
+      result = await work(session);
+    });
+    return result;
+  } finally {
+    await session.endSession().catch(() => {});
+  }
+}
+
+/**
+ * Takes a sale's items off stock exactly once. The flag and the stock change together, so a sale
+ * sent again after a failure can never be taken off twice, even for the items that had gone through.
+ * Throws if the stock could not be updated: the caller must not report the sale as finished.
+ */
+export async function applySaleStock(transaction, items) {
+  if (transaction.inventoryUpdated) return;
+
+  await runAtomically(async (session) => {
+    if (session) {
+      const claimed = await Transaction.updateOne(
+        { _id: transaction._id, inventoryUpdated: { $ne: true } },
+        { $set: { inventoryUpdated: true } },
+        { session }
+      );
+      if (claimed.modifiedCount > 0) await updateInventoryForSale(items, { session });
+    } else {
+      await updateInventoryForSale(items);
+      await Transaction.updateOne({ _id: transaction._id }, { $set: { inventoryUpdated: true } });
+    }
+  });
+
+  transaction.inventoryUpdated = true;
+}
 
 export async function applyCompletedTransactionEffects(transaction, items, isCompletedTransaction) {
   if (!isCompletedTransaction) {

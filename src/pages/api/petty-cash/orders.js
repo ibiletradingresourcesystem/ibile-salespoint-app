@@ -7,6 +7,7 @@
  */
 import { recordPettyCashExpense } from "@/src/lib/pettyCashExpense";
 import { cloudDataModelsOrRespond } from "@/src/lib/dataModels";
+import { requirePosPermission } from "@/src/lib/staffAccess";
 
 export default async function handler(req, res) {
   // Petty cash is approved and paid through the management app, so it lives in the cloud database
@@ -14,6 +15,8 @@ export default async function handler(req, res) {
   const models = await cloudDataModelsOrRespond(res);
   if (!models) return;
   const { PettyCashTransaction } = models;
+
+  if (req.method !== "GET" && !(await requirePosPermission(req, res, "pettyCashAccess"))) return;
 
   if (req.method === "GET") {
     try {

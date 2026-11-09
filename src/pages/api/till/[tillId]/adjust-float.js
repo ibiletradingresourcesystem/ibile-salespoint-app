@@ -8,6 +8,7 @@
 import Till from "@/src/models/Till";
 import { mongooseConnect } from "@/src/lib/mongoose";
 import { sanitizeBody } from '@/src/lib/apiValidation';
+import { requirePosPermission } from "@/src/lib/staffAccess";
 
 export default async function handler(req, res) {
   // Only allow PUT requests
@@ -19,6 +20,8 @@ export default async function handler(req, res) {
 
   try {
     await mongooseConnect();
+
+    if (!(await requirePosPermission(req, res, "adjustFloat"))) return;
 
     const { tillId } = req.query;
     const { adjustmentAmount, reason } = req.body;

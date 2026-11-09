@@ -2,9 +2,11 @@ import { mongooseConnect } from "@/src/lib/mongoose";
 import { Staff } from "@/src/models/Staff";
 import Store from "@/src/models/Store";
 import { setSessionCookie } from "@/src/lib/sessionAuth";
-import { sanitizeString } from "@/src/lib/apiValidation";
+import { isValidObjectId, sanitizeString } from "@/src/lib/apiValidation";
 import { verifyPin } from "@/src/lib/staffPin";
 import { normalizePosPermissions } from "@/src/lib/posPermissions";
+import { LOCKED_MESSAGE, clearFailedLogins, isLockedOut, recordFailedLogin } from "@/src/lib/loginAttempts";
+import { isDesktopServer } from "@/src/lib/runtime";
 
 const sendError = (res, status, code, message, details = {}) =>
   res.status(status).json({
@@ -57,8 +59,21 @@ export default async function handler(req, res) {
     );
   }
 
+  // A real id only: an object here would be run as a database query
+  if (!isValidObjectId(staffId)) {
+    return sendError(res, 401, "STAFF_NOT_FOUND", "Selected staff account was not found.");
+  }
+
+  // The desktop app is only reachable from its own computer, so there is nobody to slow down there
+  const limitAttempts = !isDesktopServer();
+  const account = `staff:${staffId}`;
+
   try {
     await mongooseConnect();
+
+    if (limitAttempts && (await isLockedOut(account, req))) {
+      return sendError(res, 429, "RATE_LIMITED", LOCKED_MESSAGE);
+    }
 
     const staffMember = await Staff.findById(staffId).lean();
     if (!staffMember) {
@@ -81,6 +96,7 @@ export default async function handler(req, res) {
 
     const isPinCorrect = await verifyPin(staffMember, pin);
     if (!isPinCorrect) {
+      if (limitAttempts) await recordFailedLogin(account, req);
       return sendError(
         res,
         401,
@@ -88,6 +104,8 @@ export default async function handler(req, res) {
         "Incorrect passcode for selected staff."
       );
     }
+
+    if (limitAttempts) await clearFailedLogins(account, req);
 
     const storeData = await Store.findOne({});
     const storeObj = storeData ? (storeData.toObject ? storeData.toObject() : storeData) : null;

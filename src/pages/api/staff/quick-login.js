@@ -2,7 +2,7 @@ import { mongooseConnect } from "@/src/lib/mongoose";
 import { Staff } from "@/src/models/Staff";
 import Store from "@/src/models/Store";
 import { setSessionCookie } from "@/src/lib/sessionAuth";
-import { sanitizeString } from "@/src/lib/apiValidation";
+import { isValidObjectId, sanitizeString } from "@/src/lib/apiValidation";
 import { normalizePosPermissions } from "@/src/lib/posPermissions";
 
 export default async function handler(req, res) {
@@ -13,7 +13,7 @@ export default async function handler(req, res) {
   const payload = req.body || {};
   const staffId = sanitizeString(payload.staffId || "");
 
-  if (!staffId) {
+  if (!isValidObjectId(staffId)) {
     return res.status(400).json({ success: false, message: "Staff ID is required." });
   }
 

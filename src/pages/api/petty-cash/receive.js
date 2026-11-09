@@ -7,11 +7,14 @@
  */
 import mongoose from "mongoose";
 import { cloudDataModelsOrRespond } from "@/src/lib/dataModels";
+import { requirePosPermission } from "@/src/lib/staffAccess";
 
 export default async function handler(req, res) {
   if (req.method !== "PUT") {
     return res.status(405).json({ error: "Method not allowed" });
   }
+
+  if (!(await requirePosPermission(req, res, "pettyCashAccess"))) return;
 
   // Received stock goes straight to the cloud database (inventory stays online-only); the desktop
   // app picks the new quantities up with its next product sync

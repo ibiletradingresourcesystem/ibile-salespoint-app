@@ -739,6 +739,8 @@ export async function syncPendingTillCloses() {
                   tenderCounts: tillClose.tenderCounts,
                   closingNotes: tillClose.closingNotes,
                   summary: tillClose.summary,
+                  // Closed earlier while offline; whoever is signed in now may not be who closed it
+                  closedOffline: true,
                 }),
               });
 

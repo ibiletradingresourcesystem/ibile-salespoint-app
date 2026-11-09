@@ -10,6 +10,9 @@ import { Transaction } from '@/src/models/Transactions';
 import Till from '@/src/models/Till';
 import mongoose from 'mongoose';
 import { updateInventoryForSale, reverseInventoryForRefund } from '@/src/lib/syncPackQty';
+import { applySaleStock } from '@/src/lib/transactionEffects';
+import { requireActiveStaff } from '@/src/lib/staffAccess';
+import { hasPosPermission } from '@/src/lib/posPermissions';
 import crypto from 'crypto';
 import { sanitizeBody } from '@/src/lib/apiValidation';
 import { ROOM_STATUSES } from '@/src/lib/roomReservations';
@@ -82,10 +85,13 @@ export default async function handler(req, res) {
     
     await mongooseConnect();
 
-    const { 
-      items, 
-      total, 
-      tax = 0, 
+    const staffMember = await requireActiveStaff(req, res);
+    if (!staffMember) return;
+
+    const {
+      items,
+      total,
+      tax = 0,
       subtotal = 0, 
       tenderType,           // Legacy: single tender
       tenderPayments,       // New: array of split payments [{tenderId, tenderName, amount}]
@@ -193,6 +199,15 @@ export default async function handler(req, res) {
           message:
             `This held sale was already finished (it is now "${existingTransaction.status}"), on another till or ` +
             'earlier on this one. It was not changed. Check the Completed list before taking payment again.',
+        });
+      }
+
+      // Finishing or changing a hold is ordinary selling; rewriting a finished sale is a refund
+      if (String(existingTransaction.status).toLowerCase() !== 'held' && !hasPosPermission(staffMember, 'refundAccess')) {
+        return res.status(403).json({
+          success: false,
+          code: 'NOT_PERMITTED',
+          message: 'You do not have permission to change a finished sale.',
         });
       }
 
@@ -413,16 +428,9 @@ export default async function handler(req, res) {
       const existingTransaction = await Transaction.findOne({ externalId });
       if (existingTransaction) {
         console.log(`⚠️ Duplicate transaction detected - externalId ${externalId}`);
-        // Retry inventory update if it was missed on original save
-        if (!existingTransaction.inventoryUpdated && (existingTransaction.status === 'completed' || existingTransaction.status === 'credit')) {
-          try {
-            await updateInventoryForSale(mappedItems);
-            existingTransaction.inventoryUpdated = true;
-            await existingTransaction.save();
-            console.log('✅ Retried inventory update on duplicate detection');
-          } catch (retryErr) {
-            console.warn('⚠️ Retry inventory update failed:', retryErr.message);
-          }
+        // Finish the stock update if it was missed on the original save
+        if (existingTransaction.status === 'completed' || existingTransaction.status === 'credit') {
+          await applySaleStock(existingTransaction, mappedItems);
         }
         return res.status(200).json({
           success: true,
@@ -435,16 +443,9 @@ export default async function handler(req, res) {
       const existingByKey = await Transaction.findOne({ dedupeKey });
       if (existingByKey) {
         console.log(`⚠️ Duplicate transaction detected - dedupeKey ${dedupeKey}`);
-        // Retry inventory update if it was missed on original save
-        if (!existingByKey.inventoryUpdated && (existingByKey.status === 'completed' || existingByKey.status === 'credit')) {
-          try {
-            await updateInventoryForSale(mappedItems);
-            existingByKey.inventoryUpdated = true;
-            await existingByKey.save();
-            console.log('✅ Retried inventory update on duplicate detection');
-          } catch (retryErr) {
-            console.warn('⚠️ Retry inventory update failed:', retryErr.message);
-          }
+        // Finish the stock update if it was missed on the original save
+        if (existingByKey.status === 'completed' || existingByKey.status === 'credit') {
+          await applySaleStock(existingByKey, mappedItems);
         }
         return res.status(200).json({
           success: true,
@@ -609,13 +610,16 @@ export default async function handler(req, res) {
     // Update product quantities after successful transaction save (idempotent)
     if (!savedTransaction.inventoryUpdated && isStockAffectingTransaction) {
       try {
-        console.log('📦 Updating inventory for items:', JSON.stringify(mappedItems.map(i => ({ productId: i.productId, qty: i.qty, name: i.name }))));
-        await updateInventoryForSale(mappedItems);
-        savedTransaction.inventoryUpdated = true;
-        await savedTransaction.save();
-        console.log('✅ Inventory updated successfully');
+        await applySaleStock(savedTransaction, mappedItems);
       } catch (updateErr) {
         console.error('❌ Failed to update product quantities:', updateErr.message, updateErr.stack);
+        // The sale is saved but its stock is not. An error keeps it in the till's queue, and the
+        // next send lands on the duplicate check above, which finishes the stock.
+        return res.status(503).json({
+          success: false,
+          code: 'STOCK_UPDATE_PENDING',
+          message: 'Sale saved, but its stock could not be updated yet. It will be sent again.',
+        });
       }
 
       if (isCompletedTransaction) {

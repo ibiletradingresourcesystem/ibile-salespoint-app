@@ -1062,16 +1062,16 @@ export default function OrdersScreen({ onNavigateToMenu }) {
                     : 'Process in POS'}
                 </button>
               )}
-              {/* Delivery only after the sale exists: recorded at a till, or the order processed in the management app */}
+              {/* Delivery only after the sale is recorded. Processing alone is not enough: opening the order in the POS sets it */}
               {detailOrder.source === 'E-Commerce' && detailOrder.status !== 'Delivered' && (() => {
-                const saleProcessed = detailOrder.hasPosTransaction || ['Processing', 'Shipped'].includes(detailOrder.status);
+                const saleProcessed = detailOrder.hasPosTransaction;
                 return (
                   <button
                     onClick={() => handleMarkDelivered(detailOrder)}
                     disabled={!saleProcessed || deliveringOrderId === detailOrder.id}
                     title={saleProcessed
                       ? 'Tell the customer the order has been delivered'
-                      : 'Record the sale first: process the order in the POS, or process it in the management app'}
+                      : 'Record the sale first: finish it in the POS, or mark the order Delivered in the management app'}
                     className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-semibold transition-colors active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed"
                   >
                     {deliveringOrderId === detailOrder.id

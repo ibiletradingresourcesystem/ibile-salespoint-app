@@ -29,6 +29,9 @@ const EndOfDayReportSchema = new mongoose.Schema({
   // Sales Summary
   totalSales: Number,
   transactionCount: Number,
+  // Paid back from this drawer for sales made on earlier, closed tills. Already taken off the
+  // expected figures below; totalSales is the sales made on this till.
+  refundsPaid: { type: Number, default: 0 },
 
   // Tender Breakdown (expected/processed amounts per tender)
   tenderBreakdown: {

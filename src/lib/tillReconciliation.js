@@ -73,8 +73,8 @@ export function mergeTillTransactions(serverTxs, localTxs = []) {
 }
 
 /** Totals and lists for the Close Till screen. Only completed sales count towards takings. */
-export function summarizeTillTransactions(transactions = []) {
-  const summary = { totalSales: 0, transactionCount: 0, tenderBreakdown: {}, sales: [], voids: [], refunds: [], held: [], credit: [] };
+export function summarizeTillTransactions(transactions = [], refundsPaid = []) {
+  const summary = { totalSales: 0, transactionCount: 0, tenderBreakdown: {}, refundsPaidTotal: 0, sales: [], voids: [], refunds: [], held: [], credit: [] };
 
   transactions.forEach((tx) => {
     const state = getTransactionState(tx);
@@ -92,6 +92,12 @@ export function summarizeTillTransactions(transactions = []) {
         addTenderAmount(summary.tenderBreakdown, tx.tenderType, total, 'Cash');
       }
     }
+  });
+
+  // Money this drawer paid back for sales made on an earlier, closed till is not in it any more
+  (refundsPaid || []).forEach((refund) => {
+    summary.refundsPaidTotal += Number(refund?.total || 0);
+    (refund?.tenders || []).forEach((tender) => addTenderAmount(summary.tenderBreakdown, tender?.name, -Number(tender?.amount || 0), 'Cash'));
   });
 
   summary.totalSales = Math.round(summary.totalSales * 100) / 100;

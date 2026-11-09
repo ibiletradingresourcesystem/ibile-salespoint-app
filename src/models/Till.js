@@ -22,6 +22,18 @@ const HandoverSchema = new mongoose.Schema(
   { _id: true }
 );
 
+// Money this till's drawer paid back for a sale made on an earlier till that had already closed
+const RefundPaidSchema = new mongoose.Schema(
+  {
+    transactionId: { type: mongoose.Schema.Types.ObjectId, ref: "Transaction", required: true },
+    total: { type: Number, default: 0 },
+    tenders: [{ _id: false, name: String, amount: Number }],
+    refundedAt: { type: Date, default: Date.now },
+    staffName: { type: String, default: "" },
+  },
+  { _id: false }
+);
+
 const TillSchema = new mongoose.Schema(
   {
     // Reference to store location
@@ -123,6 +135,9 @@ const TillSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+
+    // Taken off what this till is expected to hold when it closes
+    refundsPaid: { type: [RefundPaidSchema], default: [] },
 
     // Terminals sharing this till
     handovers: { type: [HandoverSchema], default: [] },

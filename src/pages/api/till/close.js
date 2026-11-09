@@ -9,6 +9,7 @@ import mongoose from "mongoose";
 import { sanitizeBody } from '@/src/lib/apiValidation';
 import { isDesktopServer } from "@/src/lib/runtime";
 import { runSyncCycle } from "@/src/lib/desktop/syncEngine";
+import { requirePosPermission } from "@/src/lib/staffAccess";
 
 /**
  * Bulletproof Mongoose Map → plain object extraction.
@@ -70,6 +71,9 @@ export default async function handler(req, res) {
 
   try {
     await mongooseConnect();
+
+    // A close made offline was allowed when it was made; it is only being delivered now
+    if (!req.body.closedOffline && !(await requirePosPermission(req, res, "closeTill"))) return;
 
     const { tillId, tenderCounts, closingNotes, deviceId, deviceName, closedByStaffName } = req.body;
     const safeTenderCounts = tenderCounts && typeof tenderCounts === "object" ? tenderCounts : {};
@@ -212,6 +216,15 @@ export default async function handler(req, res) {
       totalSales = till.totalSales;
     }
 
+    // Money this drawer paid back for sales made on an earlier, closed till is not in it any more
+    let refundsPaid = 0;
+    for (const refund of till.refundsPaid || []) {
+      refundsPaid += Number(refund.total || 0);
+      for (const tender of refund.tenders || []) {
+        tenderBreakdown[tender.name] = (tenderBreakdown[tender.name] || 0) - Number(tender.amount || 0);
+      }
+    }
+
     // Get tender mapping (ID to name)
     const tenderDocs = await Tender.find();
     const tenderMap = {}; // Map tender ID to name
@@ -252,7 +265,7 @@ export default async function handler(req, res) {
     }
 
     // Calculate expected closing balance
-    const expectedClosingBalance = till.openingBalance + totalSales;
+    const expectedClosingBalance = till.openingBalance + totalSales - refundsPaid;
 
     // Calculate overall variance
     const variancePercentage = expectedClosingBalance > 0 
@@ -358,6 +371,7 @@ export default async function handler(req, res) {
         variance: totalVariance,
         variancePercentage: variancePercentage,
         totalSales: totalSales,
+        refundsPaid: refundsPaid,
         transactionCount: transactionCount,
         tenderBreakdown: new Map(Object.entries(tenderBreakdown)),
         tenderActual: new Map(Object.entries(tenderActualMap)),

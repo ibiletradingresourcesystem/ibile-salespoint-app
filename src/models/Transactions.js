@@ -1,6 +1,7 @@
 // models/Transactions.js - Merged from inventory & current app
 
 import mongoose from "mongoose";
+import Product from "@/src/models/Product";
 import { syncTracking } from "@/src/lib/desktop/syncTracking";
 
 const itemSchema = new mongoose.Schema(
@@ -11,6 +12,7 @@ const itemSchema = new mongoose.Schema(
     quantity: Number, // Quantity from POS
     salePriceIncTax: Number, // Standardized field for reports
     qty: Number, // Standardized field for reports
+    costPrice: Number, // What one unit cost when it was sold (stamped on save)
   },
   {
     _id: false,
@@ -179,6 +181,30 @@ TransactionSchema.index({ sourceOrderId: 1 }, { sparse: true });
 TransactionSchema.index({ status: 1, creditStatus: 1, createdAt: -1 });
 TransactionSchema.index({ creditCustomerId: 1, creditStatus: 1 });
 TransactionSchema.index({ installationId: 1, createdAt: -1 }, { sparse: true });
+
+// Each line keeps what the goods cost when they were sold, so a later cost change leaves past
+// profit alone. A new sale takes its costs from the product records, not from whoever sent it; an
+// edited sale keeps the costs its lines already carry. A product with no cost yet is left unstamped,
+// so the reports use its cost once it is entered. Registered before sync tracking so the desktop
+// queues the stamped sale.
+TransactionSchema.pre("save", async function stampLineCosts() {
+  if (!this.isNew && !this.isModified("items")) return;
+  const unstamped = (this.items || []).filter((item) => item?.productId && (this.isNew || !(Number(item.costPrice) > 0)));
+  if (unstamped.length === 0) return;
+
+  const connection = this.constructor.db;
+  const ProductModel = connection === Product.db
+    ? Product
+    : connection.models.Product || connection.model("Product", Product.schema);
+  const products = await ProductModel.find({ _id: { $in: unstamped.map((item) => item.productId) } })
+    .select("_id costPrice")
+    .lean();
+  const costs = new Map(products.map((product) => [String(product._id), Number(product.costPrice) || 0]));
+  for (const item of unstamped) {
+    const cost = costs.get(String(item.productId));
+    if (cost > 0) item.costPrice = cost;
+  }
+});
 
 // Desktop runtime: queue local sales for cloud sync (no-op on the cloud deployment)
 TransactionSchema.plugin(syncTracking, { entity: "transactions" });

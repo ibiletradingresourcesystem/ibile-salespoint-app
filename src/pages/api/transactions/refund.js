@@ -10,11 +10,12 @@
 import { mongooseConnect } from '@/src/lib/mongoose';
 import { Transaction } from '@/src/models/Transactions';
 import Till from '@/src/models/Till';
-import Product from '@/src/models/Product';
 import { reverseInventoryForRefund } from '@/src/lib/syncPackQty';
-import EndOfDayReport from '@/src/models/EndOfDayReport';
 import { sanitizeBody } from '@/src/lib/apiValidation';
 import { releaseRoomsFromTransaction } from '@/src/lib/roomAvailability';
+import { requirePosPermission } from '@/src/lib/staffAccess';
+import { runAtomically } from '@/src/lib/transactionEffects';
+import { webTillScope } from '@/src/lib/runtime';
 
 const getTenderEntries = (transaction) => {
   if (Array.isArray(transaction?.tenderPayments) && transaction.tenderPayments.length > 0) {
@@ -40,36 +41,6 @@ const applyTenderDelta = (map, entries = [], sign = -1) => {
     const next = Math.max(0, current + (sign * Number(entry?.amount || 0)));
     map.set(key, next);
   });
-};
-
-const syncClosedTillReport = async (till) => {
-  const report = await EndOfDayReport.findOne({ tillId: till._id });
-  if (!report) return false;
-
-  const tenderBreakdownMap = ensureTenderBreakdownMap(till.tenderBreakdown);
-  const tenderBreakdownObj = Object.fromEntries(tenderBreakdownMap);
-  const recalculatedTotalSales = Object.values(tenderBreakdownObj).reduce(
-    (sum, amount) => sum + Number(amount || 0),
-    0
-  );
-  const expectedClosingBalance = Number(till.openingBalance || 0) + recalculatedTotalSales;
-  const physicalCount = Number(report.physicalCount || till.physicalCount || 0);
-  const variance = physicalCount - expectedClosingBalance;
-  const variancePercentage = expectedClosingBalance > 0
-    ? (variance / expectedClosingBalance) * 100
-    : 0;
-
-  report.totalSales = recalculatedTotalSales;
-  report.transactionCount = Number(till.transactionCount || 0);
-  report.tenderBreakdown = new Map(Object.entries(tenderBreakdownObj));
-  report.expectedClosingBalance = expectedClosingBalance;
-  report.variance = variance;
-  report.variancePercentage = variancePercentage;
-  report.status = Math.abs(variance) < 0.01 ? 'RECONCILED' : 'VARIANCE_NOTED';
-  report.updatedAt = new Date();
-  await report.save();
-
-  return true;
 };
 
 export default async function handler(req, res) {
@@ -104,6 +75,14 @@ export default async function handler(req, res) {
     // Only 'process' action saves to database (marks as deleted)
     // 'recall' just returns the transaction data to the client
     if (action === 'process') {
+      const staffMember = await requirePosPermission(req, res, 'refundAccess');
+      if (!staffMember) return;
+
+      // A string only: an object here would be run as a database query
+      if (typeof transactionId !== 'string') {
+        return res.status(400).json({ success: false, error: 'transactionId and action required' });
+      }
+
       // Find transaction
       const transaction = await Transaction.findById(transactionId);
 
@@ -114,59 +93,63 @@ export default async function handler(req, res) {
         });
       }
 
-      if (transaction.status === 'refunded') {
-        return res.status(200).json({
-          success: true,
-          message: 'Transaction already refunded',
-          transactionId: transaction._id,
-          refundStatus: 'already_refunded',
-          alreadyRefunded: true,
-        });
-      }
+      const alreadyRefunded = () => res.status(200).json({
+        success: true,
+        message: 'Transaction already refunded',
+        transactionId: transaction._id,
+        refundStatus: 'already_refunded',
+        alreadyRefunded: true,
+      });
+
+      if (transaction.status === 'refunded') return alreadyRefunded();
 
       const previousStatus = transaction.status;
+      const restock = previousStatus === 'completed' && transaction.inventoryUpdated && !transaction.inventoryRestockedAt;
+      const refundedAt = new Date();
 
-	      // Update transaction status to refunded/void
-	      transaction.status = 'refunded';
-	      transaction.subStatus = 'void';
-	      transaction.refundReason = refundReason || 'Refunded by staff';
-      transaction.refundBy = staffId;
-      transaction.refundedAt = new Date();
-      transaction.updatedAt = new Date();
+      // The refund and its restock are one change: if the stock cannot be put back nothing is
+      // refunded and it can be tried again, and two refunds at once can only restock once
+      const refunded = await runAtomically(async (session) => {
+        const claimed = await Transaction.updateOne(
+          { _id: transaction._id, status: { $ne: 'refunded' } },
+          {
+            $set: {
+              status: 'refunded',
+              subStatus: 'void',
+              refundReason: refundReason || 'Refunded by staff',
+              refundBy: staffMember._id,
+              refundedAt,
+              updatedAt: refundedAt,
+              ...(restock ? { inventoryRestockedAt: refundedAt } : {}),
+            },
+          },
+          { session }
+        );
+        if (claimed.modifiedCount === 0) return false;
 
-      await transaction.save();
+        if (restock) {
+          const mappedItems = (transaction.items || []).map((item) => ({
+            productId: item.productId || item.id,
+            qty: item.qty || item.quantity || 0,
+          }));
+          await reverseInventoryForRefund(mappedItems, { session });
+        }
+        return true;
+      });
+
+      if (!refunded) return alreadyRefunded();
 
       console.log(`✅ Transaction ${transactionId} marked as refunded`);
 
-      let inventoryRestocked = false;
       let tillAdjusted = false;
-      let reportAdjusted = false;
 
-      // Only reverse inventory/till impact if the transaction previously counted as a completed sale
+      // Only a transaction that counted as a completed sale has takings to reverse
       if (previousStatus === 'completed') {
-        // Restock inventory once (idempotent)
-        if (transaction.inventoryUpdated && !transaction.inventoryRestockedAt) {
-          try {
-            const mappedItems = (transaction.items || []).map((item) => ({
-              productId: item.productId || item.id,
-              qty: item.qty || item.quantity || 0,
-            }));
-
-            await reverseInventoryForRefund(mappedItems);
-
-            transaction.inventoryRestockedAt = new Date();
-            await transaction.save();
-            inventoryRestocked = true;
-          } catch (stockErr) {
-            console.warn('⚠️ Failed to restock inventory for refund:', stockErr.message);
-          }
-        }
-
-        // Reverse till totals if till is still open
         if (transaction.tillId) {
           try {
             const till = await Till.findById(transaction.tillId);
-            if (till) {
+            if (till?.status === 'OPEN') {
+              // Still open: the sale simply no longer counts towards this till's takings
               till.transactions = (till.transactions || []).filter(
                 (txId) => String(txId) !== String(transaction._id)
               );
@@ -182,9 +165,34 @@ export default async function handler(req, res) {
               till.markModified('tenderBreakdown');
               await till.save();
               tillAdjusted = true;
+            } else if (till) {
+              // Closed: that day's count was right and stands. The money comes out of the drawer
+              // open now, so that till is expected to hold this much less when it closes.
+              const openTill = await Till.findOne({
+                locationId: till.locationId,
+                status: 'OPEN',
+                ...webTillScope(),
+              })
+                .sort({ openedAt: -1 })
+                .select('_id')
+                .lean();
 
-              if (till.status !== 'OPEN') {
-                reportAdjusted = await syncClosedTillReport(till);
+              if (openTill) {
+                await Till.updateOne(
+                  { _id: openTill._id, 'refundsPaid.transactionId': { $ne: transaction._id } },
+                  {
+                    $push: {
+                      refundsPaid: {
+                        transactionId: transaction._id,
+                        total: Number(transaction.total || 0),
+                        tenders: getTenderEntries(transaction),
+                        refundedAt,
+                        staffName: staffMember.name || '',
+                      },
+                    },
+                  }
+                );
+                tillAdjusted = true;
               }
             }
           } catch (tillErr) {
@@ -199,22 +207,21 @@ export default async function handler(req, res) {
         }
       }
 
-	      return res.status(200).json({
-	        success: true,
-	        message: 'Transaction refunded successfully',
-	        transactionId: transaction._id,
-		        refundStatus: 'refund',
-		        subStatus: 'void',
-		        inventoryRestocked,
-		        tillAdjusted,
-		        reportAdjusted,
-		        transaction: {
-		          id: transaction._id,
-		          status: 'refunded',
-		          subStatus: 'void',
-		          refundedAt: transaction.refundedAt,
-		        }
-	      });
+      return res.status(200).json({
+        success: true,
+        message: 'Transaction refunded successfully',
+        transactionId: transaction._id,
+        refundStatus: 'refund',
+        subStatus: 'void',
+        inventoryRestocked: Boolean(restock),
+        tillAdjusted,
+        transaction: {
+          id: transaction._id,
+          status: 'refunded',
+          subStatus: 'void',
+          refundedAt,
+        }
+      });
     } else if (action === 'recall') {
       // Just fetch and return transaction data (for recalling to cart)
       const transaction = await Transaction.findById(transactionId);

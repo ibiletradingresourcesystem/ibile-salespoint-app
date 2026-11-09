@@ -68,13 +68,14 @@ export default async function handler(req, res) {
       ],
     }).lean();
 
-    // Delivery needs the sale to exist: recorded at a till, or the order already processed in the
-    // management app (status moved past Pending there)
-    const processedElsewhere = ['Processing', 'Shipped'].includes(order.status);
-    if (!transaction && !processedElsewhere) {
+    // Delivery needs the sale recorded. "Processing" proves nothing: the POS sets it as soon as a
+    // cashier opens the order, and the management app records its sale only when it marks the order
+    // Delivered itself. Delivering here without a sale would leave no revenue, no stock taken off and
+    // the storefront's stock hold in place.
+    if (!transaction) {
       return res.status(400).json({
         success: false,
-        error: 'Process the order first: record the sale in the POS, or process it in the management app',
+        error: 'Record the sale first: finish it in the POS, or mark the order Delivered in the management app',
       });
     }
 

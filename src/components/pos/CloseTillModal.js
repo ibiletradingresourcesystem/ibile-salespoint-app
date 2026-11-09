@@ -444,7 +444,7 @@ export default function CloseTillModal({ isOpen, onClose, onTillClosed }) {
               // Cloud copies (every terminal, voids included) plus this terminal's unsynced sales.
               // Without the cloud list, fall back to this terminal's own copies.
               const merged = mergeTillTransactions(serverData?.transactions || null, offlineData.transactions || []);
-              const figures = summarizeTillTransactions(merged);
+              const figures = summarizeTillTransactions(merged, serverData?.till?.refundsPaid);
               setTillTransactions(merged);
               setHandovers(serverData?.till?.handovers || []);
 
@@ -453,6 +453,7 @@ export default function CloseTillModal({ isOpen, onClose, onTillClosed }) {
                 totalSales: figures.totalSales,
                 transactionCount: figures.transactionCount,
                 tenderBreakdown: figures.tenderBreakdown,
+                refundsPaidTotal: figures.refundsPaidTotal,
               });
             } catch (err) {
               console.error("Error fetching till:", err);
@@ -528,7 +529,7 @@ export default function CloseTillModal({ isOpen, onClose, onTillClosed }) {
   // Calculate summary when till data is available
   useEffect(() => {
     if (till && isOpen) {
-      const expectedClosing = (till.openingBalance || 0) + (till.totalSales || 0);
+      const expectedClosing = (till.openingBalance || 0) + (till.totalSales || 0) - (till.refundsPaidTotal || 0);
       const tenderBreakdownObj = normalizeTenderBreakdown(till.tenderBreakdown);
       
       setSummary({
