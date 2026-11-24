@@ -73,10 +73,13 @@ export default async function handler(req, res) {
     await mongooseConnect();
 
     // A close made offline was allowed when it was made; it is only being delivered now
-    if (!req.body.closedOffline && !(await requirePosPermission(req, res, "closeTill"))) return;
+    const closer = req.body.closedOffline ? null : await requirePosPermission(req, res, "closeTill");
+    if (!req.body.closedOffline && !closer) return;
 
     const { tillId, tenderCounts, closingNotes, deviceId, deviceName, closedByStaffName } = req.body;
     const safeTenderCounts = tenderCounts && typeof tenderCounts === "object" ? tenderCounts : {};
+    // Who closed it: the signed-in person, or the name an offline close carried. Not the opener.
+    const closerName = String(closer?.name || closedByStaffName || "");
 
     console.log("================================================================================");
     console.log("📋 TILL CLOSE REQUEST");
@@ -287,7 +290,7 @@ export default async function handler(req, res) {
       closingNotes: closingNotes || "",
       closedByDeviceId: String(deviceId || ""),
       closedByDeviceName: String(deviceName || ""),
-      closedByStaffName: String(closedByStaffName || ""),
+      closedByStaffName: closerName,
     };
 
     const updateResult = await Till.updateOne(
@@ -304,7 +307,7 @@ export default async function handler(req, res) {
             "handovers.$[h].status": "merged",
             "handovers.$[h].mergedAt": new Date(),
             "handovers.$[h].mergedByDeviceName": String(deviceName || ""),
-            "handovers.$[h].mergedByStaffName": String(closedByStaffName || ""),
+            "handovers.$[h].mergedByStaffName": closerName,
           },
         },
         { arrayFilters: [{ "h.status": "pending" }] }
@@ -362,7 +365,8 @@ export default async function handler(req, res) {
         tillId: updatedTill._id,
         staffId: updatedTill.staffId,
         staffName: updatedTill.staffName,
-        closedBy: updatedTill.staffId,
+        closedBy: closer?._id || null,
+        closedByStaffName: closerName,
         openedAt: updatedTill.openedAt,
         openingBalance: updatedTill.openingBalance,
         closedAt: new Date(),

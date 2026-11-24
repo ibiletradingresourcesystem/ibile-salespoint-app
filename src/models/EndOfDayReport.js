@@ -19,6 +19,7 @@ const EndOfDayReportSchema = new mongoose.Schema({
   // Till Closing Info
   closedAt: { type: Date, default: Date.now },
   closedBy: { type: mongoose.Schema.Types.ObjectId, ref: "Staff" }, // Manager who closed
+  closedByStaffName: { type: String, default: "" }, // staffName above is who opened the till
 
   // Cash Reconciliation
   physicalCount: Number,

@@ -6,22 +6,27 @@
  * The routes that move money or stock check here instead. Staff are read at most once a minute per
  * server (a few dozen short records), so a check costs no database trip of its own.
  */
+import mongoose from "mongoose";
 import { mongooseConnect } from "@/src/lib/mongoose";
 import { Staff } from "@/src/models/Staff";
 import { hasPosPermission } from "@/src/lib/posPermissions";
 
 const REFRESH_MS = 60 * 1000;
+const STAFF_FIELDS = "name role posPermissions isActive";
 
 const state =
   globalThis.__ibilePosStaffAccess ||
   (globalThis.__ibilePosStaffAccess = { byId: null, loadedAt: 0, loading: null });
+// Ids looked up alone and not found, until the next full read
+state.missed ||= new Set();
 
 function load() {
   if (!state.loading) {
     state.loading = (async () => {
       await mongooseConnect();
-      const staff = await Staff.find({}, "name role posPermissions isActive").lean();
+      const staff = await Staff.find({}, STAFF_FIELDS).lean();
       state.byId = new Map(staff.map((member) => [String(member._id), member]));
+      state.missed = new Set();
       state.loadedAt = Date.now();
     })().finally(() => {
       state.loading = null;
@@ -33,10 +38,14 @@ function load() {
 async function findStaff(staffId) {
   if (!state.byId || Date.now() - state.loadedAt > REFRESH_MS) await load();
   const found = state.byId.get(staffId);
-  if (found || Date.now() - state.loadedAt < 5000) return found || null;
-  // Someone added since the list was read
-  await load();
-  return state.byId.get(staffId) || null;
+  if (found) return found;
+  // Someone added since the list was read: fetch just them. Reloading the whole list was skipped
+  // within 5 seconds of the last read, which told a brand-new person to log in again.
+  if (state.missed.has(staffId) || !mongoose.isValidObjectId(staffId)) return null;
+  const member = await Staff.findById(staffId, STAFF_FIELDS).lean();
+  if (member) state.byId.set(staffId, member);
+  else state.missed.add(staffId);
+  return member || null;
 }
 
 /** The signed-in staff member, or null after answering 401. */
